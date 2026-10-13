@@ -1,0 +1,31 @@
+<%- include('partials/head', { title: page.id ? page.name : 'New landing page' }) %>
+<%- include('partials/nav', { active: 'pages' }) %>
+<main class="narrow">
+  <p><a href="<%= base %>/landing-pages">← Landing pages</a></p>
+  <h1><%= page.id ? 'Edit landing page' : 'Register a landing page' %></h1>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form class="card" method="post" action="<%= base %>/landing-pages<%= page.id ? '/' + page.id : '' %>">
+    <%- include('partials/csrf') %>
+    <label for="name">Name</label>
+    <input id="name" name="name" value="<%= page.name %>" required maxlength="200">
+    <label for="url">Page URL</label>
+    <input id="url" name="url" type="url" value="<%= page.url || '' %>" placeholder="https://...">
+    <label for="slug">Form key (sent by the page with each order)</label>
+    <input id="slug" name="slug" value="<%= page.slug %>" placeholder="auto from name" maxlength="60">
+    <% if (page.id) { %><p class="muted" style="font-size:13px">Changing the form key stops the live page from taking orders until the page's code is updated too.</p><% } %>
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <% statuses.forEach((s) => { %><option value="<%= s %>" <%= page.status === s ? 'selected' : '' %>><%= s %></option><% }) %>
+    </select>
+    <label>Connected products</label>
+    <% if (products.length === 0) { %><p class="muted">Add products first.</p><% } %>
+    <% products.forEach((p) => { %>
+      <label style="color:var(--text)"><input type="checkbox" name="products" value="<%= p.id %>" <%= page.productIds.includes(String(p.id)) ? 'checked' : '' %>>
+        <%= p.name %> — <%= formatMoney(p.price_minor, business.currency) %> <span class="muted">(<code><%= p.code %></code>)<%= p.active ? '' : ' · unavailable' %></span></label>
+    <% }) %>
+    <label for="notes">Notes</label>
+    <textarea id="notes" name="notes" maxlength="2000"><%= page.notes || '' %></textarea>
+    <p><button type="submit">Save</button></p>
+  </form>
+</main>
+</body></html>

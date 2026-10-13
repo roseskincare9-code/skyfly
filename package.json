@@ -11,17 +11,21 @@
     "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "start": "node src/server.js",
     "migrate": "node --env-file-if-exists=.env src/migrate.js",
-    "test": "node --env-file-if-exists=.env.test --test 'test/**/*.test.js'"
+    "test": "node --env-file-if-exists=.env.test --test --test-concurrency=1 'test/**/*.test.js'",
+    "seed:larose": "node --env-file-if-exists=.env src/scripts/seed-larose.js",
+    "test:e2e": "node --env-file-if-exists=.env.test test/e2e/landing-page.e2e.js"
   },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",
     "ejs": "^7.0.1",
     "express": "^4.22.3",
+    "express-rate-limit": "^8.7.1",
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "playwright-core": "^1.56.1",
     "supertest": "^7.3.1"
   }
 }

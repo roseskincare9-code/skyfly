@@ -39,7 +39,7 @@ export async function migrate(pool) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
-  const pool = createPool(config.databaseUrl, config.isProduction);
+  const pool = createPool(config.databaseUrl, config.databaseSsl);
   try {
     await migrate(pool);
     console.log('Migrations up to date');

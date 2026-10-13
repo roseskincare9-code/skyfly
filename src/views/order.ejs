@@ -1,0 +1,77 @@
+<%- include('partials/head', { title: order.reference }) %>
+<%- include('partials/nav', { active: 'orders' }) %>
+<main>
+  <p><a href="<%= base %>/orders">← Orders</a></p>
+  <% if (saved) { %><div class="notice">Order updated.</div><% } %>
+  <div class="row" style="justify-content:space-between">
+    <h1><%= order.reference %> <span class="pill <%= order.status %>"><%= STATUS_LABELS[order.status] %></span></h1>
+    <div class="row">
+      <a class="btn secondary" href="tel:<%= order.phone %>">📞 Call</a>
+      <a class="btn wa" href="<%= waUrl %>" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Customer</h2>
+    <dl class="kv">
+      <dt>Name</dt><dd><%= order.customer_name %></dd>
+      <dt>Phone</dt><dd><a href="tel:<%= order.phone %>"><%= order.phone %></a></dd>
+      <dt>Email</dt><dd><%= order.email ? order.email : '—' %></dd>
+      <dt>Address</dt><dd><%= order.address %></dd>
+      <dt>State</dt><dd><%= order.state || '—' %></dd>
+      <dt>Customer notes</dt><dd><%= order.customer_notes || '—' %></dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Items</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Product</th><th>Unit price</th><th>Qty</th><th>Line total</th></tr></thead>
+      <tbody>
+      <% items.forEach((i) => { %>
+        <tr><td><%= i.product_name %> <span class="muted">(<%= i.product_code %>)</span></td><td><%= formatMoney(i.unit_price_minor, order.currency) %></td><td><%= i.quantity %></td><td><%= formatMoney(i.line_total_minor, order.currency) %></td></tr>
+      <% }) %>
+        <tr><td colspan="3"><strong>Order total</strong></td><td><strong><%= formatMoney(order.total_minor, order.currency) %></strong></td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="font-size:13px;margin-bottom:0">Prices were taken from Skyfly's product list at the time of the order, not from the customer's browser.</p>
+  </div>
+
+  <div class="card">
+    <h2>Update status</h2>
+    <form method="post" action="<%= base %>/orders/<%= order.id %>/status">
+      <%- include('partials/csrf') %>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= order.status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
+      </select>
+      <label for="note">Note (optional, internal)</label>
+      <textarea id="note" name="note" maxlength="1000" placeholder="e.g. Confirmed by phone, delivery Friday"></textarea>
+      <p><button type="submit">Save</button></p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Source</h2>
+    <dl class="kv">
+      <dt>Placed</dt><dd><%= formatDate(order.created_at) %> (Lagos time)</dd>
+      <dt>Landing page</dt><dd><%= order.landing_page_name || '—' %></dd>
+      <dt>Page URL</dt><dd><%= order.source_url || '—' %></dd>
+      <dt>Referrer</dt><dd><%= order.referrer || '—' %></dd>
+      <dt>Campaign</dt><dd><%= [order.utm_source, order.utm_medium, order.utm_campaign, order.utm_content, order.utm_term].filter(Boolean).join(' / ') || '—' %></dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>History</h2>
+    <ul style="margin:0;padding-left:18px">
+      <% history.forEach((h) => { %>
+        <li><span class="muted"><%= formatDate(h.created_at) %></span> —
+          <% if (h.from_status && h.from_status !== h.to_status) { %><%= STATUS_LABELS[h.from_status] %> → <% } %><strong><%= STATUS_LABELS[h.to_status] %></strong>
+          <% if (h.user_name) { %><span class="muted">by <%= h.user_name %></span><% } %>
+          <% if (h.note) { %><br><%= h.note %><% } %></li>
+      <% }) %>
+    </ul>
+  </div>
+</main>
+</body></html>

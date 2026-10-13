@@ -1,0 +1,20 @@
+<%- include('partials/head', { title: 'Settings' }) %>
+<%- include('partials/nav', { active: 'settings' }) %>
+<main class="narrow">
+  <h1>Settings</h1>
+  <% if (saved) { %><div class="notice">Settings saved.</div><% } %>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form class="card" method="post" action="<%= base %>/settings">
+    <%- include('partials/csrf') %>
+    <label for="name">Business name</label>
+    <input id="name" name="name" value="<%= business.name %>" required maxlength="100">
+    <label for="whatsapp_number">WhatsApp number for customers</label>
+    <input id="whatsapp_number" name="whatsapp_number" type="tel" value="<%= business.whatsapp_number || '' %>" placeholder="07039361243">
+    <p class="muted" style="font-size:13px;margin:4px 0 0">Used for the WhatsApp button on order confirmation pages. If empty, 07039361243 is used.</p>
+    <label for="order_prefix">Order reference prefix</label>
+    <input id="order_prefix" name="order_prefix" value="<%= business.order_prefix %>" required pattern="[A-Za-z]{2,5}" maxlength="5">
+    <p class="muted" style="font-size:13px;margin:4px 0 0">New orders look like <code><%= business.order_prefix %>-7KQ3M9X</code>.</p>
+    <p><button type="submit">Save settings</button></p>
+  </form>
+</main>
+</body></html>

@@ -1,6 +1,6 @@
 <%- include('partials/head', { title: 'Businesses' }) %>
 <%- include('partials/nav') %>
-<main>
+<main class="narrow">
   <div class="card">
     <h1>Your businesses</h1>
     <% if (businesses.length === 0) { %>
@@ -16,6 +16,7 @@
   <div class="card">
     <h2>New business</h2>
     <form method="post" action="/businesses">
+      <%- include("partials/csrf") %>
       <label for="name">Business name</label>
       <input id="name" name="name" maxlength="100" required>
       <button type="submit">Create business</button>

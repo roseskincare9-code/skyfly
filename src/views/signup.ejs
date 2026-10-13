@@ -1,9 +1,10 @@
 <%- include('partials/head', { title: 'Create account' }) %>
-<main>
+<main class="narrow">
   <div class="card">
     <h1>Create your Skyfly account</h1>
     <% if (error) { %><p class="error"><%= error %></p><% } %>
     <form method="post" action="/signup">
+      <%- include("partials/csrf") %>
       <label for="name">Name</label>
       <input id="name" name="name" autocomplete="name" required>
       <label for="email">Email</label>

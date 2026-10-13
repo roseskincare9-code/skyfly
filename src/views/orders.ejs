@@ -1,0 +1,54 @@
+<%- include('partials/head', { title: 'Orders' }) %>
+<%- include('partials/nav', { active: 'orders' }) %>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <h1>Orders <span class="muted" style="font-weight:400;font-size:1rem">(<%= total %>)</span></h1>
+    <a class="btn secondary" href="<%= base %>/orders/export.csv<%= qs ? '?' + qs : '' %>">Export CSV</a>
+  </div>
+
+  <form class="card filters" method="get" action="<%= base %>/orders">
+    <div><label for="q">Search</label><input id="q" name="q" value="<%= filters.q %>" placeholder="Reference, name, phone, email"></div>
+    <div><label for="status">Status</label>
+      <select id="status" name="status"><option value="">All statuses</option>
+        <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= filters.status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
+      </select></div>
+    <div><label for="page">Landing page</label>
+      <select id="page" name="page"><option value="">All pages</option>
+        <% landingPages.forEach((p) => { %><option value="<%= p.id %>" <%= filters.page === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }) %>
+      </select></div>
+    <div><label for="from">From</label><input id="from" type="date" name="from" value="<%= filters.from %>"></div>
+    <div><label for="to">To</label><input id="to" type="date" name="to" value="<%= filters.to %>"></div>
+    <div class="row"><button type="submit">Filter</button><a href="<%= base %>/orders">Clear</a></div>
+  </form>
+
+  <div class="card">
+  <% if (orders.length === 0) { %>
+    <p class="muted">No orders match these filters.</p>
+  <% } else { %>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Reference</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Landing page</th><th>Date</th></tr></thead>
+      <tbody>
+      <% orders.forEach((o) => { %>
+        <tr>
+          <td><a href="<%= base %>/orders/<%= o.id %>"><strong><%= o.reference %></strong></a></td>
+          <td><%= o.customer_name %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %></td>
+          <td><%= o.items %></td>
+          <td><%= formatMoney(o.total_minor, o.currency) %></td>
+          <td><span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span></td>
+          <td class="muted"><%= o.landing_page_name || '—' %></td>
+          <td class="muted"><%= formatDate(o.created_at) %></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+    <% if (pageCount > 1) { %>
+      <div class="row" style="margin-top:12px">
+        <% if (pageNumber > 1) { %><a class="btn secondary" href="?<%= qs %>&p=<%= pageNumber - 1 %>">← Newer</a><% } %>
+        <span class="muted">Page <%= pageNumber %> of <%= pageCount %></span>
+        <% if (pageNumber < pageCount) { %><a class="btn secondary" href="?<%= qs %>&p=<%= pageNumber + 1 %>">Older →</a><% } %>
+      </div>
+    <% } %>
+  <% } %>
+  </div>
+</main>
+</body></html>

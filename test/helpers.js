@@ -1,0 +1,54 @@
+import request from 'supertest';
+import { createPool } from '../src/db.js';
+import { migrate } from '../src/migrate.js';
+import { createApp } from '../src/app.js';
+
+// Tests run against a disposable local database named in .env.test (never production).
+export function testDatabaseUrl() {
+  const url = process.env.DATABASE_URL;
+  if (!url || !/_test\b/.test(url)) {
+    throw new Error('Tests require DATABASE_URL pointing at a *_test database (see .env.test)');
+  }
+  return url;
+}
+
+export const ORIGIN = 'https://roseskincare9-code.github.io';
+
+export function makeConfig(overrides = {}) {
+  return {
+    isProduction: false,
+    sessionSecret: 'test-secret',
+    allowSignup: true,
+    databaseUrl: testDatabaseUrl(),
+    allowedOrigins: [ORIGIN],
+    publicBaseUrl: 'http://skyfly.test',
+    orderRateLimit: 1000,
+    ...overrides,
+  };
+}
+
+export async function resetDatabase(pool) {
+  await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  await migrate(pool);
+}
+
+export function setup(overrides) {
+  const pool = createPool(testDatabaseUrl(), false);
+  const config = makeConfig(overrides);
+  return { pool, config, app: createApp({ pool, config }) };
+}
+
+export async function csrfToken(agent, path = '/login') {
+  const res = await agent.get(path);
+  const match = res.text.match(/name="_csrf" value="([^"]+)"/);
+  if (!match) throw new Error(`No CSRF token on ${path}`);
+  return match[1];
+}
+
+export async function signUp(app, { name = 'Owner', email, password = 'correct-horse-battery' }) {
+  const agent = request.agent(app);
+  const _csrf = await csrfToken(agent, '/signup');
+  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password });
+  if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
+  return agent;
+}

@@ -5,7 +5,8 @@ services:
   - type: web
     name: skyfly
     runtime: node
-    plan: starter            # review before applying (paid plan)
+    region: frankfurt         # closest Render region to Nigeria
+    plan: starter             # paid; "free" sleeps when idle (slow first order). Review before applying.
     buildCommand: npm ci --omit=dev
     preDeployCommand: npm run migrate
     startCommand: npm start
@@ -19,12 +20,19 @@ services:
         fromDatabase:
           name: skyfly-db
           property: connectionString
+      - key: DATABASE_SSL
+        value: "false"        # internal Render connection; set "true" for Supabase or external URLs
       - key: SESSION_SECRET
         generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false           # e.g. https://skyfly.onrender.com - set in the dashboard
+      - key: ALLOWED_ORIGINS
+        value: https://roseskincare9-code.github.io
       - key: ALLOW_SIGNUP
-        value: "false"     # set to "true" only while creating the owner account
+        value: "true"         # set to "false" right after creating the owner account
 
 databases:
   - name: skyfly-db
     databaseName: skyfly
-    plan: basic-256mb      # review before applying (paid plan, persistent with backups)
+    region: frankfurt
+    plan: basic-256mb         # paid, persistent with backups. Free Postgres expires. Review before applying.

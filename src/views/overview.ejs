@@ -1,0 +1,66 @@
+<%- include('partials/head', { title: business.name }) %>
+<%- include('partials/nav', { active: 'overview' }) %>
+<main>
+  <h1><%= business.name %></h1>
+
+  <div class="grid">
+    <a class="stat" href="<%= base %>/orders"><div class="n"><%= totalOrders %></div><div class="l">Total orders</div></a>
+    <div class="stat"><div class="n"><%= today.count %></div><div class="l">Orders today</div><div class="s"><%= formatMoney(today.total, business.currency) %></div></div>
+    <% ['new','pending_confirmation','confirmed','processing','dispatched','delivered'].forEach((s) => { %>
+      <a class="stat" href="<%= base %>/orders?status=<%= s %>"><div class="n"><%= counts[s].count %></div><div class="l"><%= STATUS_LABELS[s] %></div></a>
+    <% }) %>
+    <a class="stat" href="<%= base %>/orders?status=cancelled"><div class="n"><%= counts.cancelled.count + counts.returned.count %></div><div class="l">Cancelled / returned</div><div class="s"><%= counts.cancelled.count %> cancelled · <%= counts.returned.count %> returned</div></a>
+  </div>
+
+  <div class="card">
+    <h2>Sales</h2>
+    <div class="grid" style="margin-bottom:8px">
+      <div class="stat"><div class="n"><%= formatMoney(sales.confirmed, business.currency) %></div><div class="l">Confirmed sales</div><div class="s"><%= sales.confirmedCount %> orders</div></div>
+      <div class="stat"><div class="n"><%= formatMoney(sales.delivered, business.currency) %></div><div class="l">Delivered sales</div><div class="s"><%= sales.deliveredCount %> orders</div></div>
+      <div class="stat"><div class="n"><%= formatMoney(sales.pipeline, business.currency) %></div><div class="l">Awaiting confirmation</div></div>
+      <div class="stat"><div class="n"><%= formatMoney(sales.lost, business.currency) %></div><div class="l">Cancelled / returned</div></div>
+    </div>
+    <p class="muted" style="font-size:13px;margin:0">
+      <strong>Confirmed sales</strong> = Confirmed + Processing + Dispatched + Delivered.
+      <strong>Delivered sales</strong> = Delivered only.
+      <strong>Awaiting confirmation</strong> = New + Pending confirmation (not counted as sales).
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><h2>Recent orders</h2><a href="<%= base %>/orders">All orders →</a></div>
+    <% if (recent.length === 0) { %>
+      <p class="muted">No orders yet. Orders from your landing pages will appear here.</p>
+    <% } else { %>
+      <div class="table-wrap"><table class="stack">
+        <thead><tr><th>Reference</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody>
+        <% recent.forEach((o) => { %>
+          <tr>
+            <td><a href="<%= base %>/orders/<%= o.id %>"><%= o.reference %></a></td>
+            <td><%= o.customer_name %></td>
+            <td><%= formatMoney(o.total_minor, o.currency) %></td>
+            <td><span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span></td>
+            <td class="muted"><%= formatDate(o.created_at) %></td>
+          </tr>
+        <% }) %>
+        </tbody>
+      </table></div>
+    <% } %>
+  </div>
+
+  <% if (byPage.length) { %>
+  <div class="card">
+    <h2>Orders by landing page</h2>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Landing page</th><th>Orders</th><th>Confirmed sales</th></tr></thead>
+      <tbody>
+      <% byPage.forEach((p) => { %>
+        <tr><td><a href="<%= base %>/orders?page=<%= p.id %>"><%= p.name %></a></td><td><%= p.orders %></td><td><%= formatMoney(p.confirmed_sales, business.currency) %></td></tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+  </div>
+  <% } %>
+</main>
+</body></html>

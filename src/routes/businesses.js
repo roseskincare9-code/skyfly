@@ -36,18 +36,5 @@ export function businessRoutes({ pool }) {
     }
   });
 
-  router.get('/businesses/:id', async (req, res, next) => {
-    try {
-      const { rows } = await pool.query(
-        'SELECT id, name, slug, currency, created_at FROM businesses WHERE id = $1 AND owner_id = $2',
-        [req.params.id, req.session.userId],
-      );
-      if (!rows[0]) return res.status(404).render('error', { message: 'Business not found.' });
-      res.render('business', { business: rows[0] });
-    } catch (err) {
-      next(err);
-    }
-  });
-
   return router;
 }

@@ -1,0 +1,42 @@
+<%- include('partials/head', { title: 'Landing pages' }) %>
+<%- include('partials/nav', { active: 'pages' }) %>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <h1>Landing pages</h1>
+    <a class="btn" href="<%= base %>/landing-pages/new">Register a landing page</a>
+  </div>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <p class="muted">Landing pages are hosted elsewhere (e.g. GitHub Pages) and send orders to Skyfly. Each page sends its <strong>form key</strong> so orders are attributed to it. Only <strong>active</strong> pages can take orders, and only for their connected products.</p>
+
+  <% pages.forEach((p) => { %>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0"><%= p.name %> <span class="pill <%= p.status %>"><%= p.status %></span></h2>
+      <a href="<%= base %>/orders?page=<%= p.id %>"><%= p.order_count %> orders →</a>
+    </div>
+    <dl class="kv" style="margin-top:10px">
+      <dt>URL</dt><dd><% if (p.url) { %><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.url %></a><% } else { %>—<% } %></dd>
+      <dt>Form key</dt><dd><code><%= p.slug %></code></dd>
+      <dt>Products</dt><dd><%= p.product_names || 'None connected' %></dd>
+    </dl>
+    <div class="row" style="margin-top:12px">
+      <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>">Edit</a>
+      <% if (p.url) { %>
+        <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>/preview">Preview</a>
+        <a class="btn secondary" href="<%= p.url %>" target="_blank" rel="noopener">Open page ↗</a>
+      <% } %>
+      <form method="post" action="<%= base %>/landing-pages/<%= p.id %>/duplicate"><%- include('partials/csrf') %><button class="secondary" type="submit">Duplicate</button></form>
+      <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>/export.json">Export</a>
+    </div>
+  </div>
+  <% }) %>
+
+  <form class="card" method="post" action="<%= base %>/landing-pages/import">
+    <%- include('partials/csrf') %>
+    <h2>Import</h2>
+    <p class="muted" style="margin-top:0">Paste a Skyfly landing page export. This imports the page's Skyfly settings (name, URL, connected products). It does not import the page's HTML or design, which stay on its own host.</p>
+    <textarea name="json" required placeholder='{"format":"skyfly.landing-page.v1", ...}'></textarea>
+    <p><button type="submit" class="secondary">Import as draft</button></p>
+  </form>
+</main>
+</body></html>

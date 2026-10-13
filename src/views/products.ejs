@@ -1,0 +1,37 @@
+<%- include('partials/head', { title: 'Products' }) %>
+<%- include('partials/nav', { active: 'products' }) %>
+<main>
+  <h1>Products &amp; packages</h1>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <p class="muted">These prices are the source of truth. Orders are always charged at the price saved here, whatever the landing page shows. Changing a price does not change existing orders.</p>
+
+  <% products.forEach((p) => { %>
+  <form class="card" method="post" action="<%= base %>/products/<%= p.id %>">
+    <%- include('partials/csrf') %>
+    <div class="row" style="justify-content:space-between">
+      <strong><%= p.name %></strong>
+      <span class="muted">Code: <code><%= p.code %></code> · ordered <%= p.times_ordered %>×</span>
+    </div>
+    <div class="filters">
+      <div><label>Name</label><input name="name" value="<%= p.name %>" required maxlength="200"></div>
+      <div><label>Price (<%= business.currency %>)</label><input name="price" value="<%= p.price_minor / 100 %>" inputmode="decimal" required></div>
+      <div><label>Sort order</label><input name="sort_order" type="number" value="<%= p.sort_order %>"></div>
+      <div><label><input type="checkbox" name="active" <%= p.active ? 'checked' : '' %>> Available to order</label></div>
+      <div><button type="submit" class="secondary">Save</button></div>
+    </div>
+  </form>
+  <% }) %>
+
+  <form class="card" method="post" action="<%= base %>/products">
+    <%- include('partials/csrf') %>
+    <h2>Add product</h2>
+    <div class="filters">
+      <div><label for="name">Name</label><input id="name" name="name" required maxlength="200"></div>
+      <div><label for="code">Code (used by landing pages)</label><input id="code" name="code" placeholder="e.g. package-1" maxlength="50"></div>
+      <div><label for="price">Price (<%= business.currency %>)</label><input id="price" name="price" inputmode="decimal" required placeholder="23500"></div>
+      <div><label for="sort_order">Sort order</label><input id="sort_order" name="sort_order" type="number" value="0"></div>
+      <div><button type="submit">Add product</button></div>
+    </div>
+  </form>
+</main>
+</body></html>

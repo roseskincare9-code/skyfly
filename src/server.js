@@ -3,7 +3,7 @@ import { createPool } from './db.js';
 import { createApp } from './app.js';
 
 const config = loadConfig();
-const pool = createPool(config.databaseUrl, config.isProduction);
+const pool = createPool(config.databaseUrl, config.databaseSsl);
 const app = createApp({ pool, config });
 
 const server = app.listen(config.port, () => {

@@ -1,4 +1,13 @@
-<header>
+<header class="top">
   <a class="brand" href="/">Skyfly</a>
-  <form method="post" action="/logout"><button class="link" type="submit">Log out</button></form>
+  <form method="post" action="/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link" type="submit">Log out</button></form>
 </header>
+<% if (typeof business !== 'undefined' && business) { const tab = typeof active === 'undefined' ? '' : active; %>
+<nav class="sub" aria-label="<%= business.name %>">
+  <a href="<%= base %>" class="<%= tab === 'overview' ? 'on' : '' %>"><%= business.name %></a>
+  <a href="<%= base %>/orders" class="<%= tab === 'orders' ? 'on' : '' %>">Orders</a>
+  <a href="<%= base %>/products" class="<%= tab === 'products' ? 'on' : '' %>">Products</a>
+  <a href="<%= base %>/landing-pages" class="<%= tab === 'pages' ? 'on' : '' %>">Landing pages</a>
+  <a href="<%= base %>/settings" class="<%= tab === 'settings' ? 'on' : '' %>">Settings</a>
+</nav>
+<% } %>
