@@ -4,7 +4,7 @@
   <p><a href="<%= base %>/orders">← Orders</a></p>
   <% if (saved) { %><div class="notice">Order updated.</div><% } %>
   <div class="row" style="justify-content:space-between">
-    <h1><%= order.reference %> <span class="pill <%= order.status %>"><%= STATUS_LABELS[order.status] %></span></h1>
+    <h1><%= order.reference %> <%- include('partials/pills', { o: order }) %></h1>
     <div class="row">
       <a class="btn secondary" href="tel:<%= order.phone %>">📞 Call</a>
       <a class="btn wa" href="<%= waUrl %>" target="_blank" rel="noopener">WhatsApp</a>
@@ -37,24 +37,38 @@
     <p class="muted" style="font-size:13px;margin-bottom:0">Prices were taken from Skyfly's product list at the time of the order, not from the customer's browser.</p>
   </div>
 
-  <div class="card">
-    <h2>Update status</h2>
-    <form method="post" action="<%= base %>/orders/<%= order.id %>/status">
+  <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(260px, 1fr))">
+    <form class="card" style="margin:0" method="post" action="<%= base %>/orders/<%= order.id %>/status">
       <%- include('partials/csrf') %>
-      <label for="status">Status</label>
-      <select id="status" name="status">
+      <input type="hidden" name="kind" value="fulfillment">
+      <h2>Order status</h2>
+      <select name="status" aria-label="Order status">
         <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= order.status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
       </select>
-      <label for="note">Note (optional, internal)</label>
-      <textarea id="note" name="note" maxlength="1000" placeholder="e.g. Confirmed by phone, delivery Friday"></textarea>
-      <p><button type="submit">Save</button></p>
+      <label>Note (optional, internal)</label>
+      <textarea name="note" maxlength="1000" placeholder="e.g. Confirmed by phone, delivery Friday"></textarea>
+      <p style="margin-bottom:0"><button type="submit">Save order status</button></p>
+    </form>
+    <form class="card" style="margin:0" method="post" action="<%= base %>/orders/<%= order.id %>/status">
+      <%- include('partials/csrf') %>
+      <input type="hidden" name="kind" value="payment">
+      <h2>Payment status</h2>
+      <select name="status" aria-label="Payment status">
+        <% paymentStatuses.forEach((s) => { %><option value="<%= s.value %>" <%= order.payment_status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
+      </select>
+      <label>Note (optional, internal)</label>
+      <textarea name="note" maxlength="1000" placeholder="e.g. Cash collected by rider"></textarea>
+      <p class="muted" style="font-size:13px">Mark <strong>Paid</strong> only when the money has actually been received. This is what sends a Purchase event to your ad pixels.</p>
+      <p style="margin-bottom:0"><button type="submit">Save payment status</button></p>
     </form>
   </div>
+  <div style="height:16px"></div>
 
   <div class="card">
     <h2>Source</h2>
     <dl class="kv">
       <dt>Placed</dt><dd><%= formatDate(order.created_at) %> (Lagos time)</dd>
+      <dt>Entered via</dt><dd><%= { web: 'Website form', api: 'API', manual: 'Manual entry' }[order.source] %></dd>
       <dt>Landing page</dt><dd><%= order.landing_page_name || '—' %></dd>
       <dt>Page URL</dt><dd><%= order.source_url || '—' %></dd>
       <dt>Referrer</dt><dd><%= order.referrer || '—' %></dd>
@@ -67,7 +81,7 @@
     <ul style="margin:0;padding-left:18px">
       <% history.forEach((h) => { %>
         <li><span class="muted"><%= formatDate(h.created_at) %></span> —
-          <% if (h.from_status && h.from_status !== h.to_status) { %><%= STATUS_LABELS[h.from_status] %> → <% } %><strong><%= STATUS_LABELS[h.to_status] %></strong>
+          <% const L = h.kind === 'payment' ? PAYMENT_LABELS : STATUS_LABELS; %><%= h.kind === 'payment' ? 'Payment: ' : '' %><% if (h.from_status && h.from_status !== h.to_status) { %><%= L[h.from_status] %> → <% } %><strong><%= L[h.to_status] %></strong>
           <% if (h.user_name) { %><span class="muted">by <%= h.user_name %></span><% } %>
           <% if (h.note) { %><br><%= h.note %><% } %></li>
       <% }) %>

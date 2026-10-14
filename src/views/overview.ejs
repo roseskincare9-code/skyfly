@@ -1,31 +1,30 @@
 <%- include('partials/head', { title: business.name }) %>
 <%- include('partials/nav', { active: 'overview' }) %>
 <main>
-  <h1><%= business.name %></h1>
+  <div class="row" style="justify-content:space-between">
+    <h1><%= business.name %></h1>
+    <a class="btn" href="<%= base %>/orders/new">+ Add order</a>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><div class="n"><%= formatMoney(sales.paid, business.currency) %></div><div class="l">Paid revenue</div><div class="s"><%= sales.paid_count %> paid orders</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.to_collect, business.currency) %></div><div class="l">To collect</div><div class="s">Approved orders not yet paid</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.confirmed, business.currency) %></div><div class="l">Approved order value</div><div class="s"><%= sales.confirmedCount %> orders</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.pipeline, business.currency) %></div><div class="l">Pending value</div><div class="s">Not yet confirmed</div></div>
+  </div>
 
   <div class="grid">
     <a class="stat" href="<%= base %>/orders"><div class="n"><%= totalOrders %></div><div class="l">Total orders</div></a>
     <div class="stat"><div class="n"><%= today.count %></div><div class="l">Orders today</div><div class="s"><%= formatMoney(today.total, business.currency) %></div></div>
-    <% ['new','pending_confirmation','confirmed','processing','dispatched','delivered'].forEach((s) => { %>
+    <% ['pending','confirmed','processing','dispatched','delivered','cancelled','returned'].forEach((s) => { %>
       <a class="stat" href="<%= base %>/orders?status=<%= s %>"><div class="n"><%= counts[s].count %></div><div class="l"><%= STATUS_LABELS[s] %></div></a>
     <% }) %>
-    <a class="stat" href="<%= base %>/orders?status=cancelled"><div class="n"><%= counts.cancelled.count + counts.returned.count %></div><div class="l">Cancelled / returned</div><div class="s"><%= counts.cancelled.count %> cancelled · <%= counts.returned.count %> returned</div></a>
   </div>
-
-  <div class="card">
-    <h2>Sales</h2>
-    <div class="grid" style="margin-bottom:8px">
-      <div class="stat"><div class="n"><%= formatMoney(sales.confirmed, business.currency) %></div><div class="l">Confirmed sales</div><div class="s"><%= sales.confirmedCount %> orders</div></div>
-      <div class="stat"><div class="n"><%= formatMoney(sales.delivered, business.currency) %></div><div class="l">Delivered sales</div><div class="s"><%= sales.deliveredCount %> orders</div></div>
-      <div class="stat"><div class="n"><%= formatMoney(sales.pipeline, business.currency) %></div><div class="l">Awaiting confirmation</div></div>
-      <div class="stat"><div class="n"><%= formatMoney(sales.lost, business.currency) %></div><div class="l">Cancelled / returned</div></div>
-    </div>
-    <p class="muted" style="font-size:13px;margin:0">
-      <strong>Confirmed sales</strong> = Confirmed + Processing + Dispatched + Delivered.
-      <strong>Delivered sales</strong> = Delivered only.
-      <strong>Awaiting confirmation</strong> = New + Pending confirmation (not counted as sales).
-    </p>
-  </div>
+  <p class="muted" style="font-size:13px">
+    <strong>Paid revenue</strong> counts only orders marked Paid (refunds excluded: <%= formatMoney(sales.refunded, business.currency) %>).
+    <strong>Approved order value</strong> = Confirmed/Approved + Processing + Dispatched + Delivered, paid or not.
+    <strong>To collect</strong> = approved orders whose payment is Unpaid, Pending or Failed.
+  </p>
 
   <div class="card">
     <div class="row" style="justify-content:space-between"><h2>Recent orders</h2><a href="<%= base %>/orders">All orders →</a></div>
@@ -38,9 +37,9 @@
         <% recent.forEach((o) => { %>
           <tr>
             <td><a href="<%= base %>/orders/<%= o.id %>"><%= o.reference %></a></td>
-            <td><%= o.customer_name %></td>
+            <td><%= o.customer_name %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a></td>
             <td><%= formatMoney(o.total_minor, o.currency) %></td>
-            <td><span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span></td>
+            <td><%- include('partials/pills', { o }) %></td>
             <td class="muted"><%= formatDate(o.created_at) %></td>
           </tr>
         <% }) %>
@@ -53,10 +52,10 @@
   <div class="card">
     <h2>Orders by landing page</h2>
     <div class="table-wrap"><table class="stack">
-      <thead><tr><th>Landing page</th><th>Orders</th><th>Confirmed sales</th></tr></thead>
+      <thead><tr><th>Landing page</th><th>Orders</th><th>Paid revenue</th></tr></thead>
       <tbody>
       <% byPage.forEach((p) => { %>
-        <tr><td><a href="<%= base %>/orders?page=<%= p.id %>"><%= p.name %></a></td><td><%= p.orders %></td><td><%= formatMoney(p.confirmed_sales, business.currency) %></td></tr>
+        <tr><td><a href="<%= base %>/orders?page=<%= p.id %>"><%= p.name %></a></td><td><%= p.orders %></td><td><%= formatMoney(p.paid, business.currency) %></td></tr>
       <% }) %>
       </tbody>
     </table></div>

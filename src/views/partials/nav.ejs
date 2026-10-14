@@ -4,10 +4,11 @@
 </header>
 <% if (typeof business !== 'undefined' && business) { const tab = typeof active === 'undefined' ? '' : active; %>
 <nav class="sub" aria-label="<%= business.name %>">
-  <a href="<%= base %>" class="<%= tab === 'overview' ? 'on' : '' %>"><%= business.name %></a>
+  <a href="<%= base %>" class="<%= tab === 'overview' ? 'on' : '' %>">Overview</a>
   <a href="<%= base %>/orders" class="<%= tab === 'orders' ? 'on' : '' %>">Orders</a>
+  <a href="<%= base %>/landing-pages" class="<%= tab === 'pages' ? 'on' : '' %>">Pages</a>
   <a href="<%= base %>/products" class="<%= tab === 'products' ? 'on' : '' %>">Products</a>
-  <a href="<%= base %>/landing-pages" class="<%= tab === 'pages' ? 'on' : '' %>">Landing pages</a>
+  <a href="<%= base %>/pixels" class="<%= tab === 'pixels' ? 'on' : '' %>">Pixels</a>
   <a href="<%= base %>/settings" class="<%= tab === 'settings' ? 'on' : '' %>">Settings</a>
 </nav>
 <% } %>

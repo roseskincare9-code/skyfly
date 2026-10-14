@@ -1,0 +1,46 @@
+<%- include('partials/head', { title: 'Add order' }) %>
+<%- include('partials/nav', { active: 'orders' }) %>
+<main class="narrow">
+  <p><a href="<%= base %>/orders">← Orders</a></p>
+  <h1>Add an order</h1>
+  <p class="muted">For orders taken by phone, WhatsApp or in person.</p>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <% const v = (k) => values[k] ?? ''; const fe = (k) => fields[k] ? `<div class="field-error">${fields[k]}</div>` : ''; %>
+  <form class="card" method="post" action="<%= base %>/orders/new">
+    <%- include('partials/csrf') %>
+    <h2>Customer</h2>
+    <label for="name">Full name *</label><input id="name" name="name" value="<%= v('name') %>" required maxlength="120"><%- fe('name') %>
+    <label for="phone">Phone *</label><input id="phone" name="phone" type="tel" value="<%= v('phone') %>" required placeholder="08012345678"><%- fe('phone') %>
+    <label for="email">Email</label><input id="email" name="email" type="email" value="<%= v('email') %>"><%- fe('email') %>
+    <label for="address">Delivery address *</label><input id="address" name="address" value="<%= v('address') %>" required maxlength="500"><%- fe('address') %>
+    <label for="state">State</label><input id="state" name="state" value="<%= v('state') %>" maxlength="60">
+    <label for="notes">Notes</label><textarea id="notes" name="notes" maxlength="1000"><%= v('notes') %></textarea>
+
+    <h2 style="margin-top:20px">Products</h2>
+    <% if (products.length === 0) { %><p class="error">Add products first under Products.</p><% } %>
+    <% for (let i = 0; i < 3; i += 1) { %>
+      <div class="filters" style="margin-bottom:8px">
+        <div><label for="product_<%= i %>">Product <%= i + 1 %><%= i === 0 ? ' *' : '' %></label>
+          <select id="product_<%= i %>" name="product_<%= i %>"><option value=""><%= i === 0 ? '— Select —' : '— None —' %></option>
+            <% products.forEach((p) => { %><option value="<%= p.id %>" <%= v('product_' + i) === String(p.id) ? 'selected' : '' %>><%= p.name %> · <%= formatMoney(p.price_minor, business.currency) %></option><% }) %>
+          </select></div>
+        <div><label for="quantity_<%= i %>">Qty</label><input id="quantity_<%= i %>" name="quantity_<%= i %>" type="number" min="1" max="100" value="<%= v('quantity_' + i) || 1 %>"></div>
+        <div><label for="price_<%= i %>">Unit price (blank = list price)</label><input id="price_<%= i %>" name="price_<%= i %>" inputmode="decimal" value="<%= v('price_' + i) %>"></div>
+      </div>
+    <% } %>
+    <%- fe('items') %>
+
+    <h2 style="margin-top:20px">Status &amp; source</h2>
+    <div class="filters">
+      <div><label for="status">Order status</label><select id="status" name="status">
+        <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= (v('status') || 'pending') === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %></select></div>
+      <div><label for="payment_status">Payment status</label><select id="payment_status" name="payment_status">
+        <% paymentStatuses.forEach((s) => { %><option value="<%= s.value %>" <%= (v('payment_status') || 'unpaid') === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %></select></div>
+      <div><label for="landing_page_id">Came from page</label><select id="landing_page_id" name="landing_page_id"><option value="">— Not from a page —</option>
+        <% landingPages.forEach((p) => { %><option value="<%= p.id %>" <%= v('landing_page_id') === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }) %></select></div>
+    </div>
+    <p class="muted" style="font-size:13px">Manual orders never send pixel events when created. If you mark one Paid later, a Purchase event is sent.</p>
+    <p><button type="submit">Save order</button></p>
+  </form>
+</main>
+</body></html>

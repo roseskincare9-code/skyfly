@@ -3,7 +3,7 @@
 <main>
   <div class="row" style="justify-content:space-between">
     <h1>Orders <span class="muted" style="font-weight:400;font-size:1rem">(<%= total %>)</span></h1>
-    <a class="btn secondary" href="<%= base %>/orders/export.csv<%= qs ? '?' + qs : '' %>">Export CSV</a>
+    <div class="row"><a class="btn" href="<%= base %>/orders/new">+ Add order</a><a class="btn secondary" href="<%= base %>/orders/export.csv<%= qs ? '?' + qs : '' %>">Export CSV</a></div>
   </div>
 
   <form class="card filters" method="get" action="<%= base %>/orders">
@@ -11,6 +11,14 @@
     <div><label for="status">Status</label>
       <select id="status" name="status"><option value="">All statuses</option>
         <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= filters.status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
+      </select></div>
+    <div><label for="payment">Payment</label>
+      <select id="payment" name="payment"><option value="">All payments</option>
+        <% paymentStatuses.forEach((s) => { %><option value="<%= s.value %>" <%= filters.payment === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>
+      </select></div>
+    <div><label for="source">Source</label>
+      <select id="source" name="source"><option value="">All sources</option>
+        <% [['web','Website form'],['api','API'],['manual','Manual']].forEach(([v,l]) => { %><option value="<%= v %>" <%= filters.source === v ? 'selected' : '' %>><%= l %></option><% }) %>
       </select></div>
     <div><label for="page">Landing page</label>
       <select id="page" name="page"><option value="">All pages</option>
@@ -26,16 +34,16 @@
     <p class="muted">No orders match these filters.</p>
   <% } else { %>
     <div class="table-wrap"><table class="stack">
-      <thead><tr><th>Reference</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Landing page</th><th>Date</th></tr></thead>
+      <thead><tr><th>Reference</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Source</th><th>Date</th></tr></thead>
       <tbody>
       <% orders.forEach((o) => { %>
         <tr>
           <td><a href="<%= base %>/orders/<%= o.id %>"><strong><%= o.reference %></strong></a></td>
-          <td><%= o.customer_name %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %></td>
+          <td><%= o.customer_name %><% if (o.email) { %><br><span class="muted"><%= o.email %></span><% } %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %></td>
           <td><%= o.items %></td>
           <td><%= formatMoney(o.total_minor, o.currency) %></td>
-          <td><span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span></td>
-          <td class="muted"><%= o.landing_page_name || '—' %></td>
+          <td><%- include('partials/pills', { o }) %></td>
+          <td class="muted"><%= o.source === 'manual' ? 'Manual' : (o.landing_page_name || '—') %><% if (o.utm_campaign) { %><br><%= o.utm_campaign %><% } %></td>
           <td class="muted"><%= formatDate(o.created_at) %></td>
         </tr>
       <% }) %>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { normalizePhone } from '../lib/phone.js';
+import { audit } from '../lib/audit.js';
 
 export function settingsRoutes({ pool }) {
   const router = Router({ mergeParams: true });
@@ -22,6 +23,7 @@ export function settingsRoutes({ pool }) {
       'UPDATE businesses SET name = $1, whatsapp_number = $2, order_prefix = $3 WHERE id = $4',
       [name, whatsapp, prefix, req.business.id],
     );
+    await audit(pool, req, { action: 'settings.updated', businessId: req.business.id, details: { name, whatsapp, prefix } });
     res.redirect(`${res.locals.base}/settings?saved=1`);
   }));
 

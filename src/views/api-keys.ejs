@@ -1,0 +1,34 @@
+<%- include('partials/head', { title: 'API keys' }) %>
+<%- include('partials/nav') %>
+<main class="narrow">
+  <p><a href="<%= base %>/settings">← Settings</a></p>
+  <h1>API keys</h1>
+  <p class="muted">Only needed when another <strong>server</strong> sends orders to Skyfly (for example a form provider's webhook). Landing-page forms in a browser don't use keys. Skyfly checks which website they come from instead. Never put a key in a web page.</p>
+  <% if (newKey) { %>
+    <div class="card" style="border-color:var(--ok)">
+      <h2>Copy your new key now</h2>
+      <p>It is shown only once. Store it in the other service's secret settings.</p>
+      <code class="secret" id="new-key"><%= newKey %></code>
+    </div>
+  <% } %>
+  <div class="card">
+    <% if (keys.length === 0) { %><p class="muted">No keys yet.</p><% } %>
+    <ul class="list" style="list-style:none;padding:0;margin:0">
+    <% keys.forEach((k) => { %>
+      <li style="padding:8px 0;border-bottom:1px solid var(--border)" class="row">
+        <div style="flex:1"><strong><%= k.name %></strong> <code><%= k.key_prefix %>…</code><br>
+          <span class="muted" style="font-size:13px">Created <%= formatDate(k.created_at) %> · <%= k.last_used_at ? 'last used ' + formatDate(k.last_used_at) : 'never used' %></span></div>
+        <% if (k.revoked_at) { %><span class="pill cancelled">Revoked</span><% } else { %>
+          <form method="post" action="<%= base %>/api-keys/<%= k.id %>/revoke"><%- include('partials/csrf') %><button class="secondary" type="submit">Revoke</button></form>
+        <% } %>
+      </li>
+    <% }) %>
+    </ul>
+  </div>
+  <form class="card" method="post" action="<%= base %>/api-keys">
+    <%- include('partials/csrf') %>
+    <label for="name">Key name</label><input id="name" name="name" placeholder="e.g. Form provider webhook" maxlength="100">
+    <p><button type="submit">Create key</button></p>
+  </form>
+</main>
+</body></html>

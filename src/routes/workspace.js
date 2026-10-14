@@ -5,6 +5,7 @@ import { ordersRoutes } from './orders.js';
 import { productRoutes } from './products.js';
 import { landingPageRoutes } from './landingPages.js';
 import { settingsRoutes } from './settings.js';
+import { apiKeyRoutes } from './apiKeys.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
 // Everything under /businesses/:businessId is only visible to that business's owner.
@@ -28,32 +29,41 @@ export function workspaceRoutes({ pool }) {
 
   scoped.get('/', asyncHandler(async (req, res) => {
     const businessId = req.business.id;
-    const byStatus = await pool.query(
-      `SELECT status, count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total
-         FROM orders WHERE business_id = $1 GROUP BY status`,
-      [businessId],
-    );
+    const [byStatus, money, today, byPage, recent] = await Promise.all([
+      pool.query(
+        'SELECT status, count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders WHERE business_id = $1 GROUP BY status',
+        [businessId],
+      ),
+      pool.query(
+        `SELECT
+           coalesce(sum(total_minor) FILTER (WHERE payment_status = 'paid'), 0)::bigint AS paid,
+           count(*) FILTER (WHERE payment_status = 'paid')::int AS paid_count,
+           coalesce(sum(total_minor) FILTER (WHERE payment_status IN ('unpaid', 'pending', 'failed') AND status = ANY($2::text[])), 0)::bigint AS to_collect,
+           coalesce(sum(total_minor) FILTER (WHERE payment_status = 'refunded'), 0)::bigint AS refunded
+         FROM orders WHERE business_id = $1`,
+        [businessId, SALES_DEFINITIONS.confirmed],
+      ),
+      pool.query(
+        `SELECT count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders
+          WHERE business_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos'`,
+        [businessId],
+      ),
+      pool.query(
+        `SELECT lp.id, lp.name, count(o.id)::int AS orders,
+                coalesce(sum(o.total_minor) FILTER (WHERE o.payment_status = 'paid'), 0)::bigint AS paid
+           FROM landing_pages lp LEFT JOIN orders o ON o.landing_page_id = lp.id
+          WHERE lp.business_id = $1 GROUP BY lp.id ORDER BY orders DESC, lp.name LIMIT 10`,
+        [businessId],
+      ),
+      pool.query(
+        `SELECT id, reference, customer_name, phone, status, payment_status, total_minor, currency, created_at
+           FROM orders WHERE business_id = $1 ORDER BY created_at DESC LIMIT 8`,
+        [businessId],
+      ),
+    ]);
     const counts = Object.fromEntries(ORDER_STATUSES.map((s) => [s.value, { count: 0, total: 0 }]));
     for (const r of byStatus.rows) counts[r.status] = { count: r.count, total: r.total };
     const sum = (statuses, key) => statuses.reduce((acc, s) => acc + counts[s][key], 0);
-
-    const today = await pool.query(
-      `SELECT count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders
-        WHERE business_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos'`,
-      [businessId],
-    );
-    const byPage = await pool.query(
-      `SELECT lp.id, lp.name, count(o.id)::int AS orders,
-              coalesce(sum(o.total_minor) FILTER (WHERE o.status = ANY($2::text[])), 0)::bigint AS confirmed_sales
-         FROM landing_pages lp LEFT JOIN orders o ON o.landing_page_id = lp.id
-        WHERE lp.business_id = $1 GROUP BY lp.id ORDER BY orders DESC, lp.name LIMIT 10`,
-      [businessId, SALES_DEFINITIONS.confirmed],
-    );
-    const recent = await pool.query(
-      `SELECT id, reference, customer_name, status, total_minor, currency, created_at
-         FROM orders WHERE business_id = $1 ORDER BY created_at DESC LIMIT 8`,
-      [businessId],
-    );
 
     res.render('overview', {
       counts,
@@ -61,10 +71,8 @@ export function workspaceRoutes({ pool }) {
       sales: {
         confirmed: sum(SALES_DEFINITIONS.confirmed, 'total'),
         confirmedCount: sum(SALES_DEFINITIONS.confirmed, 'count'),
-        delivered: sum(SALES_DEFINITIONS.delivered, 'total'),
-        deliveredCount: sum(SALES_DEFINITIONS.delivered, 'count'),
         pipeline: sum(SALES_DEFINITIONS.pipeline, 'total'),
-        lost: sum(SALES_DEFINITIONS.lost, 'total'),
+        ...money.rows[0],
       },
       today: today.rows[0],
       byPage: byPage.rows,
@@ -72,10 +80,20 @@ export function workspaceRoutes({ pool }) {
     });
   }));
 
+  scoped.get('/activity', asyncHandler(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.business_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT 200`,
+      [req.business.id],
+    );
+    res.render('activity', { entries: rows, active: 'activity' });
+  }));
+
   scoped.use('/orders', ordersRoutes({ pool }));
   scoped.use('/products', productRoutes({ pool }));
   scoped.use('/landing-pages', landingPageRoutes({ pool }));
   scoped.use('/settings', settingsRoutes({ pool }));
+  scoped.use('/api-keys', apiKeyRoutes({ pool }));
 
   router.use('/businesses/:businessId', scoped);
   return router;

@@ -1,0 +1,37 @@
+// Which websites may submit browser orders for a landing page: the page's own
+// URL, its Skyfly-hosted address and custom domain, plus any global extras.
+export function originOf(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+export function originsForPage(page, config) {
+  const origins = new Set(config.allowedOrigins);
+  const own = page.url && originOf(page.url);
+  if (own) origins.add(own);
+  if (page.hosted && config.pagesBaseUrl) origins.add(originOf(config.pagesBaseUrl));
+  if (page.custom_domain) origins.add(`https://${page.custom_domain}`);
+  return origins;
+}
+
+// Union of every registered page's origins, used to answer CORS preflights
+// (which carry no body, so the landing page is not yet known). Cached briefly.
+let cache = { at: 0, origins: new Set() };
+export async function allKnownOrigins(pool, config) {
+  if (Date.now() - cache.at < 30_000) return cache.origins;
+  const { rows } = await pool.query(
+    `SELECT url, custom_domain, (published_version_id IS NOT NULL) AS hosted FROM landing_pages WHERE status <> 'archived'`,
+  );
+  const origins = new Set(config.allowedOrigins);
+  for (const row of rows) for (const o of originsForPage(row, config)) origins.add(o);
+  cache = { at: Date.now(), origins };
+  return origins;
+}
+
+export function clearOriginCache() {
+  cache = { at: 0, origins: new Set() };
+}

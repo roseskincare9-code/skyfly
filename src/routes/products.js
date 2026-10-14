@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { parseMajorToMinor } from '../lib/money.js';
 import { slugify } from '../lib/auth.js';
+import { audit } from '../lib/audit.js';
 
 function readProduct(body) {
   const name = String(body.name ?? '').trim().slice(0, 200);
@@ -41,6 +42,7 @@ export function productRoutes({ pool }) {
       if (err.code === '23505') return render(req, res, `A product with code "${p.code}" already exists.`, 409);
       throw err;
     }
+    await audit(pool, req, { action: 'product.created', businessId: req.business.id, entityType: 'product', entityId: p.code, details: { price: p.price } });
     res.redirect(`${res.locals.base}/products`);
   }));
 
@@ -54,6 +56,7 @@ export function productRoutes({ pool }) {
       [p.name, p.price, p.sortOrder, p.active, req.params.productId, req.business.id],
     );
     if (!rowCount) return res.status(404).render('error', { message: 'Product not found.' });
+    await audit(pool, req, { action: 'product.updated', businessId: req.business.id, entityType: 'product', entityId: req.params.productId, details: { price: p.price, active: p.active } });
     res.redirect(`${res.locals.base}/products`);
   }));
 

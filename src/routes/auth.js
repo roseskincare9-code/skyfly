@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
+import { audit } from '../lib/audit.js';
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -16,12 +17,13 @@ export function authRoutes({ pool, config }) {
       const { rows } = await pool.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
       const user = rows[0];
       if (!user || !(await verifyPassword(password, user.password_hash))) {
+        await audit(pool, req, { action: 'login.failed', details: { email } });
         return res.status(401).render('login', { error: 'Invalid email or password.', allowSignup: config.allowSignup });
       }
       req.session.regenerate((err) => {
         if (err) return next(err);
         req.session.userId = user.id;
-        res.redirect('/');
+        audit(pool, req, { action: 'login.succeeded' }).then(() => res.redirect('/'), next);
       });
     } catch (err) {
       next(err);

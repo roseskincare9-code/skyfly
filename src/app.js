@@ -11,7 +11,7 @@ import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
 import { csrf } from './lib/csrf.js';
 import { formatMoney } from './lib/money.js';
-import { STATUS_LABELS } from './lib/statuses.js';
+import { STATUS_LABELS, PAYMENT_LABELS } from './lib/statuses.js';
 
 const viewsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'views');
 
@@ -32,6 +32,7 @@ export function createApp({ pool, config }) {
     formatMoney,
     formatDate: (d) => (d ? dateFormat.format(new Date(d)) : ''),
     STATUS_LABELS,
+    PAYMENT_LABELS,
   });
 
   app.use(helmet());

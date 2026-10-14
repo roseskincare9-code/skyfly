@@ -61,7 +61,9 @@ describe('public order API', () => {
     const { rows: [order] } = await pool.query('SELECT * FROM orders WHERE reference = $1', [res.body.reference]);
     assert.equal(order.phone, '+2348031234567');
     assert.equal(order.total_minor, 6600000);
-    assert.equal(order.status, 'new');
+    assert.equal(order.status, 'pending');
+    assert.equal(order.payment_status, 'unpaid');
+    assert.equal(order.source, 'web');
     assert.equal(order.state, 'Lagos');
     assert.equal(order.customer_notes, 'Call after 5pm');
     assert.equal(order.utm_source, 'facebook');
@@ -251,16 +253,18 @@ describe('dashboard', () => {
     const { rows: [updated] } = await pool.query('SELECT status FROM orders WHERE id = $1', [order.id]);
     assert.equal(updated.status, 'delivered');
     const { rows: history } = await pool.query('SELECT * FROM order_status_history WHERE order_id = $1 ORDER BY id', [order.id]);
-    assert.deepEqual(history.map((h) => h.to_status), ['new', 'delivered']);
+    assert.deepEqual(history.map((h) => h.to_status), ['pending', 'delivered']);
 
     const overview = await owner.get(`/businesses/${businessId}`).expect(200);
-    assert.match(overview.text, /₦93,500[\s\S]*Delivered sales/);
     // Totals across several statuses must be added as numbers, not concatenated.
-    const { rows: [pipeline] } = await pool.query(
-      "SELECT sum(total_minor)::bigint AS t FROM orders WHERE business_id = $1 AND status IN ('new', 'pending_confirmation')", [businessId]);
-    assert.ok(pipeline.t > 0);
-    const expected = `₦${(pipeline.t / 100).toLocaleString('en-NG')}`;
-    assert.match(overview.text, new RegExp(`${expected}</div><div class="l">Awaiting confirmation`));
+    const { rows: [pending] } = await pool.query(
+      "SELECT sum(total_minor)::bigint AS t FROM orders WHERE business_id = $1 AND status = 'pending'", [businessId]);
+    assert.ok(pending.t > 0);
+    const expected = `₦${(pending.t / 100).toLocaleString('en-NG')}`;
+    assert.match(overview.text, new RegExp(`${expected}</div><div class="l">Pending value`));
+    // Delivered but unpaid: counted as approved value and "to collect", not as paid revenue.
+    assert.match(overview.text, /₦0<\/div><div class="l">Paid revenue/);
+    assert.match(overview.text, /₦93,500<\/div><div class="l">To collect/);
   });
 
   test('another owner cannot see or update these orders', async () => {

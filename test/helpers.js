@@ -22,6 +22,7 @@ export function makeConfig(overrides = {}) {
     databaseUrl: testDatabaseUrl(),
     allowedOrigins: [ORIGIN],
     publicBaseUrl: 'http://skyfly.test',
+    pagesBaseUrl: 'http://pages.test',
     orderRateLimit: 1000,
     ...overrides,
   };

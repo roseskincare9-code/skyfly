@@ -37,6 +37,8 @@ export function loadConfig() {
     // Websites allowed to submit orders from the browser, e.g. https://roseskincare9-code.github.io
     allowedOrigins: list('ALLOWED_ORIGINS'),
     publicBaseUrl,
+    // Where Skyfly-hosted landing pages are served, on a different host from the dashboard.
+    pagesBaseUrl: (process.env.PAGES_BASE_URL || '').replace(/\/+$/, ''),
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
   };
 }

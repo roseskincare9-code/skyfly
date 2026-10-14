@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { normalizePhone } from '../lib/phone.js';
 import { generateReference, generateToken } from '../lib/reference.js';
+import { originsForPage } from '../lib/origins.js';
+import { STATUS_VALUES, PAYMENT_VALUES } from '../lib/statuses.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MAX_ITEMS = 10;
@@ -98,7 +100,8 @@ function fingerprint(input) {
 
 async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
-    `SELECT lp.id, lp.business_id, lp.status, b.currency, b.order_prefix
+    `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain,
+            (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
     [slug],
@@ -150,64 +153,56 @@ async function findByIdempotencyKey(client, businessId, key) {
   return rows[0];
 }
 
-// Saves an order exactly once per idempotency key. Returns { order, replayed }.
-export async function createOrder(pool, input) {
-  const print = fingerprint(input);
+// Inserts an order with its items and first history row inside an open transaction.
+async function insertOrder(client, o) {
+  const inserted = await client.query(
+    `INSERT INTO orders (
+       business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
+       customer_name, phone, email, address, state, customer_notes, currency, total_minor,
+       source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+       status, payment_status, source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+     ON CONFLICT (business_id, idempotency_key) DO NOTHING
+     RETURNING id, reference, access_token, total_minor, currency`,
+    [
+      o.businessId, o.landingPageId, generateReference(o.prefix), generateToken(), o.idempotencyKey, o.fingerprint,
+      o.customer.name, o.customer.phone, o.customer.email, o.customer.address, o.customer.state, o.customer.notes,
+      o.currency, o.total,
+      o.attribution.sourceUrl, o.attribution.referrer, o.attribution.utmSource, o.attribution.utmMedium,
+      o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
+      o.status, o.paymentStatus, o.source,
+    ],
+  );
+  const order = inserted.rows[0];
+  if (!order) return null;
+  for (const item of o.items) {
+    await client.query(
+      `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal],
+    );
+  }
+  await client.query(
+    `INSERT INTO order_status_history (order_id, from_status, to_status, note, changed_by) VALUES ($1, NULL, $2, $3, $4)`,
+    [order.id, o.status, o.historyNote, o.userId ?? null],
+  );
+  if (o.paymentStatus !== 'unpaid') {
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, note, changed_by, kind) VALUES ($1, 'unpaid', $2, NULL, $3, 'payment')`,
+      [order.id, o.paymentStatus, o.userId ?? null],
+    );
+  }
+  return order;
+}
 
+// Retries the whole transaction if the random reference collides (extremely rare).
+async function withReferenceRetry(pool, fn) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const client = await pool.connect();
     try {
-      const page = await loadLandingPage(client, input.landingPage);
-      if (!page || page.status !== 'active') {
-        throw new OrderError(400, 'UNKNOWN_LANDING_PAGE', 'This order form is not accepting orders right now. Please contact us on WhatsApp.');
-      }
-
-      const existing = await findByIdempotencyKey(client, page.business_id, input.idempotencyKey);
-      if (existing) return replay(existing, print);
-
-      const items = await loadPricedItems(client, page.id, input.items);
-      const total = items.reduce((sum, i) => sum + i.lineTotal, 0);
-      const { customer: c, attribution: a } = input;
-
-      await client.query('BEGIN');
-      const inserted = await client.query(
-        `INSERT INTO orders (
-           business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
-           customer_name, phone, email, address, state, customer_notes, currency, total_minor,
-           source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-         ON CONFLICT (business_id, idempotency_key) DO NOTHING
-         RETURNING id, reference, access_token, total_minor, currency`,
-        [
-          page.business_id, page.id, generateReference(page.order_prefix), generateToken(), input.idempotencyKey, print,
-          c.name, c.phone, c.email, c.address, c.state, c.notes, page.currency, total,
-          a.sourceUrl, a.referrer, a.utmSource, a.utmMedium, a.utmCampaign, a.utmContent, a.utmTerm,
-        ],
-      );
-
-      if (!inserted.rows[0]) {
-        // A concurrent request with the same key committed first.
-        await client.query('ROLLBACK');
-        return replay(await findByIdempotencyKey(client, page.business_id, input.idempotencyKey), print);
-      }
-
-      const order = inserted.rows[0];
-      for (const item of items) {
-        await client.query(
-          `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal],
-        );
-      }
-      await client.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, note) VALUES ($1, NULL, 'new', 'Order placed')`,
-        [order.id],
-      );
-      await client.query('COMMIT');
-      return { order, replayed: false };
+      return await fn(client);
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
-      // Reference collision: extremely rare, so simply retry with a new reference.
       if (err.code === '23505' && err.constraint === 'orders_reference_key') continue;
       throw err;
     } finally {
@@ -215,6 +210,116 @@ export async function createOrder(pool, input) {
     }
   }
   throw new Error('Could not allocate a unique order reference');
+}
+
+// Saves a public order exactly once per idempotency key. `auth` is either
+// { origin } for browser forms or { businessId } for a verified API key.
+export async function createOrder(pool, input, auth, config) {
+  const print = fingerprint(input);
+
+  return withReferenceRetry(pool, async (client) => {
+    const page = await loadLandingPage(client, input.landingPage);
+    if (!page || page.status !== 'active') {
+      throw new OrderError(400, 'UNKNOWN_LANDING_PAGE', 'This order form is not accepting orders right now. Please contact us on WhatsApp.');
+    }
+    if (auth.businessId !== undefined) {
+      if (page.business_id !== auth.businessId) {
+        throw new OrderError(403, 'FORBIDDEN', 'This API key cannot submit orders for that landing page.');
+      }
+    } else if (!originsForPage(page, config).has(auth.origin)) {
+      throw new OrderError(403, 'ORIGIN_NOT_ALLOWED', 'This website is not allowed to submit orders for that landing page.');
+    }
+
+    const existing = await findByIdempotencyKey(client, page.business_id, input.idempotencyKey);
+    if (existing) return replay(existing, print);
+
+    const items = await loadPricedItems(client, page.id, input.items);
+    await client.query('BEGIN');
+    const order = await insertOrder(client, {
+      businessId: page.business_id, landingPageId: page.id, prefix: page.order_prefix, currency: page.currency,
+      idempotencyKey: input.idempotencyKey, fingerprint: print, customer: input.customer, attribution: input.attribution,
+      items, total: items.reduce((sum, i) => sum + i.lineTotal, 0),
+      status: 'pending', paymentStatus: 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
+    });
+    if (!order) {
+      // A concurrent request with the same key committed first.
+      await client.query('ROLLBACK');
+      return replay(await findByIdempotencyKey(client, page.business_id, input.idempotencyKey), print);
+    }
+    await client.query('COMMIT');
+    return { order, replayed: false };
+  });
+}
+
+// Orders typed in by the owner (e.g. taken by phone). The owner may set the
+// unit price, and choose the starting fulfilment and payment status.
+export async function createManualOrder(pool, business, userId, body) {
+  const fields = {};
+  const input = (() => {
+    try {
+      return validateOrderInput({
+        landingPage: 'manual',
+        idempotencyKey: generateToken(),
+        customer: body,
+        items: [{ product: 'placeholder', quantity: 1 }],
+      });
+    } catch (err) {
+      if (err instanceof OrderError) Object.assign(fields, err.details.fields);
+      return null;
+    }
+  })();
+
+  const status = STATUS_VALUES.includes(body.status) ? body.status : 'pending';
+  const paymentStatus = PAYMENT_VALUES.includes(body.payment_status) ? body.payment_status : 'unpaid';
+  const landingPageId = /^\d+$/.test(String(body.landing_page_id ?? '')) ? Number(body.landing_page_id) : null;
+
+  const lines = [];
+  for (let i = 0; i < 3; i += 1) {
+    const productId = String(body[`product_${i}`] ?? '');
+    if (!productId) continue;
+    const quantity = Number(body[`quantity_${i}`] || 1);
+    const priceText = String(body[`price_${i}`] ?? '').replace(/[,\s₦]/g, '');
+    if (!/^\d+$/.test(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      fields.items = 'Check the products and quantities.';
+      continue;
+    }
+    if (priceText && !/^\d{1,12}(\.\d{1,2})?$/.test(priceText)) {
+      fields.items = 'Enter prices as numbers, e.g. 23500.';
+      continue;
+    }
+    lines.push({ productId: Number(productId), quantity, price: priceText ? Math.round(Number(priceText) * 100) : null });
+  }
+  if (lines.length === 0) fields.items = fields.items || 'Add at least one product.';
+  if (Object.keys(fields).length) throw new OrderError(400, 'VALIDATION', 'Please check the highlighted details.', { fields });
+
+  const { rows: products } = await pool.query(
+    'SELECT id, code, name, price_minor FROM products WHERE business_id = $1 AND id = ANY($2::bigint[])',
+    [business.id, lines.map((l) => l.productId)],
+  );
+  const byId = new Map(products.map((p) => [Number(p.id), p]));
+  const items = lines.map((l) => {
+    const p = byId.get(l.productId);
+    if (!p) throw new OrderError(400, 'VALIDATION', 'Please check the highlighted details.', { fields: { items: 'Unknown product.' } });
+    const unit = l.price ?? Number(p.price_minor);
+    return { productId: p.id, code: p.code, name: p.name, unitPrice: unit, quantity: l.quantity, lineTotal: unit * l.quantity };
+  });
+  if (landingPageId) {
+    const { rows } = await pool.query('SELECT 1 FROM landing_pages WHERE id = $1 AND business_id = $2', [landingPageId, business.id]);
+    if (!rows[0]) throw new OrderError(400, 'VALIDATION', 'Unknown landing page.', { fields: { landing_page_id: 'Unknown landing page.' } });
+  }
+
+  return withReferenceRetry(pool, async (client) => {
+    await client.query('BEGIN');
+    const order = await insertOrder(client, {
+      businessId: business.id, landingPageId, prefix: business.order_prefix, currency: business.currency,
+      idempotencyKey: input.idempotencyKey, fingerprint: generateToken(), customer: input.customer,
+      attribution: { sourceUrl: null, referrer: null, utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null, utmTerm: null },
+      items, total: items.reduce((sum, i) => sum + i.lineTotal, 0),
+      status, paymentStatus, source: 'manual', historyNote: 'Entered manually', userId,
+    });
+    await client.query('COMMIT');
+    return order;
+  });
 }
 
 function replay(existing, print) {

@@ -1,19 +1,24 @@
 import express, { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { timingSafeEqual } from 'node:crypto';
 import { asyncHandler } from '../lib/http.js';
 import { createOrder, OrderError, validateOrderInput } from '../services/orders.js';
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
+import { allKnownOrigins } from '../lib/origins.js';
+import { hashApiKey } from '../lib/apiKeys.js';
 
 // Used when a business has no WhatsApp number in Settings.
 export const DEFAULT_WHATSAPP = '+2349049206695';
 
-// CORS for the public order API: only origins listed in ALLOWED_ORIGINS may call it from a browser.
-function cors(allowedOrigins) {
-  return (req, res, next) => {
+// CORS for the public order API. Preflights are answered for any registered
+// page's website; the POST itself is checked against the specific page.
+function cors(pool, config) {
+  return asyncHandler(async (req, res, next) => {
     const origin = req.headers.origin;
+    res.vary('Origin');
     if (origin) {
-      if (!allowedOrigins.includes(origin)) {
+      const known = await allKnownOrigins(pool, config);
+      if (!known.has(origin)) {
         return res.status(403).json({ ok: false, error: 'ORIGIN_NOT_ALLOWED', message: 'This website is not allowed to submit orders.' });
       }
       res.set('Access-Control-Allow-Origin', origin);
@@ -21,10 +26,21 @@ function cors(allowedOrigins) {
       res.set('Access-Control-Allow-Headers', 'Content-Type');
       res.set('Access-Control-Max-Age', '600');
     }
-    res.vary('Origin');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
-  };
+  });
+}
+
+// Server-to-server callers authenticate with "Authorization: Bearer sky_...".
+async function apiKeyAuth(pool, req) {
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(sky_[A-Za-z0-9_-]{20,})$/);
+  if (!match) return null;
+  const { rows } = await pool.query(
+    'UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 AND revoked_at IS NULL RETURNING business_id',
+    [hashApiKey(match[1])],
+  );
+  return rows[0] ? { businessId: rows[0].business_id } : false;
 }
 
 function baseUrl(req, config) {
@@ -35,12 +51,14 @@ export function publicRoutes({ pool, config }) {
   const router = Router();
 
   const api = Router();
-  api.use(cors(config.allowedOrigins));
+  api.use(cors(pool, config));
   // Cross-origin responses must be readable by the landing page.
   api.use((req, res, next) => { res.set('Cross-Origin-Resource-Policy', 'cross-origin'); next(); });
   api.use(rateLimit({
     windowMs: 10 * 60 * 1000,
-    limit: config.orderRateLimit,
+    // API-key callers (one server, many customers) get a higher, per-key limit.
+    limit: (req) => (req.get('authorization') ? config.orderRateLimit * 15 : config.orderRateLimit),
+    keyGenerator: (req) => req.get('authorization')?.slice(-16) || ipKeyGenerator(req.ip),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',
@@ -56,8 +74,13 @@ export function publicRoutes({ pool, config }) {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'Your order could not be submitted.' });
     }
     try {
+      const key = await apiKeyAuth(pool, req);
+      if (key === false) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Invalid or revoked API key.' });
+      if (!key && !req.headers.origin) {
+        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Browser requests must come from a registered website; server requests need an API key.' });
+      }
       const input = validateOrderInput(req.body);
-      const { order, replayed } = await createOrder(pool, input);
+      const { order, replayed } = await createOrder(pool, input, key || { origin: req.headers.origin }, config);
       res.status(replayed ? 200 : 201).json({
         ok: true,
         reference: order.reference,
