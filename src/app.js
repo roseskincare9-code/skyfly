@@ -10,11 +10,16 @@ import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
 import { csrf } from './lib/csrf.js';
+import { readFileSync } from 'node:fs';
 import { pageServer } from './hosting/server.js';
+import { injectSkyfly } from './hosting/inject.js';
+import { recordPurchase } from './services/pixels.js';
 import { formatMoney } from './lib/money.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from './lib/statuses.js';
 
-const viewsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'views');
+const srcDir = path.dirname(fileURLToPath(import.meta.url));
+const viewsDir = path.join(srcDir, 'views');
+const sdkSource = readFileSync(path.join(srcDir, 'sdk', 'skyfly.js'));
 
 const dateFormat = new Intl.DateTimeFormat('en-NG', {
   timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -30,7 +35,11 @@ function isDashboardRequest(req, config) {
   return !config.dashboardHost;
 }
 
-export function createApp({ pool, config, transformHtml = null, onPaid = null }) {
+export function createApp({ pool, config, transformHtml, onPaid }) {
+  // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
+  transformHtml ??= (html, ctx) => injectSkyfly(pool, config, html, ctx);
+  // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
+  onPaid ??= (orderId) => recordPurchase(pool, config, orderId).catch((err) => console.error('Purchase event error:', err.message));
   const app = express();
   const PgStore = connectPgSimple(session);
 
@@ -59,6 +68,14 @@ export function createApp({ pool, config, transformHtml = null, onPaid = null })
   app.use((req, res, next) => (isDashboardRequest(req, config) ? next() : pages(req, res, next)));
 
   app.use(helmet());
+
+  // The page SDK, loaded by landing pages on other sites.
+  app.get('/sdk/skyfly.js', (req, res) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type('text/javascript').send(sdkSource);
+  });
 
   // Public order API and confirmation page: no admin session involved.
   app.use(publicRoutes({ pool, config }));

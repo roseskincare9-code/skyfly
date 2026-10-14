@@ -1,5 +1,7 @@
 // Reads and validates Skyfly's environment. Fails fast with a clear message
 // so a misconfigured deploy never starts half-working.
+import { parseKey } from './lib/secrets.js';
+
 
 const env = process.env.NODE_ENV || 'development';
 const isProduction = env === 'production';
@@ -50,6 +52,11 @@ export function loadConfig() {
     dashboardHost: hostOf(publicBaseUrl),
     // Set automatically by Render; the CNAME target for custom domains.
     renderHost: process.env.RENDER_EXTERNAL_HOSTNAME || null,
+    // Encrypts pixel access tokens at rest. Without it, server-side Purchase events are unavailable.
+    encryptionKey: parseKey(process.env.SKYFLY_ENCRYPTION_KEY),
+    metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
+    tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
+    tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'Purchase',
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
   };
 }

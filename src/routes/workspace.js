@@ -6,6 +6,7 @@ import { productRoutes } from './products.js';
 import { landingPageRoutes } from './landingPages.js';
 import { settingsRoutes } from './settings.js';
 import { apiKeyRoutes } from './apiKeys.js';
+import { pixelRoutes } from './pixels.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
 // Everything under /businesses/:businessId is only visible to that business's owner.
@@ -89,11 +90,12 @@ export function workspaceRoutes({ pool, config, onPaid = null }) {
     res.render('activity', { entries: rows, active: 'activity' });
   }));
 
-  scoped.use('/orders', ordersRoutes({ pool, onPaid }));
+  scoped.use('/orders', ordersRoutes({ pool, config, onPaid }));
   scoped.use('/products', productRoutes({ pool }));
   scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
   scoped.use('/settings', settingsRoutes({ pool }));
   scoped.use('/api-keys', apiKeyRoutes({ pool }));
+  scoped.use('/pixels', pixelRoutes({ pool, config }));
 
   router.use('/businesses/:businessId', scoped);
   return router;

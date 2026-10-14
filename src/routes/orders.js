@@ -4,6 +4,7 @@ import { toCsv } from '../lib/csv.js';
 import { ORDER_STATUSES, PAYMENT_STATUSES, STATUS_LABELS, STATUS_VALUES, PAYMENT_LABELS, PAYMENT_VALUES } from '../lib/statuses.js';
 import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
+import { retryEvent } from '../services/pixels.js';
 import { whatsappDigits } from '../lib/phone.js';
 
 const PAGE_SIZE = 50;
@@ -42,7 +43,7 @@ function orderFilters(businessId, query) {
   return { sql: where.join(' AND '), params, filters };
 }
 
-export function ordersRoutes({ pool, onPaid = null }) {
+export function ordersRoutes({ pool, config, onPaid = null }) {
   const router = Router({ mergeParams: true });
 
   router.get('/', asyncHandler(async (req, res) => {
@@ -140,8 +141,9 @@ export function ordersRoutes({ pool, onPaid = null }) {
   router.get('/:orderId', asyncHandler(async (req, res) => {
     const order = await loadOrder(req);
     if (!order) return res.status(404).render('error', { message: 'Order not found.' });
-    const [items, history] = await Promise.all([
+    const [items, conversions, history] = await Promise.all([
       pool.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id', [order.id]),
+      pool.query('SELECT * FROM conversion_events WHERE order_id = $1 ORDER BY id', [order.id]).then((r) => r.rows),
       pool.query(
         `SELECT h.*, u.name AS user_name FROM order_status_history h LEFT JOIN users u ON u.id = h.changed_by
           WHERE h.order_id = $1 ORDER BY h.created_at DESC, h.id DESC`,
@@ -153,11 +155,20 @@ export function ordersRoutes({ pool, onPaid = null }) {
       order,
       items: items.rows,
       history: history.rows,
+      conversions,
       statuses: ORDER_STATUSES,
       paymentStatuses: PAYMENT_STATUSES,
       waUrl: `https://wa.me/${whatsappDigits(order.phone)}?text=${encodeURIComponent(waText)}`,
       saved: req.query.saved === '1',
     });
+  }));
+
+  router.post('/:orderId/conversions/:eventId/retry', asyncHandler(async (req, res) => {
+    const order = await loadOrder(req);
+    if (!order) return res.status(404).render('error', { message: 'Order not found.' });
+    const result = await retryEvent(pool, config, req.params.eventId, req.business.id);
+    if (result) await audit(pool, req, { action: 'pixel.purchase_retried', businessId: req.business.id, entityType: 'order', entityId: order.reference, details: { ok: result.ok } });
+    res.redirect(`${res.locals.base}/orders/${order.id}`);
   }));
 
   // Fulfilment and payment status are updated independently, each with its own history.

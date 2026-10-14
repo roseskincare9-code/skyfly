@@ -76,6 +76,21 @@
     </dl>
   </div>
 
+  <% if (conversions.length) { %>
+  <div class="card">
+    <h2>Ad platform events</h2>
+    <ul style="margin:0;padding-left:18px">
+    <% conversions.forEach((c) => { %>
+      <li><strong><%= c.event_name %></strong> to <%= c.provider === 'meta' ? 'Meta' : 'TikTok' %> (pixel <%= c.pixel_id %>):
+        <% if (c.status === 'sent') { %><span class="pill delivered">sent</span> <span class="muted"><%= formatDate(c.sent_at) %></span>
+        <% } else { %><span class="pill cancelled"><%= c.status %></span> <span class="muted"><%= c.last_error %></span>
+          <form method="post" action="<%= base %>/orders/<%= order.id %>/conversions/<%= c.id %>/retry" style="display:inline"><%- include('partials/csrf') %><button class="secondary" type="submit">Retry</button></form>
+        <% } %></li>
+    <% }) %>
+    </ul>
+  </div>
+  <% } %>
+
   <div class="card">
     <h2>History</h2>
     <ul style="margin:0;padding-left:18px">

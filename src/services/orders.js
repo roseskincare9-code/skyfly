@@ -87,6 +87,10 @@ export function validateOrderInput(body) {
     utmCampaign: optional(a.utm_campaign, 200),
     utmContent: optional(a.utm_content, 200),
     utmTerm: optional(a.utm_term, 200),
+    fbp: optional(a.fbp, 200),
+    fbc: optional(a.fbc, 300),
+    ttp: optional(a.ttp, 200),
+    ttclid: optional(a.ttclid, 300),
   };
 
   return { landingPage, idempotencyKey, customer: { name, phone, email, address, state, notes }, items, attribution };
@@ -160,8 +164,8 @@ async function insertOrder(client, o) {
        business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
        customer_name, phone, email, address, state, customer_notes, currency, total_minor,
        source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       status, payment_status, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
      RETURNING id, reference, access_token, total_minor, currency`,
     [
@@ -170,7 +174,8 @@ async function insertOrder(client, o) {
       o.currency, o.total,
       o.attribution.sourceUrl, o.attribution.referrer, o.attribution.utmSource, o.attribution.utmMedium,
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
-      o.status, o.paymentStatus, o.source,
+      o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
+      o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
     ],
   );
   const order = inserted.rows[0];
@@ -240,6 +245,7 @@ export async function createOrder(pool, input, auth, config) {
       idempotencyKey: input.idempotencyKey, fingerprint: print, customer: input.customer, attribution: input.attribution,
       items, total: items.reduce((sum, i) => sum + i.lineTotal, 0),
       status: 'pending', paymentStatus: 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
+      client: auth.client,
     });
     if (!order) {
       // A concurrent request with the same key committed first.

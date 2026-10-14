@@ -6,6 +6,7 @@ import { createOrder, OrderError, validateOrderInput } from '../services/orders.
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
 import { allKnownOrigins } from '../lib/origins.js';
 import { hashApiKey } from '../lib/apiKeys.js';
+import { browserConfig } from '../services/pixels.js';
 
 // Used when a business has no WhatsApp number in Settings.
 export const DEFAULT_WHATSAPP = '+2349049206695';
@@ -80,7 +81,8 @@ export function publicRoutes({ pool, config }) {
         return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Browser requests must come from a registered website; server requests need an API key.' });
       }
       const input = validateOrderInput(req.body);
-      const { order, replayed } = await createOrder(pool, input, key || { origin: req.headers.origin }, config);
+      const client = { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 400) };
+      const { order, replayed } = await createOrder(pool, input, { ...(key || { origin: req.headers.origin }), client }, config);
       res.status(replayed ? 200 : 201).json({
         ok: true,
         reference: order.reference,
@@ -107,6 +109,18 @@ export function publicRoutes({ pool, config }) {
       message: 'We could not save your order. Please try again in a moment.',
     });
   });
+
+  // Public, read-only tracking settings for a page (pixel IDs are public anyway; no secrets).
+  router.get('/api/public/pages/:slug/tracking', asyncHandler(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Cache-Control', 'public, max-age=60');
+    const { rows: [page] } = await pool.query(
+      "SELECT id, slug, business_id FROM landing_pages WHERE slug = $1 AND status = 'active'", [String(req.params.slug)],
+    );
+    if (!page) return res.status(404).json({ page: req.params.slug, pixels: [] });
+    res.json(await browserConfig(pool, page));
+  }));
 
   router.use('/api/public', api);
 
