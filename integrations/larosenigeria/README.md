@@ -35,6 +35,19 @@ order form's behaviour changes.
 
 `landing-page.diff` shows the exact changes for review, with a placeholder URL.
 
+## Current state of the live page
+
+The live page currently runs in **Sheet-only mode** (`SKYFLY_API=""`): it has the new
+fields and WhatsApp number, but sends orders only to the Google Sheet (source
+`… | SKYFLY NOT CONNECTED`). It is switched to Skyfly by regenerating it with the
+Skyfly address shown in your Render dashboard:
+
+```sh
+python3 integrations/larosenigeria/patch.py <original index.html> index.html https://<your-service>.onrender.com
+```
+
+Use `disabled` instead of a URL to go back to Sheet-only mode.
+
 ## Transition: Skyfly and the Google Sheet side by side
 
 The patch does not switch SheetDB off. While `SKYFLY_SHEET_FALLBACK=true` (the default):

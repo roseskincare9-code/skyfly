@@ -11,8 +11,11 @@ is redirected to their confirmation page. Fails if the page has changed shape.
 import sys
 
 src, out, api = sys.argv[1], sys.argv[2], sys.argv[3].rstrip('/')
-if not api.startswith('https://') and not api.startswith('http://127.0.0.1') and not api.startswith('http://localhost'):
-    sys.exit('Skyfly URL must be https:// (or localhost for testing)')
+# "disabled": orders go only to the Google Sheet (used until the real Skyfly URL is confirmed).
+if api == 'disabled':
+    api = ''
+elif not api.startswith('https://') and not api.startswith('http://127.0.0.1') and not api.startswith('http://localhost'):
+    sys.exit('Skyfly URL must be https:// (or localhost for testing), or "disabled"')
 html = open(src, encoding='utf-8').read()
 
 def replace_once(old, new):
@@ -120,6 +123,13 @@ async function doSub(){
   const btn=document.getElementById('sb');
   const label=btn.textContent;
   skyBusy=true;btn.disabled=true;btn.textContent='Submitting...';
+  // No confirmed Skyfly address yet: send the order only to the Google Sheet, as before.
+  if(!SKYFLY_API){
+    if(await skySheet(order,'SKYFLY NOT CONNECTED',15000)){skyOldSuccess(fn,sel.value,addr);return;}
+    skyBusy=false;btn.disabled=false;btn.textContent=label;
+    skyShowError("We couldn't send your order. Please check your internet connection and tap the button again — your details are still here.");
+    return;
+  }
   document.getElementById('skyErr').style.display='none';
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
   let res,data;

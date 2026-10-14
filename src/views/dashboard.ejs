@@ -13,6 +13,14 @@
       </ul>
     <% } %>
   </div>
+  <% if (offerLarose) { %>
+  <form class="card" method="post" action="/setup/larose" style="border-color:var(--accent)">
+    <%- include("partials/csrf") %>
+    <h2>Set up Larose Natural Skincare Nigeria</h2>
+    <p class="muted" style="margin-top:0">Creates the business with its 5 packages and prices, WhatsApp number 09049206695, and registers the Larose landing page (form key <code>larosenigeria</code>) so its order form can send orders here.</p>
+    <button type="submit">Set up Larose</button>
+  </form>
+  <% } %>
   <div class="card">
     <h2>New business</h2>
     <form method="post" action="/businesses">

@@ -10,6 +10,18 @@ https://github.com/apps/claude/installations/select_target → choose the accoun
 add `skyfly` to the selected repositories. Optionally, make the repository private
 under GitHub → skyfly → Settings → General → Danger Zone → Change visibility.
 
+## 1b. Let Render see the `skyfly` repository
+
+Render can only deploy repositories its own GitHub App was given. If Render's
+repository list shows AIVORA but not `skyfly`, that app was installed with
+"Only select repositories". Fix: GitHub → Settings → Applications → Installed
+GitHub Apps → **Render** → **Configure** → Repository access → add `skyfly` →
+Save. The repository can stay private.
+
+Note: `onrender.com` names are global. If `skyfly.onrender.com` is already
+taken, Render gives the service another address (e.g. `skyfly-abcd.onrender.com`).
+Always use the address shown in **your** Render dashboard.
+
 ## 2. Choose the database
 
 Skyfly needs one PostgreSQL database of its own. Either option works without code changes:
@@ -67,9 +79,8 @@ Render → skyfly → Environment.
 1. Right after the deploy, open `https://<your-service>.onrender.com/signup` and create your
    account (password of at least 10 characters). With `ALLOW_SIGNUP=first`, only this first
    account can be created; sign-up then closes by itself.
-2. In Render → skyfly → **Shell**, run:
-   `npm run seed:larose -- your-email@example.com`
-   This creates *Larose Natural Skincare Nigeria* with the 5 packages and prices from the live page, the WhatsApp number 09049206695, and the registered landing page (form key `larosenigeria`).
+2. On the dashboard, click **Set up Larose** (or, in Render → skyfly → **Shell**, run
+   `npm run seed:larose -- your-email@example.com`). This creates *Larose Natural Skincare Nigeria* with the 5 packages and prices from the live page, the WhatsApp number 09049206695, and the registered landing page (form key `larosenigeria`).
 3. Optional: in Render → skyfly → **Environment**, set `ALLOW_SIGNUP=false`.
 4. Log in and check **Products** (prices) and **Settings** (WhatsApp number).
 
