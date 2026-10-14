@@ -26,14 +26,13 @@ services:
         generateValue: true
       - key: SKYFLY_ENCRYPTION_KEY
         generateValue: true   # encrypts pixel access tokens; must be 32 bytes base64. Never change after saving tokens.
-      - key: PUBLIC_BASE_URL
-        sync: false           # dashboard address, e.g. https://skyfly.onrender.com or https://app.yourbrand.com
-      - key: PAGES_BASE_URL
-        sync: false           # hosted pages address on a DIFFERENT host, e.g. https://pages.yourbrand.com
+      # PUBLIC_BASE_URL is not needed at first: Skyfly uses the service's own onrender.com
+      # address. Add PUBLIC_BASE_URL (dashboard custom domain) and PAGES_BASE_URL (pages
+      # domain, different host) in the Render dashboard later, when you have a domain.
       - key: ALLOWED_ORIGINS
         value: https://roseskincare9-code.github.io
       - key: ALLOW_SIGNUP
-        value: "true"         # set to "false" right after creating the owner account
+        value: first          # only the first account can be created (the owner); set "false" afterwards
 
 databases:
   - name: skyfly-db
