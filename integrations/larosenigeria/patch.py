@@ -66,6 +66,9 @@ if html.count('async function doSub(){') != 1:
 new_sub = r'''// --- Skyfly order submission --------------------------------------------
 const SKYFLY_API="__SKYFLY_API__";
 const SKYFLY_PAGE="larosenigeria";
+// While Skyfly is being proven, orders Skyfly can't save still go to the Google Sheet.
+// Set to false once Skyfly has received real orders reliably.
+const SKYFLY_SHEET_FALLBACK=true;
 let skyMem={};
 function skyStore(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessionStorage.setItem(k,v);}catch(e){if(v===undefined)return skyMem[k]||null;skyMem[k]=v;}}
 function skyRandom(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();let s='';const a=new Uint8Array(16);crypto.getRandomValues(a);a.forEach(b=>s+=b.toString(16).padStart(2,'0'));return s;}
@@ -130,14 +133,45 @@ async function doSub(){
   if(res&&res.ok&&data&&data.ok&&data.confirmationUrl){
     btn.textContent='Order saved ✓';
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
-    // Keep the existing Google Sheet copy (best effort; never blocks the order).
-    try{fetch(SHEET,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({data:{timestamp:new Date().toISOString(),reference:data.reference,fullName:fn,address:addr,state:st,phone:ph,email:em,package:sel.value,quantity:qty,notes:nt,source:'Larose Nigeria Landing Page 2026'}})}).catch(()=>{});}catch(e){}
-    setTimeout(()=>{location.href=data.confirmationUrl;},150);
+    // Transition period: keep the Google Sheet copy. Its "source" names the Skyfly
+    // reference, so a row marked "Skyfly LR-..." is the same order, not a duplicate.
+    await skySheet(order,'Skyfly '+data.reference,1500);
+    location.href=data.confirmationUrl;
     return;
+  }
+  // The customer's details need fixing: show what to change and let them retry.
+  if(data&&data.error==='VALIDATION'){
+    skyBusy=false;btn.disabled=false;btn.textContent=label;
+    skyShowError(data.message,data.fields);
+    return;
+  }
+  // Skyfly unreachable or not ready: fall back to the existing Google Sheet flow so no order is lost.
+  if(SKYFLY_SHEET_FALLBACK){
+    const saved=await skySheet(order,'NOT IN SKYFLY ('+((data&&data.error)||'unreachable')+')',15000);
+    if(saved){skyOldSuccess(fn,sel.value,addr);return;}
   }
   skyBusy=false;btn.disabled=false;btn.textContent=label;
   if(data&&data.message){skyShowError(data.message,data.fields);}
   else{skyShowError("We couldn't reach our order system. Please check your internet connection and tap the button again — your details are still here.");}
+}
+// Sends the order to the existing Google Sheet (SheetDB). Resolves true if it was accepted.
+async function skySheet(order,marker,waitMs){
+  const c=order.customer,it=order.items[0];
+  const d={timestamp:new Date().toISOString(),fullName:c.name,address:c.address+(c.state?', '+c.state:''),phone:c.phone,email:c.email,
+    package:document.getElementById('pr').value+(it.quantity>1?' x'+it.quantity:''),source:'Larose Nigeria Landing Page 2026 | '+marker,
+    state:c.state,quantity:it.quantity,notes:c.notes};
+  try{
+    const req=fetch(SHEET,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})}).then(r=>r.ok,()=>false);
+    return await Promise.race([req,new Promise(r=>setTimeout(()=>r(false),waitMs))]);
+  }catch(e){return false;}
+}
+// The page's original "Order Received" box with its WhatsApp button (used only in fallback).
+function skyOldSuccess(fn,pr,addr){
+  const msg=encodeURIComponent(`Hi Larose! I just placed an order.\n\n👤 Name: ${fn}\n📦 Package: ${pr}\n📍 Address: ${addr}\n\nPlease confirm my order. Thank you! 🙏`);
+  document.getElementById('waFinal').href=`https://wa.me/${WA}?text=${msg}`;
+  document.getElementById('formContent').style.display='none';
+  document.getElementById('sb2').style.display='block';
+  window.scrollTo({top:document.getElementById('order').offsetTop-80,behavior:'smooth'});
 }
 '''.replace('__SKYFLY_API__', api)
 

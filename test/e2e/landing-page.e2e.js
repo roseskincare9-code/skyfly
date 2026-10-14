@@ -65,6 +65,14 @@ try {
   const context = await browser.newContext({ ...devices['iPhone 13'] });
   // Third-party assets (fonts, pixel, images) are not needed for the test.
   await context.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (route) => route.abort());
+  // Stand-in for SheetDB: records each row the page sends. sheetDown simulates an outage.
+  const sheetRows = [];
+  let sheetDown = false;
+  await context.route('https://sheetdb.io/**', (route) => {
+    if (sheetDown) return route.abort('connectionrefused');
+    sheetRows.push(JSON.parse(route.request().postData()).data);
+    return route.fulfill({ status: 201, contentType: 'application/json', body: '{"created":1}' });
+  });
   const page = await context.newPage();
 
   await step('admin pages redirect to login when signed out', async () => {
@@ -104,19 +112,42 @@ try {
     await shop.screenshot({ path: path.join(shots, '1-landing-validation-error.png') });
   });
 
-  await step('API failure shows retry message and keeps entered details', async () => {
+  await step('server-side validation error: shown to the customer, nothing sent anywhere', async () => {
+    await fillForm();
+    await shop.fill('#ph', '123');
+    await shop.click('#sb');
+    await shop.waitForSelector('#skyErr', { state: 'visible' });
+    assert.match(await shop.textContent('#skyErr'), /valid phone number/);
+    assert.equal(await shop.inputValue('#fn'), 'Ngozi Adeyemi');
+    assert.equal(sheetRows.length, 0);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
+  });
+
+  await step('Skyfly unreachable: order falls back to the Google Sheet (not lost), original success box shown', async () => {
     await fillForm();
     await shop.route(`${SKYFLY}/api/public/orders`, (route) => route.abort('connectionrefused'));
     await shop.click('#sb');
+    await shop.waitForSelector('#sb2', { state: 'visible' });
+    assert.equal(sheetRows.length, 1);
+    assert.match(sheetRows[0].source, /NOT IN SKYFLY \(unreachable\)/);
+    assert.equal(sheetRows[0].fullName, 'Ngozi Adeyemi');
+    assert.match(sheetRows[0].package, /Power Glow.* x2$/);
+    assert.equal(sheetRows[0].address, '14 Admiralty Way, Lekki Phase 1, Lagos');
+    assert.match(await shop.getAttribute('#waFinal', 'href'), /^https:\/\/wa\.me\/2349049206695\?text=/);
+    await shop.screenshot({ path: path.join(shots, '2-landing-fallback-to-sheet.png') });
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
+    sheetRows.length = 0;
+  });
+
+  await step('Skyfly and the Sheet both down: error shown, details kept, retry possible', async () => {
+    await fillForm();
+    sheetDown = true;
+    await shop.click('#sb');
     await shop.waitForSelector('#skyErr', { state: 'visible' });
     assert.match(await shop.textContent('#skyErr'), /couldn't reach our order system/);
-    assert.equal(await shop.inputValue('#fn'), 'Ngozi Adeyemi');
     assert.equal(await shop.inputValue('#ph'), '08051234567');
     assert.equal(await shop.isEnabled('#sb'), true);
-    await shop.locator('#skyErr').scrollIntoViewIfNeeded();
-    await shop.screenshot({ path: path.join(shots, '2-landing-network-error.png') });
-    const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
-    assert.equal(rows[0].n, 0);
+    sheetDown = false;
   });
 
   let reference;
@@ -137,6 +168,9 @@ try {
     reference = new URL(shop.url()).pathname.split('/').pop();
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
+    // During the transition the Sheet still gets a copy, labelled with the Skyfly reference.
+    assert.equal(sheetRows.length, 1);
+    assert.equal(sheetRows[0].source, `Larose Nigeria Landing Page 2026 | Skyfly ${reference}`);
   });
 
   await step('the saved order has trusted product, quantity, price and attribution', async () => {
@@ -176,6 +210,8 @@ try {
     assert.equal(new URL(shop.url()).pathname.split('/').pop(), reference);
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
+    // The Sheet may get a second row, but it carries the same Skyfly reference, so it is recognisable.
+    assert.ok(sheetRows.every((r) => r.source.endsWith(`Skyfly ${reference}`)));
   });
 
   await step('the new order is visible and manageable in the dashboard (mobile)', async () => {

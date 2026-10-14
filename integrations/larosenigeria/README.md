@@ -35,22 +35,48 @@ order form's behaviour changes.
 
 `landing-page.diff` shows the exact changes for review, with a placeholder URL.
 
-## Applying it (only after Skyfly is deployed)
+## Transition: Skyfly and the Google Sheet side by side
 
-Apply this only after Skyfly is live and `https://<skyfly-url>/healthz` returns
-`{"status":"ok"}`. If you apply it first, the live form will show an error on
-every order.
+The patch does not switch SheetDB off. While `SKYFLY_SHEET_FALLBACK=true` (the default):
+
+| What happens | Skyfly | Google Sheet ("source" column) | Customer sees |
+|---|---|---|---|
+| Skyfly saves the order | order saved | copy, `… \| Skyfly LR-XXXXXXX` | Skyfly confirmation page |
+| Customer typed something invalid | nothing | nothing | error message, details kept, can retry |
+| Skyfly unreachable or erroring | nothing | row, `… \| NOT IN SKYFLY (reason)` | the page's original "Order Received" box |
+| Skyfly and the Sheet both down | nothing | nothing | error message, details kept, can retry |
+
+**No duplicates:** a Sheet row marked `Skyfly LR-…` is the same order as in Skyfly, so process
+it in Skyfly only. Rows marked `NOT IN SKYFLY` are the only ones to handle from the Sheet.
+Retries and double taps never create a second Skyfly order. Rarely, a customer going back
+and resubmitting adds a second Sheet row with the **same** reference; it is the same order.
+
+When Skyfly has received real orders reliably for a few days, switch the fallback off:
+change `SKYFLY_SHEET_FALLBACK=true` to `false` in the page (one line). To stop sending Sheet
+copies too, delete the line `await skySheet(order,'Skyfly '+data.reference,1500);`.
+
+## Applying it
+
+Apply this only after `https://skyfly.onrender.com/healthz` shows `{"status":"ok"}` **and** the
+Larose business has been set up in Skyfly (`npm run seed:larose -- your-email` in Render's Shell),
+because Skyfly only accepts orders for the registered form key `larosenigeria`.
+(If you apply it earlier, orders simply fall back to the Google Sheet.)
+
+The ready-made patched page is generated with:
 
 ```sh
-git clone https://github.com/roseskincare9-code/Larosenigeria
-cd Larosenigeria
-python3 ../skyfly/integrations/larosenigeria/patch.py index.html index.html https://<skyfly-url>
-git diff            # review
-git commit -am "Send orders to Skyfly" && git push
+python3 integrations/larosenigeria/patch.py <original index.html> <output index.html> https://skyfly.onrender.com
 ```
 
-Then place one real test order on the live page, check that it appears in the
-Skyfly dashboard, and mark it **Cancelled**.
+Upload the result as `index.html` in the `Larosenigeria` repository (GitHub → Larosenigeria →
+Add file → Upload files → commit to `main`). GitHub Pages republishes in about a minute. The page
+address and design stay the same. `landing-page.diff` shows exactly what changes.
+
+Then place one real test order on the live page and check:
+1. you land on the Skyfly confirmation page with an `LR-…` reference;
+2. the order appears in Skyfly → Orders (mark it as a **test order**);
+3. the Sheet has a row whose source ends with that `Skyfly LR-…` reference;
+4. Skyfly → Pages shows the Larose page as **Orders connected ✓ verified**.
 
 ## Keeping prices in sync
 
