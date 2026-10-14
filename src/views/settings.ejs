@@ -9,8 +9,8 @@
     <label for="name">Business name</label>
     <input id="name" name="name" value="<%= business.name %>" required maxlength="100">
     <label for="whatsapp_number">WhatsApp number for customers</label>
-    <input id="whatsapp_number" name="whatsapp_number" type="tel" value="<%= business.whatsapp_number || '' %>" placeholder="07039361243">
-    <p class="muted" style="font-size:13px;margin:4px 0 0">Used for the WhatsApp button on order confirmation pages. If empty, 07039361243 is used.</p>
+    <input id="whatsapp_number" name="whatsapp_number" type="tel" value="<%= business.whatsapp_number || '' %>" placeholder="09049206695">
+    <p class="muted" style="font-size:13px;margin:4px 0 0">Used for the WhatsApp button on order confirmation pages. If empty, 09049206695 is used. Changes apply to every confirmation page immediately, including for past orders.</p>
     <label for="order_prefix">Order reference prefix</label>
     <input id="order_prefix" name="order_prefix" value="<%= business.order_prefix %>" required pattern="[A-Za-z]{2,5}" maxlength="5">
     <p class="muted" style="font-size:13px;margin:4px 0 0">New orders look like <code><%= business.order_prefix %>-7KQ3M9X</code>.</p>

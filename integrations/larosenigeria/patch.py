@@ -48,6 +48,16 @@ replace_once(
       <button class="subbtn" id="sb" onclick="doSub()">''',
 )
 
+# The old WhatsApp number (07039361243) was blocked by WhatsApp. Replace every
+# link, visible number and the WA constant with the new business number.
+OLD_INTL, NEW_INTL = '2347039361243', '2349049206695'
+OLD_LOCAL, NEW_LOCAL = '07039361243', '09049206695'
+found = html.count(OLD_INTL) + html.count(OLD_LOCAL)
+html = html.replace(OLD_INTL, NEW_INTL).replace(OLD_LOCAL, NEW_LOCAL)
+if '7039361243' in html:
+    sys.exit('Old WhatsApp number still present after replacement')
+print(f'Replaced {found} uses of the old WhatsApp number')
+
 start = html.index('async function doSub(){')
 end = html.index('</script>', start)
 if html.count('async function doSub(){') != 1:

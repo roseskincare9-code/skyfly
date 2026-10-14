@@ -24,7 +24,7 @@ export async function seedLarose(pool, ownerEmail) {
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO businesses (owner_id, name, slug, currency, whatsapp_number, order_prefix)
-       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2347039361243', 'LR')
+       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2349049206695', 'LR')
        ON CONFLICT (slug) DO NOTHING`,
       [ownerId],
     );

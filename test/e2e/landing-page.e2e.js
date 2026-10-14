@@ -29,6 +29,9 @@ await resetDatabase(pool);
 // Build the patched landing page pointing at this Skyfly instance.
 const patched = path.join(root, 'test/e2e/.landing.html');
 execFileSync('python3', [path.join(root, 'integrations/larosenigeria/patch.py'), landingSource, patched, SKYFLY]);
+const patchedHtml = readFileSync(patched, 'utf8');
+assert.ok(!patchedHtml.includes('7039361243'), 'old WhatsApp number must not remain on the page');
+assert.equal((patchedHtml.match(/wa\.me\/2349049206695/g) || []).length, 5, 'all 5 WhatsApp links use the new number');
 const landing = createServer((req, res) => {
   if (req.url.startsWith('/Larosenigeria/')) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -156,7 +159,7 @@ try {
     assert.equal((await shop.textContent('#total')).trim(), '₦103,000');
     const wa = new URL(await shop.getAttribute('#wa', 'href'));
     assert.equal(wa.host, 'wa.me');
-    assert.equal(wa.pathname, '/2347039361243');
+    assert.equal(wa.pathname, '/2349049206695');
     assert.match(wa.searchParams.get('text'), new RegExp(`order ${reference}`));
     const width = await shop.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(width <= 390, `no horizontal scroll on mobile (got ${width})`);

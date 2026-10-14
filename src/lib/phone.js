@@ -1,5 +1,5 @@
 // Normalises phone numbers to E.164 (+234...). Nigerian local formats such as
-// 07039361243 are assumed when no country code is given.
+// 09049206695 are assumed when no country code is given.
 export function normalizePhone(input) {
   const raw = String(input ?? '').trim();
   const hasPlus = raw.startsWith('+');

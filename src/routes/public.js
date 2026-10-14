@@ -5,7 +5,8 @@ import { asyncHandler } from '../lib/http.js';
 import { createOrder, OrderError, validateOrderInput } from '../services/orders.js';
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
 
-export const DEFAULT_WHATSAPP = '+2347039361243';
+// Used when a business has no WhatsApp number in Settings.
+export const DEFAULT_WHATSAPP = '+2349049206695';
 
 // CORS for the public order API: only origins listed in ALLOWED_ORIGINS may call it from a browser.
 function cors(allowedOrigins) {

@@ -41,7 +41,7 @@ Supabase, use it for the database only.
 1. Open `https://<skyfly-url>/signup` and create your account (password of at least 10 characters).
 2. In Render → skyfly → **Shell**, run:
    `npm run seed:larose -- your-email@example.com`
-   This creates *Larose Natural Skincare Nigeria* with the 5 packages and prices from the live page, the WhatsApp number 07039361243, and the registered landing page (form key `larosenigeria`).
+   This creates *Larose Natural Skincare Nigeria* with the 5 packages and prices from the live page, the WhatsApp number 09049206695, and the registered landing page (form key `larosenigeria`).
 3. In Render → skyfly → **Environment**, set `ALLOW_SIGNUP=false` so nobody else can sign up.
 4. Log in and check **Products** (prices) and **Settings** (WhatsApp number).
 

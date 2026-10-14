@@ -14,7 +14,7 @@ export function settingsRoutes({ pool }) {
     const prefix = String(req.body.order_prefix ?? '').trim().toUpperCase();
     const errors = [];
     if (!name) errors.push('Business name is required.');
-    if (rawPhone && !whatsapp) errors.push('Enter a valid WhatsApp number, e.g. 07039361243.');
+    if (rawPhone && !whatsapp) errors.push('Enter a valid WhatsApp number, e.g. 09049206695.');
     if (!/^[A-Z]{2,5}$/.test(prefix)) errors.push('Order prefix must be 2–5 letters.');
     if (errors.length) return res.status(400).render('settings', { error: errors.join(' '), saved: false });
 

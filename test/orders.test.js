@@ -1,5 +1,6 @@
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import request from 'supertest';
 import { setup, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
@@ -143,6 +144,38 @@ describe('public order API', () => {
   });
 });
 
+describe('WhatsApp number', () => {
+  test('the old blocked number is replaced by the migration', async () => {
+    await pool.query("UPDATE businesses SET whatsapp_number = '+2347039361243' WHERE id = $1", [businessId]);
+    await pool.query(readFileSync(new URL('../migrations/003_whatsapp_number.sql', import.meta.url), 'utf8'));
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM businesses WHERE whatsapp_number = '+2347039361243'");
+    assert.equal(rows[0].n, 0);
+    const { rows: [b] } = await pool.query('SELECT whatsapp_number FROM businesses WHERE id = $1', [businessId]);
+    assert.equal(b.whatsapp_number, '+2349049206695');
+  });
+
+  test('a business with no number falls back to the new default', async () => {
+    await pool.query('UPDATE businesses SET whatsapp_number = NULL WHERE id = $1', [businessId]);
+    const { body } = await post(orderBody()).expect(201);
+    const u = new URL(body.confirmationUrl);
+    const page = await request(app).get(u.pathname + u.search).expect(200);
+    assert.match(page.text, /wa\.me\/2349049206695\?text=/);
+    assert.doesNotMatch(page.text, /7039361243/);
+    await pool.query("UPDATE businesses SET whatsapp_number = '+2349049206695' WHERE id = $1", [businessId]);
+  });
+
+  test('the owner can change the number in Settings', async () => {
+    const _csrf = await csrfToken(owner, `/businesses/${businessId}/settings`);
+    await owner.post(`/businesses/${businessId}/settings`).type('form')
+      .send({ _csrf, name: 'Larose Natural Skincare Nigeria', whatsapp_number: '0805 000 1111', order_prefix: 'LR' }).expect(302);
+    const { body } = await post(orderBody()).expect(201);
+    const u = new URL(body.confirmationUrl);
+    const page = await request(app).get(u.pathname + u.search).expect(200);
+    assert.match(page.text, /wa\.me\/2348050001111\?text=/);
+    await pool.query("UPDATE businesses SET whatsapp_number = '+2349049206695' WHERE id = $1", [businessId]);
+  });
+});
+
 describe('confirmation page', () => {
   test('shows the order with a WhatsApp link containing the reference', async () => {
     const { body } = await post(orderBody()).expect(201);
@@ -155,7 +188,7 @@ describe('confirmation page', () => {
     assert.doesNotMatch(page.text, /Allen Avenue/); // full address not exposed
     const wa = page.text.match(/href="(https:\/\/wa\.me\/[^"]+)"/)[1].replace(/&amp;/g, '&');
     const url = new URL(wa);
-    assert.equal(url.pathname, '/2347039361243');
+    assert.equal(url.pathname, '/2349049206695');
     assert.match(url.searchParams.get('text'), new RegExp(body.reference));
   });
 
@@ -171,7 +204,7 @@ describe('confirmation page', () => {
     const u = new URL(body.confirmationUrl);
     const page = await request(app).get(u.pathname + u.search).expect(200);
     assert.match(page.text, /wa\.me\/2348000000001/);
-    await pool.query("UPDATE businesses SET whatsapp_number = '+2347039361243' WHERE id = $1", [businessId]);
+    await pool.query("UPDATE businesses SET whatsapp_number = '+2349049206695' WHERE id = $1", [businessId]);
   });
 });
 
