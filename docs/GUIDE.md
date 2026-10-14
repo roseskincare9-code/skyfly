@@ -66,6 +66,15 @@ they saw.
   `<script src="https://YOUR-SKYFLY/sdk/skyfly.js" data-page="FORM-KEY" defer></script>`
   and enter the page's address in **External URL**, so Skyfly accepts orders from it.
 
+**Connection status.** A page's screen shows one of three states:
+- **Not connected**: orders from this page don't reach Skyfly.
+- **Connection code found, not verified**: the code is there, but no order has arrived yet.
+- **Orders connected ✓ verified**: a real submission from the page was saved (the first order's reference is shown).
+
+Only the last one means it works. Verify it by placing one order on the live page, then
+open that order and click **Mark as test order**. Publishing a new version sets the
+page back to "not verified" until another order arrives.
+
 On submit, Skyfly saves the order first. **Only then** does the customer see the
 confirmation page with their order reference and WhatsApp button. If saving fails,
 they see a message, everything they typed stays, and they can try again. Double
@@ -115,6 +124,29 @@ If your page already contains its own pixel code, Skyfly detects it and doesn't 
 the same pixel twice. For one clean setup, remove the old code from the page and
 let Skyfly manage it.
 
+### Configured is not the same as verified
+
+The Pixels screen shows three separate lines for each pixel:
+
+| Line | Meaning | How it becomes "Verified" |
+|---|---|---|
+| **Configured** | ID saved and switched on | — |
+| **Browser events** | PageView / InitiateCheckout / Lead reach the platform | Skyfly can't see inside Meta or TikTok. Check with the steps below, then click **I've checked: events arrive once** (recorded with your name and the date) |
+| **Server Purchase** | Skyfly can send Purchase to the platform | Automatically, when the platform accepts a test or real Purchase from Skyfly |
+
+Changing the pixel ID resets both verifications; changing the token resets the server one.
+
+**Browser check (5 minutes):**
+1. In Meta Events Manager or TikTok Events Manager, open your pixel's **Test events**
+   (or install the Meta Pixel Helper / TikTok Pixel Helper extension).
+2. Open the published page: **PageView** appears **once**.
+3. Tap into the order form: **InitiateCheckout** appears once.
+4. Submit a test order: **Lead** (TikTok shows it as **SubmitForm**) appears once, and **no Purchase**.
+5. In Skyfly, mark that order as a **test order**, then click **I've checked** on the Pixels screen.
+
+**Server check:** paste the test event code from the platform's Test events screen,
+save, click **Send test Purchase**, and confirm it appears there.
+
 ## 4. Orders
 
 - **Orders**: search by reference, name, phone or email, and filter by status, payment,
@@ -124,5 +156,7 @@ let Skyfly manage it.
   - **Payment status**: Unpaid, Payment pending, Paid, Payment failed, Refunded.
     Mark **Paid** only when the money is received. That's what sends Purchase to your pixels (once).
 - **+ Add order**: for orders taken by phone or WhatsApp.
+- **Mark as test order**: for orders you placed yourself. They stay in the list with a TEST label
+  but are left out of all sales figures and never sent to ad platforms as purchases.
 - **Overview**: paid revenue, money still to collect, order counts by status, recent orders and orders per page.
 - **Settings → Activity log**: who changed what.
