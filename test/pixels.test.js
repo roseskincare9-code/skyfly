@@ -247,6 +247,7 @@ describe('hosted page injection', () => {
     const csrf2 = await csrfToken(owner, `/businesses/${businessId}/landing-pages/${lp.id}`);
     await owner.post(`/businesses/${businessId}/landing-pages/${lp.id}/publish`).type('form').send({ _csrf: csrf2, version_id: v.id }).expect(302);
     const live = await request(app).get('/larosenigeria/').set('Host', 'pages.test').expect(200);
+    assert.match(live.text, /<script data-skyfly-config>window\.__SKYFLY__=/);
     const cfg = JSON.parse(live.text.match(/window\.__SKYFLY__=(\{.*?\});<\/script>/)[1]);
     assert.equal(cfg.page, 'larosenigeria');
     assert.equal(cfg.api, 'http://skyfly.test');

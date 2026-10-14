@@ -181,16 +181,17 @@ try {
   await step('the new order is visible and manageable in the dashboard (mobile)', async () => {
     await page.goto(`${SKYFLY}/`);
     await page.click('text=Larose Natural Skincare Nigeria');
-    assert.match(await page.textContent('body'), /₦103,000\s*Awaiting confirmation/);
+    assert.match(await page.textContent('body'), /₦103,000\s*Pending value/);
     await page.screenshot({ path: path.join(shots, '4-dashboard-overview-mobile.png'), fullPage: true });
     await page.click('nav.sub >> text=Orders');
     assert.match(await page.textContent('body'), new RegExp(reference));
     await page.screenshot({ path: path.join(shots, '5-orders-mobile.png'), fullPage: true });
     await page.click(`text=${reference}`);
     assert.equal(await page.getAttribute('a.btn.wa', 'href').then((h) => new URL(h).pathname), '/2348051234567');
-    await page.selectOption('#status', 'confirmed');
-    await page.fill('#note', 'Confirmed by phone');
-    await page.click('text=Save');
+    const statusForm = page.locator('form:has(input[name=kind][value=fulfillment])');
+    await statusForm.locator('select').selectOption('confirmed');
+    await statusForm.locator('textarea').fill('Confirmed by phone');
+    await statusForm.locator('button').click();
     await page.waitForSelector('.notice');
     assert.match(await page.textContent('h1'), /Confirmed/);
     await page.screenshot({ path: path.join(shots, '6-order-detail-mobile.png'), fullPage: true });

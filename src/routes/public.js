@@ -57,9 +57,10 @@ export function publicRoutes({ pool, config }) {
   api.use((req, res, next) => { res.set('Cross-Origin-Resource-Policy', 'cross-origin'); next(); });
   api.use(rateLimit({
     windowMs: 10 * 60 * 1000,
-    // API-key callers (one server, many customers) get a higher, per-key limit.
+    // Always counted per IP (made-up keys can't buy extra attempts); servers using an
+    // API key send many customers' orders from one IP, so they get a higher allowance.
     limit: (req) => (req.get('authorization') ? config.orderRateLimit * 15 : config.orderRateLimit),
-    keyGenerator: (req) => req.get('authorization')?.slice(-16) || ipKeyGenerator(req.ip),
+    keyGenerator: (req) => ipKeyGenerator(req.ip),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     skip: (req) => req.method === 'OPTIONS',

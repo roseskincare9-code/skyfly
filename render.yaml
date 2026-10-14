@@ -1,12 +1,12 @@
-# Render Blueprint for Skyfly. NOT applied yet - nothing is deployed until the
+# Render Blueprint for Skyfly. NOT applied yet: nothing is deployed until the
 # owner reviews plans/costs and creates the Blueprint in Render manually.
-# These resources belong to Skyfly only; do not point them at any other project.
+# These resources belong to Skyfly only; never point them at another project.
 services:
   - type: web
     name: skyfly
     runtime: node
     region: frankfurt         # closest Render region to Nigeria
-    plan: starter             # paid; "free" sleeps when idle (slow first order). Review before applying.
+    plan: starter             # paid; "free" sleeps when idle (slow first visit/order). Review before applying.
     buildCommand: npm ci --omit=dev
     preDeployCommand: npm run migrate
     startCommand: npm start
@@ -21,11 +21,15 @@ services:
           name: skyfly-db
           property: connectionString
       - key: DATABASE_SSL
-        value: "false"        # internal Render connection; set "true" for Supabase or external URLs
+        value: "false"        # internal Render connection; "true" for Supabase or external URLs
       - key: SESSION_SECRET
         generateValue: true
+      - key: SKYFLY_ENCRYPTION_KEY
+        generateValue: true   # encrypts pixel access tokens; must be 32 bytes base64. Never change after saving tokens.
       - key: PUBLIC_BASE_URL
-        sync: false           # e.g. https://skyfly.onrender.com - set in the dashboard
+        sync: false           # dashboard address, e.g. https://skyfly.onrender.com or https://app.yourbrand.com
+      - key: PAGES_BASE_URL
+        sync: false           # hosted pages address on a DIFFERENT host, e.g. https://pages.yourbrand.com
       - key: ALLOWED_ORIGINS
         value: https://roseskincare9-code.github.io
       - key: ALLOW_SIGNUP

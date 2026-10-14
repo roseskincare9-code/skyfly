@@ -31,7 +31,11 @@
   // A pixel ID already present in the page's own code is left to the page, so it is never loaded or counted twice.
   function inPage(id) {
     var scripts = document.getElementsByTagName('script');
-    for (var i = 0; i < scripts.length; i++) if (!scripts[i].src && scripts[i].text.indexOf(id) !== -1) return true;
+    for (var i = 0; i < scripts.length; i++) {
+      var s = scripts[i];
+      if (s.src || s.hasAttribute('data-skyfly-config')) continue; // Skyfly's own config is not the page's pixel code
+      if (s.text.indexOf(id) !== -1) return true;
+    }
     return false;
   }
   function loadMeta(p) {
