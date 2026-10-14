@@ -33,7 +33,7 @@ function orderFilters(businessId, query) {
       phoneClause = ` OR o.phone LIKE $${params.length}`;
     }
     const i = phoneClause ? params.length - 1 : params.length;
-    where.push(`(o.reference ILIKE $${i} OR o.customer_name ILIKE $${i} OR o.email ILIKE $${i}${phoneClause})`);
+    where.push(`(o.reference ILIKE $${i} OR o.customer_name ILIKE $${i} OR o.email ILIKE $${i} OR o.idempotency_key ILIKE $${i}${phoneClause})`);
   }
   if (filters.status) { params.push(filters.status); where.push(`o.status = $${params.length}`); }
   if (filters.payment) { params.push(filters.payment); where.push(`o.payment_status = $${params.length}`); }

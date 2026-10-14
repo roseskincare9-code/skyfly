@@ -7,7 +7,7 @@
   </div>
 
   <form class="card filters" method="get" action="<%= base %>/orders">
-    <div><label for="q">Search</label><input id="q" name="q" value="<%= filters.q %>" placeholder="Reference, name, phone, email"></div>
+    <div><label for="q">Search</label><input id="q" name="q" value="<%= filters.q %>" placeholder="Reference, name, phone, email or submission ID"></div>
     <div><label for="status">Status</label>
       <select id="status" name="status"><option value="">All statuses</option>
         <% statuses.forEach((s) => { %><option value="<%= s.value %>" <%= filters.status === s.value ? 'selected' : '' %>><%= s.label %></option><% }) %>

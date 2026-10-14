@@ -131,14 +131,19 @@ async function doSub(){
     return;
   }
   document.getElementById('skyErr').style.display='none';
-  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
   let res,data;
-  try{
-    res=await fetch(SKYFLY_API+'/api/public/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order),signal:ctrl.signal});
-    data=await res.json().catch(()=>null);
-  }catch(e){
-    data=null;
-  }finally{clearTimeout(timer);}
+  // One retry with the same submission ID if Skyfly can't be reached or errors on its side.
+  // Retrying is safe: if the first attempt was saved, Skyfly returns that same order.
+  for(let attempt=0;attempt<2;attempt++){
+    if(attempt){btn.textContent='Still sending...';await new Promise(r=>setTimeout(r,2000));}
+    const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),attempt?30000:45000);
+    res=null;data=null;
+    try{
+      res=await fetch(SKYFLY_API+'/api/public/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order),signal:ctrl.signal});
+      data=await res.json().catch(()=>null);
+    }catch(e){}finally{clearTimeout(timer);}
+    if(res&&res.status<500&&res.status!==429)break;
+  }
 
   if(res&&res.ok&&data&&data.ok&&data.confirmationUrl){
     btn.textContent='Order saved ✓';
@@ -168,8 +173,10 @@ async function doSub(){
 async function skySheet(order,marker,waitMs){
   const c=order.customer,it=order.items[0];
   const d={timestamp:new Date().toISOString(),fullName:c.name,address:c.address+(c.state?', '+c.state:''),phone:c.phone,email:c.email,
-    package:document.getElementById('pr').value+(it.quantity>1?' x'+it.quantity:''),source:'Larose Nigeria Landing Page 2026 | '+marker,
-    state:c.state,quantity:it.quantity,notes:c.notes};
+    package:document.getElementById('pr').value+(it.quantity>1?' x'+it.quantity:''),
+    // The submission ID is also stored in Skyfly, so any row can be matched to (or ruled out from) a Skyfly order.
+    source:'Larose Nigeria Landing Page 2026 | '+marker+(order.idempotencyKey?' | ID '+order.idempotencyKey.slice(0,8):''),
+    state:c.state,quantity:it.quantity,notes:c.notes,skyflyId:order.idempotencyKey||''};
   try{
     const req=fetch(SHEET,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})}).then(r=>r.ok,()=>false);
     return await Promise.race([req,new Promise(r=>setTimeout(()=>r(false),waitMs))]);

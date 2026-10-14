@@ -225,6 +225,10 @@ describe('dashboard', () => {
     assert.match(byPhone.text, /Chioma Eze/);
     assert.doesNotMatch(byPhone.text, /Ada Obi/);
 
+    const { rows: [k] } = await pool.query('SELECT idempotency_key FROM orders WHERE reference = $1', [body.reference]);
+    const byId = await owner.get(`/businesses/${businessId}/orders?q=${k.idempotency_key.slice(0, 8)}`).expect(200);
+    assert.match(byId.text, new RegExp(body.reference));
+
     const byStatus = await owner.get(`/businesses/${businessId}/orders?status=delivered`).expect(200);
     assert.doesNotMatch(byStatus.text, new RegExp(body.reference));
 

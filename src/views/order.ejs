@@ -79,6 +79,7 @@
     <h2>Source</h2>
     <dl class="kv">
       <dt>Placed</dt><dd><%= formatDate(order.created_at) %> (Lagos time)</dd>
+      <% if (order.source !== 'manual') { %><dt>Submission ID</dt><dd><code><%= order.idempotency_key.slice(0, 8) %></code> <span class="muted">(matches the "ID" in Google Sheet rows)</span></dd><% } %>
       <dt>Entered via</dt><dd><%= { web: 'Website form', api: 'API', manual: 'Manual entry' }[order.source] %></dd>
       <dt>Landing page</dt><dd><%= order.landing_page_name || '—' %></dd>
       <dt>Page URL</dt><dd><%= order.source_url || '—' %></dd>

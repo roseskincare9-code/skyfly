@@ -170,7 +170,10 @@ try {
     assert.equal(rows[0].n, 1);
     // During the transition the Sheet still gets a copy, labelled with the Skyfly reference.
     assert.equal(sheetRows.length, 1);
-    assert.equal(sheetRows[0].source, `Larose Nigeria Landing Page 2026 | Skyfly ${reference}`);
+    assert.match(sheetRows[0].source, new RegExp(`^Larose Nigeria Landing Page 2026 \\| Skyfly ${reference} \\| ID [0-9a-f-]{8}$`));
+    // The same submission ID is stored in Skyfly, so the row can be matched to the order.
+    const { rows: [o] } = await pool.query('SELECT idempotency_key FROM orders WHERE reference = $1', [reference]);
+    assert.equal(sheetRows[0].skyflyId, o.idempotency_key);
   });
 
   await step('the saved order has trusted product, quantity, price and attribution', async () => {
@@ -211,7 +214,34 @@ try {
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     // The Sheet may get a second row, but it carries the same Skyfly reference, so it is recognisable.
-    assert.ok(sheetRows.every((r) => r.source.endsWith(`Skyfly ${reference}`)));
+    assert.ok(sheetRows.every((r) => r.source.includes(`Skyfly ${reference} `)));
+  });
+
+  await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
+    await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);
+    await shop.click('text=Order Starter Glow Soap');
+    await shop.fill('#fn', 'Lost Reply'); await shop.fill('#addr', '9 Retry Close, Yaba'); await shop.fill('#ph', '08099990000');
+    await shop.selectOption('#st', 'Lagos');
+    const before = sheetRows.length;
+    let calls = 0;
+    await shop.route(`${SKYFLY}/api/public/orders`, async (route) => {
+      calls += 1;
+      if (calls === 1) { await route.fetch(); return route.abort('connectionreset'); } // saved, but the reply never arrives
+      return route.continue();
+    });
+    await shop.click('#sb');
+    await shop.waitForURL(/\/o\/LR-/);
+    await shop.unroute(`${SKYFLY}/api/public/orders`);
+    assert.equal(calls, 2);
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");
+    assert.equal(rows[0].n, 1, 'exactly one order');
+    const newRows = sheetRows.slice(before);
+    assert.equal(newRows.length, 1);
+    assert.match(newRows[0].source, /\| Skyfly LR-/);
+    assert.doesNotMatch(newRows[0].source, /NOT IN SKYFLY/);
+    await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
+    sheetRows.splice(before);
+    await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);
   });
 
   await step('the new order is visible and manageable in the dashboard (mobile)', async () => {
