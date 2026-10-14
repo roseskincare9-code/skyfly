@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { encrypt } from '../lib/secrets.js';
-import { BROWSER_EVENTS, PIXEL_ID_RULES, PROVIDERS, sendTestEvent } from '../services/pixels.js';
+import { BROWSER_EVENTS, PIXEL_ID_RULES, PROVIDERS, sendTestEvent, markServerVerified } from '../services/pixels.js';
 
 const LABELS = { meta: 'Meta Pixel (Facebook / Instagram)', tiktok: 'TikTok Pixel' };
 
@@ -67,7 +67,7 @@ export function pixelRoutes({ pool, config }) {
     if (errors.length) return render(req, res, { page, error: errors.join(' '), status: 400 });
 
     const { rows: [existing] } = await pool.query(
-      `SELECT id, access_token_enc FROM pixel_settings WHERE business_id = $1 AND provider = $2 AND landing_page_id ${page ? '= $3' : 'IS NULL'}`,
+      `SELECT id, access_token_enc, pixel_id FROM pixel_settings WHERE business_id = $1 AND provider = $2 AND landing_page_id ${page ? '= $3' : 'IS NULL'}`,
       page ? [req.business.id, provider, page.id] : [req.business.id, provider],
     );
     // The token is write-only: blank keeps the saved one; "remove" clears it.
@@ -80,10 +80,16 @@ export function pixelRoutes({ pool, config }) {
 
     const values = [normalizedId || null, enabled, events, serverPurchase, tokenEnc, testCode || null, req.session.userId];
     if (existing) {
+      // Verification belongs to a specific pixel and token: changing them means verifying again.
+      const idChanged = (existing.pixel_id ?? null) !== (normalizedId || null);
+      const tokenChanged = tokenEnc !== existing.access_token_enc;
       await pool.query(
         `UPDATE pixel_settings SET pixel_id = $1, enabled = $2, events = $3, server_purchase = $4, access_token_enc = $5,
-                test_event_code = $6, updated_by = $7, updated_at = now() WHERE id = $8`,
-        [...values, existing.id],
+                test_event_code = $6, updated_by = $7, updated_at = now(),
+                server_verified_at = CASE WHEN $9 OR $10 THEN NULL ELSE server_verified_at END,
+                browser_verified_at = CASE WHEN $9 THEN NULL ELSE browser_verified_at END
+          WHERE id = $8`,
+        [...values, existing.id, idChanged, tokenChanged],
       );
     } else {
       await pool.query(
@@ -107,6 +113,23 @@ export function pixelRoutes({ pool, config }) {
     res.redirect(`${res.locals.base}/pixels?page=${page.id}&done=removed`);
   }));
 
+  // Skyfly can't see inside Meta/TikTok, so browser events are verified by the owner
+  // with the platform's own tools, and recorded here with who and when.
+  router.post('/browser-verified', asyncHandler(async (req, res) => {
+    const { page } = await scope(req);
+    const provider = String(req.body.provider);
+    if (!PROVIDERS.includes(provider)) return res.status(400).render('error', { message: 'Unknown provider.' });
+    const verified = req.body.verified === 'true';
+    const { rowCount } = await pool.query(
+      `UPDATE pixel_settings SET browser_verified_at = ${verified ? 'now()' : 'NULL'}, browser_verified_by = $1
+        WHERE business_id = $2 AND provider = $3 AND enabled AND pixel_id IS NOT NULL AND landing_page_id ${page ? '= $4' : 'IS NULL'}`,
+      page ? [req.session.userId, req.business.id, provider, page.id] : [req.session.userId, req.business.id, provider],
+    );
+    if (!rowCount) return render(req, res, { page, error: 'Turn the pixel on and save its ID first.', status: 400 });
+    await audit(pool, req, { action: verified ? 'pixel.browser_verified' : 'pixel.browser_unverified', businessId: req.business.id, entityType: 'pixel', entityId: provider });
+    res.redirect(`${res.locals.base}/pixels?${page ? `page=${page.id}&` : ''}done=saved`);
+  }));
+
   router.post('/test', asyncHandler(async (req, res) => {
     const { page } = await scope(req);
     const provider = String(req.body.provider);
@@ -116,6 +139,7 @@ export function pixelRoutes({ pool, config }) {
       page ? [req.business.id, provider, page.id] : [req.business.id, provider],
     );
     const result = await sendTestEvent(config, provider, s, req.business.currency);
+    if (result.ok) await markServerVerified(pool, s.id);
     await audit(pool, req, { action: 'pixel.test_sent', businessId: req.business.id, entityType: 'pixel', entityId: provider, details: { ok: result.ok, error: result.error ?? null } });
     const message = result.ok
       ? `Test Purchase accepted by ${LABELS[provider]}. Check the "Test events" screen in the ad platform to confirm it arrived.`

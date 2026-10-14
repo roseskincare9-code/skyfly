@@ -64,6 +64,17 @@
   </div>
   <div style="height:16px"></div>
 
+  <form class="card" method="post" action="<%= base %>/orders/<%= order.id %>/test">
+    <%- include('partials/csrf') %>
+    <% if (order.is_test) { %>
+      <p style="margin-top:0"><strong>This is a test order.</strong> It is left out of sales figures and is never sent to ad platforms as a purchase.</p>
+      <input type="hidden" name="is_test" value="false"><button class="secondary" type="submit">This is a real order</button>
+    <% } else { %>
+      <p class="muted" style="margin-top:0">Placed this order yourself to check a form? Mark it as a test so it doesn't count as a sale.</p>
+      <input type="hidden" name="is_test" value="true"><button class="secondary" type="submit">Mark as test order</button>
+    <% } %>
+  </form>
+
   <div class="card">
     <h2>Source</h2>
     <dl class="kv">

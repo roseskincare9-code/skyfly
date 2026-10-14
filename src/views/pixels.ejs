@@ -29,6 +29,36 @@
       <h2 style="margin:0"><%= LABELS[provider] %></h2>
       <span class="pill <%= s.enabled ? 'active' : '' %>"><%= s.enabled ? 'On' : 'Off' %></span>
     </div>
+    <% const configured = s.enabled && s.pixel_id; const serverOn = s.server_purchase && s.access_token_enc; %>
+    <dl class="kv" style="margin:12px 0" data-status="<%= provider %>">
+      <dt>Configured</dt><dd><%= configured ? 'Yes: pixel ' + s.pixel_id + ' is on' : (s.pixel_id ? 'Saved but switched off' : 'No') %></dd>
+      <dt>Browser events</dt><dd>
+        <% if (!configured) { %><span class="muted">—</span>
+        <% } else if (s.browser_verified_at) { %><span class="pill active">Verified</span> <span class="muted">confirmed by you on <%= formatDate(s.browser_verified_at) %></span>
+        <% } else { %><span class="pill pending">Not verified</span> <span class="muted">configured, but nobody has confirmed events arrive yet</span><% } %></dd>
+      <dt>Server Purchase</dt><dd>
+        <% if (!serverOn) { %><span class="muted">Off</span>
+        <% } else if (s.server_verified_at) { %><span class="pill active">Verified</span> <span class="muted"><%= provider === 'meta' ? 'Meta' : 'TikTok' %> accepted an event from Skyfly on <%= formatDate(s.server_verified_at) %></span>
+        <% } else { %><span class="pill pending">Not verified</span> <span class="muted">send a test Purchase below</span><% } %></dd>
+    </dl>
+    <% if (configured) { %>
+      <form method="post" action="<%= base %>/pixels/browser-verified" style="margin-bottom:12px">
+        <%- include('partials/csrf') %><input type="hidden" name="provider" value="<%= provider %>"><% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
+        <% if (s.browser_verified_at) { %>
+          <input type="hidden" name="verified" value="false"><button class="secondary" type="submit">Mark browser events as not verified</button>
+        <% } else { %>
+          <details><summary>How to verify browser events</summary>
+            <ol style="font-size:14px;padding-left:18px">
+              <li>Open the platform's <strong>Test events</strong> screen (<%= provider === 'meta' ? 'Meta Events Manager → your pixel → Test events' : 'TikTok Events Manager → your pixel → Test events' %>), or install the <strong><%= provider === 'meta' ? 'Meta Pixel Helper' : 'TikTok Pixel Helper' %></strong> browser extension.</li>
+              <li>Open your published page. <strong>PageView</strong> should appear <strong>once</strong>.</li>
+              <li>Tap into the order form: <strong>InitiateCheckout</strong> appears once.</li>
+              <li>Submit a test order: <strong><%= provider === 'meta' ? 'Lead' : 'SubmitForm' %></strong> appears once, and <strong>no Purchase</strong>. Then mark that order as a test order in Skyfly.</li>
+            </ol>
+          </details>
+          <input type="hidden" name="verified" value="true"><button class="secondary" type="submit">I've checked: events arrive once</button>
+        <% } %>
+      </form>
+    <% } %>
     <form method="post" action="<%= base %>/pixels">
       <%- include('partials/csrf') %>
       <input type="hidden" name="provider" value="<%= provider %>">

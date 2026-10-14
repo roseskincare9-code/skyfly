@@ -252,6 +252,13 @@ export async function createOrder(pool, input, auth, config) {
       await client.query('ROLLBACK');
       return replay(await findByIdempotencyKey(client, page.business_id, input.idempotencyKey), print);
     }
+    if (auth.businessId === undefined) {
+      // The first saved browser submission proves this page's form is connected.
+      await client.query(
+        'UPDATE landing_pages SET order_connected_at = now(), order_connected_reference = $2 WHERE id = $1 AND order_connected_at IS NULL',
+        [page.id, order.reference],
+      );
+    }
     await client.query('COMMIT');
     return { order, replayed: false };
   });

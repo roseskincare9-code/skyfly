@@ -1,0 +1,11 @@
+<% /* Order connection: only "Verified" once a real submission from the page was saved. */ %>
+<% if (p.order_connected_at) { %>
+  <span class="pill active">Orders connected ✓ verified</span>
+  <span class="muted" style="font-size:13px">first order <%= p.order_connected_reference %> on <%= formatDate(p.order_connected_at) %></span>
+<% } else if (detected) { %>
+  <span class="pill pending">Connection code found, not verified</span>
+  <span class="muted" style="font-size:13px">place a test order on the live page to verify</span>
+<% } else { %>
+  <span class="pill cancelled">Not connected</span>
+  <span class="muted" style="font-size:13px">orders from this page do not reach Skyfly yet</span>
+<% } %>

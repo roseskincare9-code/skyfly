@@ -142,7 +142,7 @@ function serverReady(config, s) {
 // Called after an order's payment status changes to Paid.
 export async function recordPurchase(pool, config, orderId) {
   const { order, items } = await loadOrder(pool, orderId);
-  if (!order || order.payment_status !== 'paid') return [];
+  if (!order || order.payment_status !== 'paid' || order.is_test) return [];
   const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
   const results = [];
   for (const provider of PROVIDERS) {
@@ -161,8 +161,14 @@ export async function recordPurchase(pool, config, orderId) {
   return results;
 }
 
+// The platform accepting an event is what makes server-side Purchase "verified".
+export async function markServerVerified(pool, settingsId) {
+  await pool.query('UPDATE pixel_settings SET server_verified_at = now() WHERE id = $1', [settingsId]);
+}
+
 async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId) {
   const r = await deliver(config, provider, settings, order, items, eventId);
+  if (r.ok) await markServerVerified(pool, settings.id);
   await pool.query(
     `UPDATE conversion_events SET attempts = attempts + 1, status = $2, response_code = $3, last_error = $4,
             sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END WHERE id = $1`,
@@ -180,7 +186,7 @@ export async function retryEvent(pool, config, eventRowId, businessId) {
   );
   if (!ev) return null;
   const { order, items } = await loadOrder(pool, ev.order_id);
-  if (order.payment_status !== 'paid') return null;
+  if (order.payment_status !== 'paid' || order.is_test) return null;
   const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id))[ev.provider];
   if (!serverReady(config, settings)) return { ok: false, error: 'Server-side Purchase is not set up for this pixel any more.' };
   return attempt(pool, config, ev.id, ev.provider, settings, order, items, ev.event_id);

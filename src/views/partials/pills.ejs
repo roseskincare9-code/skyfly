@@ -1,1 +1,1 @@
-<span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span> <span class="pill pay-<%= o.payment_status %>"><%= PAYMENT_LABELS[o.payment_status] %></span>
+<span class="pill <%= o.status %>"><%= STATUS_LABELS[o.status] %></span> <span class="pill pay-<%= o.payment_status %>"><%= PAYMENT_LABELS[o.payment_status] %></span><% if (o.is_test) { %> <span class="pill">TEST</span><% } %>

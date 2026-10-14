@@ -20,6 +20,11 @@
       <select id="source" name="source"><option value="">All sources</option>
         <% [['web','Website form'],['api','API'],['manual','Manual']].forEach(([v,l]) => { %><option value="<%= v %>" <%= filters.source === v ? 'selected' : '' %>><%= l %></option><% }) %>
       </select></div>
+    <div><label for="test">Test orders</label>
+      <select id="test" name="test"><option value="">Include</option>
+        <option value="exclude" <%= filters.test === 'exclude' ? 'selected' : '' %>>Hide</option>
+        <option value="only" <%= filters.test === 'only' ? 'selected' : '' %>>Only test orders</option>
+      </select></div>
     <div><label for="page">Landing page</label>
       <select id="page" name="page"><option value="">All pages</option>
         <% landingPages.forEach((p) => { %><option value="<%= p.id %>" <%= filters.page === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }) %>

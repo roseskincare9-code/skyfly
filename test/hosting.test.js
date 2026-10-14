@@ -72,7 +72,8 @@ describe('import', () => {
     assert.match(page.text, /img\/missing\.png/);
     assert.match(page.text, /SheetDB/);
     assert.match(page.text, /Meta Pixel \(123456789012345\)/);
-    assert.match(page.text, /NOT connected/);
+    assert.match(page.text, /a form was found, but no Skyfly connection code/);
+    assert.match(page.text, /Not connected/);
     assert.match(page.text, /WhatsApp links/);
   });
 

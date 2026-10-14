@@ -119,7 +119,8 @@ try {
     await dash.waitForURL(/landing-pages\/\d+\?done=uploaded/);
     pageId = dash.url().match(/landing-pages\/(\d+)/)[1];
     const text = await dash.textContent('#report');
-    assert.match(text, /Order form: connected to Skyfly/);
+    assert.match(text, /Skyfly connection code found in this upload/);
+    assert.match(await dash.textContent('#connection'), /Connection code found, not verified/);
     await noSideScroll(dash, 'page manager');
     await dash.screenshot({ path: path.join(shots, 'h1-imported-page-mobile.png'), fullPage: true });
   });
@@ -239,6 +240,16 @@ try {
     assert.equal(o.payment_status, 'unpaid');
   });
 
+  await step('the page now shows its order connection as verified by that order', async () => {
+    await dash.goto(`${DASH}/businesses/1/landing-pages/${pageId}`);
+    assert.match(await dash.textContent('#connection'), new RegExp(`Orders connected ✓ verified[\\s\\S]*${reference}`));
+    await dash.goto(`${DASH}/businesses/1/pixels`);
+    const meta = await dash.textContent('[data-status=meta]');
+    assert.match(meta, /Configured\s*Yes/);
+    assert.match(meta, /Browser events\s*Not verified/);
+    assert.match(meta, /Server Purchase\s*Not verified/);
+  });
+
   await step('dashboard shows the order; marking Paid sends one server Purchase', async () => {
     await dash.goto(`${DASH}/businesses/1/orders`);
     assert.match(await dash.textContent('body'), new RegExp(reference));
@@ -263,6 +274,9 @@ try {
     await dash.locator('form:has(input[name=kind][value=payment]) button').click();
     await dash.waitForSelector('.notice');
     assert.equal(apiCalls.length, 1, 'no duplicate Purchase');
+    await dash.goto(`${DASH}/businesses/1/pixels`);
+    assert.match(await dash.textContent('[data-status=meta]'), /Server Purchase\s*Verified\s*Meta accepted an event/);
+    await dash.screenshot({ path: path.join(shots, 'h7-pixel-status-mobile.png'), fullPage: true });
   });
 
   await step('overview shows paid revenue; unpublish takes the page offline', async () => {

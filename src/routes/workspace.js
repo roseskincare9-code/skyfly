@@ -32,7 +32,7 @@ export function workspaceRoutes({ pool, config, onPaid = null }) {
     const businessId = req.business.id;
     const [byStatus, money, today, byPage, recent] = await Promise.all([
       pool.query(
-        'SELECT status, count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders WHERE business_id = $1 GROUP BY status',
+        'SELECT status, count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders WHERE business_id = $1 AND NOT is_test GROUP BY status',
         [businessId],
       ),
       pool.query(
@@ -41,23 +41,23 @@ export function workspaceRoutes({ pool, config, onPaid = null }) {
            count(*) FILTER (WHERE payment_status = 'paid')::int AS paid_count,
            coalesce(sum(total_minor) FILTER (WHERE payment_status IN ('unpaid', 'pending', 'failed') AND status = ANY($2::text[])), 0)::bigint AS to_collect,
            coalesce(sum(total_minor) FILTER (WHERE payment_status = 'refunded'), 0)::bigint AS refunded
-         FROM orders WHERE business_id = $1`,
+         FROM orders WHERE business_id = $1 AND NOT is_test`,
         [businessId, SALES_DEFINITIONS.confirmed],
       ),
       pool.query(
         `SELECT count(*)::int AS count, coalesce(sum(total_minor), 0)::bigint AS total FROM orders
-          WHERE business_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos'`,
+          WHERE business_id = $1 AND NOT is_test AND created_at >= date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos'`,
         [businessId],
       ),
       pool.query(
         `SELECT lp.id, lp.name, count(o.id)::int AS orders,
                 coalesce(sum(o.total_minor) FILTER (WHERE o.payment_status = 'paid'), 0)::bigint AS paid
-           FROM landing_pages lp LEFT JOIN orders o ON o.landing_page_id = lp.id
+           FROM landing_pages lp LEFT JOIN orders o ON o.landing_page_id = lp.id AND NOT o.is_test
           WHERE lp.business_id = $1 GROUP BY lp.id ORDER BY orders DESC, lp.name LIMIT 10`,
         [businessId],
       ),
       pool.query(
-        `SELECT id, reference, customer_name, phone, status, payment_status, total_minor, currency, created_at
+        `SELECT id, reference, customer_name, phone, status, payment_status, total_minor, currency, created_at, is_test
            FROM orders WHERE business_id = $1 ORDER BY created_at DESC LIMIT 8`,
         [businessId],
       ),

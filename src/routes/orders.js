@@ -19,6 +19,7 @@ function orderFilters(businessId, query) {
     status: STATUS_VALUES.includes(query.status) ? query.status : '',
     payment: PAYMENT_VALUES.includes(query.payment) ? query.payment : '',
     source: ['web', 'api', 'manual'].includes(query.source) ? query.source : '',
+    test: ['exclude', 'only'].includes(query.test) ? query.test : '',
     page: /^\d+$/.test(String(query.page ?? '')) ? String(query.page) : '',
     from: DATE_RE.test(String(query.from ?? '')) ? query.from : '',
     to: DATE_RE.test(String(query.to ?? '')) ? query.to : '',
@@ -36,6 +37,7 @@ function orderFilters(businessId, query) {
   }
   if (filters.status) { params.push(filters.status); where.push(`o.status = $${params.length}`); }
   if (filters.payment) { params.push(filters.payment); where.push(`o.payment_status = $${params.length}`); }
+  if (filters.test) where.push(filters.test === 'only' ? 'o.is_test' : 'NOT o.is_test');
   if (filters.source) { params.push(filters.source); where.push(`o.source = $${params.length}`); }
   if (filters.page) { params.push(filters.page); where.push(`o.landing_page_id = $${params.length}`); }
   if (filters.from) { params.push(filters.from); where.push(`o.created_at >= ($${params.length}::date)::timestamp AT TIME ZONE 'Africa/Lagos'`); }
@@ -52,7 +54,7 @@ export function ordersRoutes({ pool, config, onPaid = null }) {
     const [list, count, pages] = await Promise.all([
       pool.query(
         `SELECT o.id, o.reference, o.customer_name, o.phone, o.email, o.state, o.status, o.payment_status, o.source,
-                o.total_minor, o.currency, o.created_at, o.utm_campaign,
+                o.total_minor, o.currency, o.created_at, o.utm_campaign, o.is_test,
                 lp.name AS landing_page_name,
                 (SELECT string_agg(i.product_name || ' × ' || i.quantity, ', ' ORDER BY i.id) FROM order_items i WHERE i.order_id = o.id) AS items
            FROM orders o LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
@@ -113,10 +115,10 @@ export function ordersRoutes({ pool, config, onPaid = null }) {
     );
     await audit(pool, req, { action: 'orders.exported', businessId: req.business.id, details: { rows: rows.length } });
     const csv = toCsv(
-      ['Reference', 'Date (UTC)', 'Status', 'Payment', 'Source', 'Customer', 'Phone', 'Email', 'Address', 'State', 'Items', 'Quantity',
+      ['Reference', 'Date (UTC)', 'Status', 'Payment', 'Source', 'Test order', 'Customer', 'Phone', 'Email', 'Address', 'State', 'Items', 'Quantity',
         'Total', 'Currency', 'Customer notes', 'Landing page', 'Source URL', 'UTM source', 'UTM medium', 'UTM campaign', 'UTM content', 'UTM term'],
       rows.map((o) => [
-        o.reference, o.created_at.toISOString(), STATUS_LABELS[o.status], PAYMENT_LABELS[o.payment_status], o.source, o.customer_name, o.phone, o.email, o.address, o.state,
+        o.reference, o.created_at.toISOString(), STATUS_LABELS[o.status], PAYMENT_LABELS[o.payment_status], o.source, o.is_test ? 'yes' : 'no', o.customer_name, o.phone, o.email, o.address, o.state,
         o.items, o.quantity, o.total_minor / 100, o.currency, o.customer_notes, o.landing_page_name, o.source_url,
         o.utm_source, o.utm_medium, o.utm_campaign, o.utm_content, o.utm_term,
       ]),
@@ -169,6 +171,16 @@ export function ordersRoutes({ pool, config, onPaid = null }) {
     const result = await retryEvent(pool, config, req.params.eventId, req.business.id);
     if (result) await audit(pool, req, { action: 'pixel.purchase_retried', businessId: req.business.id, entityType: 'order', entityId: order.reference, details: { ok: result.ok } });
     res.redirect(`${res.locals.base}/orders/${order.id}`);
+  }));
+
+  // Test orders stay visible but are left out of sales figures and ad-platform purchases.
+  router.post('/:orderId/test', asyncHandler(async (req, res) => {
+    const order = await loadOrder(req);
+    if (!order) return res.status(404).render('error', { message: 'Order not found.' });
+    const isTest = req.body.is_test === 'true';
+    await pool.query('UPDATE orders SET is_test = $1, updated_at = now() WHERE id = $2', [isTest, order.id]);
+    await audit(pool, req, { action: isTest ? 'order.marked_test' : 'order.unmarked_test', businessId: req.business.id, entityType: 'order', entityId: order.reference });
+    res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
   }));
 
   // Fulfilment and payment status are updated independently, each with its own history.

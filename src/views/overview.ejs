@@ -24,6 +24,7 @@
     <strong>Paid revenue</strong> counts only orders marked Paid (refunds excluded: <%= formatMoney(sales.refunded, business.currency) %>).
     <strong>Approved order value</strong> = Confirmed/Approved + Processing + Dispatched + Delivered, paid or not.
     <strong>To collect</strong> = approved orders whose payment is Unpaid, Pending or Failed.
+    All figures leave out orders marked as <strong>test</strong>.
   </p>
 
   <div class="card">

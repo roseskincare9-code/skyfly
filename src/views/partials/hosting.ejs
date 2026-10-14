@@ -64,15 +64,16 @@
     <ul><% r.pixels.forEach((p) => { %><li><%= { meta: 'Meta Pixel', tiktok: 'TikTok Pixel', google: 'Google tag' }[p.provider] %> <%= p.id ? '(' + p.id + ')' : '' %> in <code><%= p.file %></code></li><% }) %></ul>
     <p class="muted" style="font-size:13px">Skyfly will not add a second copy of a pixel that is already in the page, to avoid counting events twice. To let Skyfly manage it from the Pixels screen, remove that code from your page and upload again.</p>
   <% } %>
-  <p style="margin-bottom:0"><strong>Order form:</strong> <%= r.connected ? 'connected to Skyfly ✓' : (r.hasForm ? 'NOT connected. Orders will not reach Skyfly yet.' : 'no form found') %></p>
+  <p style="margin-bottom:0"><strong>Order form code:</strong> <%= r.connected ? 'Skyfly connection code found in this upload' : (r.hasForm ? 'a form was found, but no Skyfly connection code' : 'no form found') %></p>
 </div>
 <% } %>
 
-<div class="card">
+<div class="card" id="connection">
   <h2>Connect your order form</h2>
+  <p style="margin-top:0"><%- include('connection', { p: page, detected: Boolean(latest && latest.report && latest.report.connected) }) %></p>
   <p class="muted" style="margin-top:0">Pages don't send orders to Skyfly on their own. Use this form key and API address:</p>
   <dl class="kv"><dt>Form key</dt><dd><code><%= page.slug %></code></dd><dt>API address</dt><dd><code><%= hosting.apiBase %>/api/public/orders</code></dd></dl>
-  <p class="muted" style="font-size:13px">Simplest way: add this line before <code>&lt;/body&gt;</code> and mark your form, as described in the guide (docs/GUIDE.md):</p>
+  <p class="muted" style="font-size:13px">Simplest way: add this line before <code>&lt;/body&gt;</code> and mark your form, as described in the guide (docs/GUIDE.md). Then place one test order on the live page and mark it as a test order in Skyfly. That verifies the connection.</p>
   <code class="secret">&lt;script src="<%= hosting.apiBase %>/sdk/skyfly.js" data-page="<%= page.slug %>" defer&gt;&lt;/script&gt;</code>
 </div>
 

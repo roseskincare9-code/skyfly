@@ -117,7 +117,8 @@ export function landingPageRoutes({ pool, config }) {
   router.get('/', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT lp.*,
-              (SELECT count(*)::int FROM orders o WHERE o.landing_page_id = lp.id) AS order_count,
+              (SELECT count(*)::int FROM orders o WHERE o.landing_page_id = lp.id AND NOT o.is_test) AS order_count,
+              coalesce((SELECT (v.report->>'connected')::boolean FROM page_versions v WHERE v.landing_page_id = lp.id ORDER BY v.id DESC LIMIT 1), false) AS code_detected,
               (SELECT string_agg(p.name, ', ' ORDER BY p.sort_order, p.id) FROM landing_page_products x
                  JOIN products p ON p.id = x.product_id WHERE x.landing_page_id = lp.id) AS product_names
          FROM landing_pages lp WHERE lp.business_id = $1 ORDER BY lp.status = 'archived', lp.created_at`,
@@ -241,7 +242,15 @@ export function landingPageRoutes({ pool, config }) {
     const versionId = Number(req.body.version_id);
     const { rows: [version] } = await pool.query('SELECT id FROM page_versions WHERE id = $1 AND landing_page_id = $2', [versionId, page.id]);
     if (!version) return renderPage(req, res, page, { error: 'Choose a version to publish.', status: 400 });
-    await pool.query("UPDATE landing_pages SET published_version_id = $1, status = 'active', updated_at = now() WHERE id = $2", [version.id, page.id]);
+    // A different version may have a different form, so its connection must be proven again.
+    await pool.query(
+      `UPDATE landing_pages SET status = 'active', updated_at = now(),
+              order_connected_at = CASE WHEN published_version_id IS DISTINCT FROM $1 THEN NULL ELSE order_connected_at END,
+              order_connected_reference = CASE WHEN published_version_id IS DISTINCT FROM $1 THEN NULL ELSE order_connected_reference END,
+              published_version_id = $1
+        WHERE id = $2`,
+      [version.id, page.id],
+    );
     clearOriginCache();
     await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId } });
     res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=published`);
