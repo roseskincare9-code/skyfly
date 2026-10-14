@@ -3,24 +3,36 @@
 <main>
   <div class="row" style="justify-content:space-between">
     <h1>Landing pages</h1>
-    <a class="btn" href="<%= base %>/landing-pages/new">Register a landing page</a>
+    <a class="btn secondary" href="<%= base %>/landing-pages/new">Register an external page</a>
   </div>
   <% if (error) { %><p class="error"><%= error %></p><% } %>
-  <p class="muted">Landing pages are hosted elsewhere (e.g. GitHub Pages) and send orders to Skyfly. Each page sends its <strong>form key</strong> so orders are attributed to it. Only <strong>active</strong> pages can take orders, and only for their connected products.</p>
+  <form class="card" method="post" action="<%= base %>/landing-pages/upload" enctype="multipart/form-data">
+    <%- include('partials/csrf') %>
+    <h2>Import a landing page</h2>
+    <p class="muted" style="margin-top:0">Upload a <strong>.zip</strong> with your page (index.html) and its CSS, JavaScript, images and fonts, or a single <strong>.html</strong> file. Skyfly hosts it exactly as it is and tells you what to check before publishing.</p>
+    <label for="imp-name">Page name</label>
+    <input id="imp-name" name="name" maxlength="200" placeholder="e.g. Larose October promo">
+    <label for="imp-file">File (.zip or .html, max 25 MB)</label>
+    <input id="imp-file" name="file" type="file" accept=".zip,.html,.htm" required>
+    <p style="margin-bottom:0"><button type="submit">Upload</button></p>
+  </form>
+
+  <p class="muted">Pages hosted by Skyfly, or hosted elsewhere (e.g. GitHub Pages), can send orders to Skyfly. Each page has a <strong>form key</strong> so orders are attributed to it. Only <strong>published/active</strong> pages take orders, and only for their connected products.</p>
 
   <% pages.forEach((p) => { %>
   <div class="card">
     <div class="row" style="justify-content:space-between">
-      <h2 style="margin:0"><%= p.name %> <span class="pill <%= p.status %>"><%= p.status %></span></h2>
+      <h2 style="margin:0"><%= p.name %> <span class="pill <%= p.status %>"><%= p.published_version_id ? (p.status === 'active' ? 'published' : 'unpublished') : p.status %></span></h2>
       <a href="<%= base %>/orders?page=<%= p.id %>"><%= p.order_count %> orders →</a>
     </div>
     <dl class="kv" style="margin-top:10px">
-      <dt>URL</dt><dd><% if (p.url) { %><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.url %></a><% } else { %>—<% } %></dd>
+      <% if (p.published_version_id) { %><dt>Hosted by Skyfly</dt><dd><%= p.custom_domain ? 'https://' + p.custom_domain + '/' : 'yes' %></dd><% } %>
+      <dt>External URL</dt><dd><% if (p.url) { %><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.url %></a><% } else { %>—<% } %></dd>
       <dt>Form key</dt><dd><code><%= p.slug %></code></dd>
       <dt>Products</dt><dd><%= p.product_names || 'None connected' %></dd>
     </dl>
     <div class="row" style="margin-top:12px">
-      <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>">Edit</a>
+      <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>">Manage</a>
       <% if (p.url) { %>
         <a class="btn secondary" href="<%= base %>/landing-pages/<%= p.id %>/preview">Preview</a>
         <a class="btn secondary" href="<%= p.url %>" target="_blank" rel="noopener">Open page ↗</a>

@@ -9,7 +9,7 @@ import { apiKeyRoutes } from './apiKeys.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
 // Everything under /businesses/:businessId is only visible to that business's owner.
-export function workspaceRoutes({ pool }) {
+export function workspaceRoutes({ pool, config, onPaid = null }) {
   const router = Router();
   router.use(requireAuth);
 
@@ -89,9 +89,9 @@ export function workspaceRoutes({ pool }) {
     res.render('activity', { entries: rows, active: 'activity' });
   }));
 
-  scoped.use('/orders', ordersRoutes({ pool }));
+  scoped.use('/orders', ordersRoutes({ pool, onPaid }));
   scoped.use('/products', productRoutes({ pool }));
-  scoped.use('/landing-pages', landingPageRoutes({ pool }));
+  scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
   scoped.use('/settings', settingsRoutes({ pool }));
   scoped.use('/api-keys', apiKeyRoutes({ pool }));
 

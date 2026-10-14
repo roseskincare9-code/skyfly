@@ -1,0 +1,96 @@
+<% const latest = hosting.versions[0]; const live = page.status === 'active' && page.published_version_id; %>
+<div class="card">
+  <h2>Hosting</h2>
+  <% if (!hosting.enabled) { %>
+    <div class="warn-box">Hosting is not set up yet: <code>PAGES_BASE_URL</code> is missing. Pages need their own address, separate from the dashboard, so their scripts can never read your dashboard. See docs/SETUP.md.</div>
+  <% } %>
+  <% if (hosting.versions.length === 0) { %>
+    <p class="muted">No files uploaded. This page is hosted elsewhere<%= page.url ? ' (' + page.url + ')' : '' %>. Upload a .zip or .html to host it on Skyfly.</p>
+  <% } else { %>
+    <dl class="kv">
+      <dt>Status</dt><dd><% if (live) { %><span class="pill active">Published</span><% } else { %><span class="pill">Not published</span><% } %></dd>
+      <% if (live && hosting.publishedUrl) { %><dt>Live address</dt><dd><a href="<%= hosting.publishedUrl %>" target="_blank" rel="noopener" id="live-url"><%= hosting.publishedUrl %></a></dd><% } %>
+      <% if (live && hosting.domainUrl) { %><dt>Custom domain</dt><dd><a href="<%= hosting.domainUrl %>" target="_blank" rel="noopener"><%= hosting.domainUrl %></a></dd><% } %>
+    </dl>
+    <div class="row" style="margin-top:12px">
+      <% if (live) { %>
+        <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/unpublish"><%- include('csrf') %><button class="secondary" type="submit">Unpublish</button></form>
+      <% } %>
+    </div>
+
+    <h2 style="margin-top:18px">Versions</h2>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Uploaded</th><th>File</th><th>Size</th><th></th></tr></thead>
+      <tbody>
+      <% hosting.versions.forEach((v) => { const isLive = live && v.id === Number(page.published_version_id); %>
+        <tr>
+          <td><%= formatDate(v.created_at) %><% if (isLive) { %> <span class="pill active">live</span><% } %></td>
+          <td><%= v.source_name %> <span class="muted">(<%= v.file_count %> files)</span></td>
+          <td class="muted"><%= (v.total_bytes / 1024).toFixed(0) %> KB</td>
+          <td><div class="row">
+            <% if (v.previewUrl) { %><a class="btn secondary" href="<%= v.previewUrl %>" target="_blank" rel="noopener">Preview</a><% } %>
+            <% if (!isLive && hosting.enabled) { %>
+              <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/publish"><%- include('csrf') %><input type="hidden" name="version_id" value="<%= v.id %>"><button type="submit">Publish this version</button></form>
+            <% } %>
+          </div></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+  <% } %>
+
+  <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/upload" enctype="multipart/form-data" style="margin-top:14px">
+    <%- include('csrf') %>
+    <label for="file">Upload <%= hosting.versions.length ? 'a new version' : 'page files' %> (.zip or .html, max 25 MB)</label>
+    <input id="file" name="file" type="file" accept=".zip,.html,.htm" required>
+    <p style="margin-bottom:0"><button class="secondary" type="submit">Upload</button></p>
+  </form>
+</div>
+
+<% if (latest) { const r = latest.report || {}; %>
+<div class="card" id="report">
+  <h2>Check before publishing <span class="muted" style="font-weight:400;font-size:.9rem">(latest upload)</span></h2>
+  <% if (!(r.warnings || []).length && !(r.providers || []).length) { %><p class="notice">No problems found.</p><% } %>
+  <% (r.warnings || []).forEach((w) => { %><div class="warn-box"><%= w %></div><% }) %>
+  <% if (r.missingCount) { %>
+    <details><summary>Missing files (<%= r.missingCount %>)</summary><ul><% r.missing.forEach((m) => { %><li><code><%= m %></code></li><% }) %></ul></details>
+  <% } %>
+  <% if ((r.providers || []).length) { %>
+    <h3 style="font-size:1rem">External services this page uses</h3>
+    <ul><% r.providers.forEach((p) => { %><li><strong><%= p.name %></strong>: <%= p.advice %></li><% }) %></ul>
+  <% } %>
+  <% if ((r.pixels || []).length) { %>
+    <h3 style="font-size:1rem">Tracking code already in the page</h3>
+    <ul><% r.pixels.forEach((p) => { %><li><%= { meta: 'Meta Pixel', tiktok: 'TikTok Pixel', google: 'Google tag' }[p.provider] %> <%= p.id ? '(' + p.id + ')' : '' %> in <code><%= p.file %></code></li><% }) %></ul>
+    <p class="muted" style="font-size:13px">Skyfly will not add a second copy of a pixel that is already in the page, to avoid counting events twice. To let Skyfly manage it from the Pixels screen, remove that code from your page and upload again.</p>
+  <% } %>
+  <p style="margin-bottom:0"><strong>Order form:</strong> <%= r.connected ? 'connected to Skyfly ✓' : (r.hasForm ? 'NOT connected. Orders will not reach Skyfly yet.' : 'no form found') %></p>
+</div>
+<% } %>
+
+<div class="card">
+  <h2>Connect your order form</h2>
+  <p class="muted" style="margin-top:0">Pages don't send orders to Skyfly on their own. Use this form key and API address:</p>
+  <dl class="kv"><dt>Form key</dt><dd><code><%= page.slug %></code></dd><dt>API address</dt><dd><code><%= hosting.apiBase %>/api/public/orders</code></dd></dl>
+  <p class="muted" style="font-size:13px">Simplest way: add this line before <code>&lt;/body&gt;</code> and mark your form, as described in the guide (docs/GUIDE.md):</p>
+  <code class="secret">&lt;script src="<%= hosting.apiBase %>/sdk/skyfly.js" data-page="<%= page.slug %>" defer&gt;&lt;/script&gt;</code>
+</div>
+
+<div class="card">
+  <h2>Custom domain</h2>
+  <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/domain">
+    <%- include('csrf') %>
+    <label for="domain">Domain (optional)</label>
+    <input id="domain" name="domain" value="<%= page.custom_domain || '' %>" placeholder="shop.yourbrand.com">
+    <p><button class="secondary" type="submit">Save domain</button></p>
+  </form>
+  <% if (page.custom_domain) { %>
+    <ol style="padding-left:18px;font-size:14px">
+      <li>At your domain provider, add a <strong>CNAME</strong> record for <code><%= page.custom_domain %></code> pointing to <code><%= hosting.cnameTarget %></code>. For a root domain (no "www"/"shop" part), use an <strong>A</strong> record to <code>216.24.57.1</code>.</li>
+      <li>In Render → your Skyfly service → Settings → Custom Domains, add <code><%= page.custom_domain %></code>. Render issues the HTTPS certificate.</li>
+      <li>Publish this page, then check below.</li>
+    </ol>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/domain/check"><%- include('csrf') %><button class="secondary" type="submit">Check DNS</button></form>
+    <% if (page.domain_status) { %><p class="<%= page.domain_status.startsWith('ok') ? 'notice' : 'warn-box' %>" style="margin-top:10px"><%= page.domain_status.replace(/^(ok|not_ready): /, '') %> <span class="muted">(checked <%= formatDate(page.domain_checked_at) %>)</span></p><% } %>
+  <% } %>
+</div>

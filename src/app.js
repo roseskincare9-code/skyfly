@@ -10,6 +10,7 @@ import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
 import { csrf } from './lib/csrf.js';
+import { pageServer } from './hosting/server.js';
 import { formatMoney } from './lib/money.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from './lib/statuses.js';
 
@@ -19,7 +20,17 @@ const dateFormat = new Intl.DateTimeFormat('en-NG', {
   timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
 });
 
-export function createApp({ pool, config }) {
+// Which part of Skyfly a request is for. Hosted pages live on their own host(s)
+// so their scripts can never read dashboard pages or cookies.
+function isDashboardRequest(req, config) {
+  const host = req.hostname;
+  if (config.pagesHost && host === config.pagesHost) return false;
+  if (config.dashboardHost && host === config.dashboardHost) return true;
+  if (!config.isProduction && (host === 'localhost' || host === '127.0.0.1')) return true;
+  return !config.dashboardHost;
+}
+
+export function createApp({ pool, config, transformHtml = null, onPaid = null }) {
   const app = express();
   const PgStore = connectPgSimple(session);
 
@@ -35,8 +46,6 @@ export function createApp({ pool, config }) {
     PAYMENT_LABELS,
   });
 
-  app.use(helmet());
-
   app.get('/healthz', async (req, res) => {
     try {
       await pool.query('SELECT 1');
@@ -45,6 +54,11 @@ export function createApp({ pool, config }) {
       res.status(503).json({ status: 'database_unavailable' });
     }
   });
+
+  const pages = pageServer({ pool, config, transformHtml });
+  app.use((req, res, next) => (isDashboardRequest(req, config) ? next() : pages(req, res, next)));
+
+  app.use(helmet());
 
   // Public order API and confirmation page: no admin session involved.
   app.use(publicRoutes({ pool, config }));
@@ -77,7 +91,7 @@ export function createApp({ pool, config }) {
 
   app.use(authRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
-  app.use(workspaceRoutes({ pool }));
+  app.use(workspaceRoutes({ pool, config, onPaid }));
 
   app.use((req, res) => res.status(404).render('error', { message: 'Page not found.' }));
 

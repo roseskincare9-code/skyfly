@@ -1,14 +1,16 @@
 <%- include('partials/head', { title: page.id ? page.name : 'New landing page' }) %>
 <%- include('partials/nav', { active: 'pages' }) %>
-<main class="narrow">
+<main style="max-width:760px">
   <p><a href="<%= base %>/landing-pages">← Landing pages</a></p>
   <h1><%= page.id ? 'Edit landing page' : 'Register a landing page' %></h1>
-  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (typeof notice !== 'undefined' && notice) { %><div class="notice"><%= notice %></div><% } %>
+  <% if (page.id && hosting) { %><%- include('partials/hosting') %><h2>Page settings</h2><% } %>
   <form class="card" method="post" action="<%= base %>/landing-pages<%= page.id ? '/' + page.id : '' %>">
     <%- include('partials/csrf') %>
     <label for="name">Name</label>
     <input id="name" name="name" value="<%= page.name %>" required maxlength="200">
-    <label for="url">Page URL</label>
+    <label for="url">External URL (only if the page is hosted elsewhere, e.g. GitHub Pages)</label>
     <input id="url" name="url" type="url" value="<%= page.url || '' %>" placeholder="https://...">
     <label for="slug">Form key (sent by the page with each order)</label>
     <input id="slug" name="slug" value="<%= page.slug %>" placeholder="auto from name" maxlength="60">

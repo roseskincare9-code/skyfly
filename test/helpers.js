@@ -15,7 +15,7 @@ export function testDatabaseUrl() {
 export const ORIGIN = 'https://roseskincare9-code.github.io';
 
 export function makeConfig(overrides = {}) {
-  return {
+  const config = {
     isProduction: false,
     sessionSecret: 'test-secret',
     allowSignup: true,
@@ -26,6 +26,8 @@ export function makeConfig(overrides = {}) {
     orderRateLimit: 1000,
     ...overrides,
   };
+  const hostOf = (u) => (u ? new URL(u).hostname : null);
+  return { pagesHost: hostOf(config.pagesBaseUrl), dashboardHost: hostOf(config.publicBaseUrl), ...config };
 }
 
 export async function resetDatabase(pool) {

@@ -2,6 +2,30 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { slugify } from '../lib/auth.js';
 import { LANDING_PAGE_STATUSES } from '../lib/statuses.js';
+import multer from 'multer';
+import { audit } from '../lib/audit.js';
+import { requireCsrf } from '../lib/csrf.js';
+import { clearOriginCache } from '../lib/origins.js';
+import { importUpload, ImportError } from '../hosting/importer.js';
+import { saveVersion } from '../hosting/storage.js';
+import { LIMITS } from '../hosting/files.js';
+import { previewToken } from '../hosting/preview.js';
+import { checkDomain, normalizeDomain } from '../hosting/domains.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: LIMITS.uploadBytes, files: 1, fields: 10 } });
+
+// Parses one uploaded file, then checks the CSRF token (which arrives in the multipart body).
+function receiveFile(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      req.uploadError = err.code === 'LIMIT_FILE_SIZE'
+        ? `The file is larger than ${LIMITS.uploadBytes / 1024 / 1024} MB.`
+        : 'The upload could not be read. Try again.';
+      req.body = req.body || {};
+    }
+    requireCsrf(req, res, next);
+  });
+}
 
 function safeUrl(input) {
   const s = String(input ?? '').trim();
@@ -28,7 +52,7 @@ function readPage(body) {
   return { name, slug, url: url ?? null, status, notes, productIds, errors };
 }
 
-export function landingPageRoutes({ pool }) {
+export function landingPageRoutes({ pool, config }) {
   const router = Router({ mergeParams: true });
 
   async function products(businessId) {
@@ -105,14 +129,14 @@ export function landingPageRoutes({ pool }) {
   router.get('/new', asyncHandler(async (req, res) => {
     res.render('landing-page-form', {
       page: { name: '', slug: '', url: '', status: 'draft', notes: '', productIds: [] },
-      products: await products(req.business.id), error: null, statuses: LANDING_PAGE_STATUSES,
+      products: await products(req.business.id), error: null, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null,
     });
   }));
 
   router.post('/', asyncHandler(async (req, res) => {
     const page = readPage(req.body);
     const renderError = async (msg, status) => res.status(status).render('landing-page-form', {
-      page, products: await products(req.business.id), error: msg, statuses: LANDING_PAGE_STATUSES,
+      page, products: await products(req.business.id), error: msg, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null,
     });
     if (page.errors.length) return renderError(page.errors.join(' '), 400);
     try {
@@ -145,19 +169,129 @@ export function landingPageRoutes({ pool }) {
     res.redirect(`${res.locals.base}/landing-pages`);
   }));
 
+  async function renderPage(req, res, page, { error = null, notice = null, status = 200 } = {}) {
+    const { rows: versions } = await pool.query(
+      `SELECT id, source_name, entry_path, file_count, total_bytes, report, created_at FROM page_versions
+        WHERE landing_page_id = $1 ORDER BY id DESC LIMIT 10`,
+      [page.id],
+    );
+    const hosting = {
+      enabled: Boolean(config.pagesBaseUrl),
+      versions: versions.map((v) => ({
+        ...v,
+        previewUrl: config.pagesBaseUrl ? `${config.pagesBaseUrl}/_preview/${v.id}/${previewToken(config.sessionSecret, v.id)}/` : null,
+      })),
+      publishedUrl: config.pagesBaseUrl && page.published_version_id ? `${config.pagesBaseUrl}/${page.slug}/` : null,
+      domainUrl: page.custom_domain ? `https://${page.custom_domain}/` : null,
+      cnameTarget: config.renderHost || (config.publicBaseUrl ? new URL(config.publicBaseUrl).hostname : ''),
+      apiBase: config.publicBaseUrl || '',
+    };
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('landing-page-form', {
+      page, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting,
+    });
+  }
+
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    res.render('landing-page-form', { page, products: await products(req.business.id), error: null, statuses: LANDING_PAGE_STATUSES });
+    const notice = { uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.' }[req.query.done] ?? null;
+    await renderPage(req, res, page, { notice });
+  }));
+
+  // Import a new page from a ZIP or HTML file (creates the page record too).
+  router.post('/upload', receiveFile, asyncHandler(async (req, res) => {
+    const fail = (message, problems = []) => res.redirect(`${res.locals.base}/landing-pages?error=${encodeURIComponent([message, ...problems.slice(0, 5)].join(' • '))}`);
+    if (req.uploadError) return fail(req.uploadError);
+    const name = String(req.body.name ?? '').trim().slice(0, 200) || String(req.file?.originalname ?? 'Imported page').replace(/\.(zip|html?)$/i, '');
+    let imported;
+    try {
+      imported = await importUpload(req.file);
+    } catch (err) {
+      if (err instanceof ImportError) return fail(err.message, err.problems);
+      throw err;
+    }
+    const slug = await uniqueSlug(slugify(name) || 'page');
+    const pageId = await savePage(req.business.id, { name, slug, url: null, status: 'draft', notes: null, productIds: [] });
+    const versionId = await saveVersion(pool, { pageId, userId: req.session.userId, upload: imported });
+    await audit(pool, req, { action: 'page.imported', businessId: req.business.id, entityType: 'landing_page', entityId: pageId, details: { versionId, file: imported.sourceName, files: imported.files.length } });
+    res.redirect(`${res.locals.base}/landing-pages/${pageId}?done=uploaded`);
+  }));
+
+  // Upload a new version of an existing page.
+  router.post('/:pageId/upload', receiveFile, asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    if (req.uploadError) return renderPage(req, res, page, { error: req.uploadError, status: 400 });
+    let imported;
+    try {
+      imported = await importUpload(req.file);
+    } catch (err) {
+      if (err instanceof ImportError) return renderPage(req, res, page, { error: [err.message, ...err.problems.slice(0, 10)].join(' • '), status: 400 });
+      throw err;
+    }
+    const versionId = await saveVersion(pool, { pageId: page.id, userId: req.session.userId, upload: imported });
+    await audit(pool, req, { action: 'page.version_uploaded', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId, file: imported.sourceName } });
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=uploaded`);
+  }));
+
+  router.post('/:pageId/publish', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    const versionId = Number(req.body.version_id);
+    const { rows: [version] } = await pool.query('SELECT id FROM page_versions WHERE id = $1 AND landing_page_id = $2', [versionId, page.id]);
+    if (!version) return renderPage(req, res, page, { error: 'Choose a version to publish.', status: 400 });
+    await pool.query("UPDATE landing_pages SET published_version_id = $1, status = 'active', updated_at = now() WHERE id = $2", [version.id, page.id]);
+    clearOriginCache();
+    await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId } });
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=published`);
+  }));
+
+  router.post('/:pageId/unpublish', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    await pool.query("UPDATE landing_pages SET status = 'draft', updated_at = now() WHERE id = $1", [page.id]);
+    clearOriginCache();
+    await audit(pool, req, { action: 'page.unpublished', businessId: req.business.id, entityType: 'landing_page', entityId: page.id });
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=unpublished`);
+  }));
+
+  router.post('/:pageId/domain', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    const domain = normalizeDomain(req.body.domain);
+    const reserved = [config.publicBaseUrl, config.pagesBaseUrl].filter(Boolean).map((u) => new URL(u).hostname);
+    if (domain === null || reserved.includes(domain) || (domain && domain.endsWith('.onrender.com'))) {
+      return renderPage(req, res, page, { error: 'Enter a domain you own, like shop.example.com.', status: 400 });
+    }
+    try {
+      await pool.query(
+        'UPDATE landing_pages SET custom_domain = $1, domain_status = NULL, domain_checked_at = NULL, updated_at = now() WHERE id = $2',
+        [domain || null, page.id],
+      );
+    } catch (err) {
+      if (err.code === '23505') return renderPage(req, res, page, { error: 'That domain is already used by another page.', status: 409 });
+      throw err;
+    }
+    clearOriginCache();
+    await audit(pool, req, { action: 'page.domain_changed', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { domain: domain || null } });
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=domain`);
+  }));
+
+  router.post('/:pageId/domain/check', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page?.custom_domain) return res.status(404).render('error', { message: 'No domain to check.' });
+    const target = config.renderHost || new URL(config.publicBaseUrl || 'http://localhost').hostname;
+    const result = await checkDomain(page.custom_domain, target);
+    await pool.query('UPDATE landing_pages SET domain_status = $1, domain_checked_at = now() WHERE id = $2', [`${result.ok ? 'ok' : 'not_ready'}: ${result.message}`, page.id]);
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}`);
   }));
 
   router.post('/:pageId', asyncHandler(async (req, res) => {
     const existing = await loadPage(req);
     if (!existing) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const page = { ...readPage(req.body), id: existing.id };
-    const renderError = async (msg, status) => res.status(status).render('landing-page-form', {
-      page, products: await products(req.business.id), error: msg, statuses: LANDING_PAGE_STATUSES,
-    });
+    const page = { ...existing, ...readPage(req.body), id: existing.id };
+    const renderError = (msg, status) => renderPage(req, res, page, { error: msg, status });
     if (page.errors.length) return renderError(page.errors.join(' '), 400);
     try {
       await savePage(req.business.id, page, existing.id);
@@ -165,6 +299,8 @@ export function landingPageRoutes({ pool }) {
       if (err.code === '23505') return renderError(`The form key "${page.slug}" is already used.`, 409);
       throw err;
     }
+    clearOriginCache();
+    await audit(pool, req, { action: 'page.updated', businessId: req.business.id, entityType: 'landing_page', entityId: existing.id, details: { status: page.status, url: page.url } });
     res.redirect(`${res.locals.base}/landing-pages`);
   }));
 

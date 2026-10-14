@@ -26,6 +26,13 @@ export function loadConfig() {
     throw new Error('PUBLIC_BASE_URL is required in production (e.g. https://skyfly.onrender.com)');
   }
 
+  const pagesBaseUrl = (process.env.PAGES_BASE_URL || '').replace(/\/+$/, '');
+  const hostOf = (u) => (u ? new URL(u).hostname : null);
+  if (pagesBaseUrl && hostOf(pagesBaseUrl) === hostOf(publicBaseUrl)) {
+    // Same host would let page scripts read dashboard data. Refuse to start.
+    throw new Error('PAGES_BASE_URL must use a different hostname from PUBLIC_BASE_URL');
+  }
+
   return {
     env,
     isProduction,
@@ -38,7 +45,11 @@ export function loadConfig() {
     allowedOrigins: list('ALLOWED_ORIGINS'),
     publicBaseUrl,
     // Where Skyfly-hosted landing pages are served, on a different host from the dashboard.
-    pagesBaseUrl: (process.env.PAGES_BASE_URL || '').replace(/\/+$/, ''),
+    pagesBaseUrl,
+    pagesHost: hostOf(pagesBaseUrl),
+    dashboardHost: hostOf(publicBaseUrl),
+    // Set automatically by Render; the CNAME target for custom domains.
+    renderHost: process.env.RENDER_EXTERNAL_HOSTNAME || null,
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
   };
 }
