@@ -70,6 +70,14 @@ await step('Test order submitted on the live page is saved in Skyfly and opens t
   return `${reference}, total ${apiReply.total} ${apiReply.currency}`;
 });
 
+await step('Order persists: confirmation page (read from the database) still shows it after a refresh', async () => {
+  await sleep(10000);
+  await page.reload({ waitUntil: 'load' });
+  const text = await page.textContent('body');
+  assert(text.includes(reference) && text.includes('TEST ORDER Skyfly E2E'), 'order not shown after refresh');
+  return `${reference} shown after reload`;
+});
+
 await step('Sending the same submission again returns the same order (no duplicate in Skyfly)', async () => {
   assert(apiBody && reference, 'no first submission');
   const res = await fetch(`${SKYFLY}/api/public/orders`, {
@@ -93,6 +101,34 @@ await step('Google Sheet backup has exactly one copy, linked to the Skyfly order
   assert(rows.length === 1, `${rows.length} matching Sheet rows`);
   assert(String(rows[0].source).includes(`Skyfly ${reference}`), `Sheet row source: ${rows[0].source}`);
   return `source "${rows[0].source}"`;
+});
+
+// Fallback: Skyfly made unreachable in this browser only. The order must still reach the Sheet.
+const FB_NAME = `TEST ORDER Skyfly E2E ${RUN} fallback please ignore`;
+await step('Google Sheets fallback: with Skyfly unreachable the order still reaches the Sheet', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p2 = await ctx.newPage();
+  let blocked = 0;
+  await p2.route(`${SKYFLY}/api/public/orders`, (route) => { blocked += 1; return route.abort(); });
+  await p2.goto(`${PAGE}?skyfly_e2e=${RUN}-fallback`, { waitUntil: 'load' });
+  await p2.fill('#fn', FB_NAME);
+  await p2.fill('#ph', '08012345678');
+  await p2.fill('#addr', 'TEST ORDER - do not deliver, automated fallback check');
+  await p2.selectOption('#st', 'Lagos');
+  await p2.selectOption('#pr', { index: 1 });
+  await p2.click('#sb');
+  await p2.waitForSelector('#sb2', { state: 'visible', timeout: 60000 });
+  assert(blocked >= 1, 'Skyfly was not called');
+  let rows = [];
+  for (let i = 0; i < 6; i += 1) {
+    rows = await (await fetch(`${SHEET}/search?fullName=${encodeURIComponent(FB_NAME)}`)).json();
+    if (rows.length) break;
+    await sleep(5000);
+  }
+  await ctx.close();
+  assert(rows.length === 1, `${rows.length} matching Sheet rows`);
+  assert(String(rows[0].source).includes('NOT IN SKYFLY'), `Sheet row source: ${rows[0].source}`);
+  return `Skyfly calls blocked: ${blocked}; Sheet row "${rows[0].source}"; customer saw the original success box`;
 });
 
 await step('Pixel requests seen from the live page', async () => `${pixelHits.length} requests to Meta/TikTok`);
