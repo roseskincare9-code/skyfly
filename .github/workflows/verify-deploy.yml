@@ -12,12 +12,20 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Raw HTTP diagnostics (status line and headers only)
+        if: inputs.url != ''
+        run: |
+          for path in / /healthz; do
+            echo "=== ${{ inputs.url }}$path"
+            curl -sS -o /dev/null -D - -m 150 -w 'time_total=%{time_total}s http_code=%{http_code} ip=%{remote_ip}\n' "${{ inputs.url }}$path" || echo "curl exit $?"
+          done
+          echo "=== DNS"; getent hosts "$(echo '${{ inputs.url }}' | sed -E 's#https?://([^/]+).*#\1#')" || true
       - run: node scripts/verify-deploy.mjs "${{ inputs.url }}"
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
