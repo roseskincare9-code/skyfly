@@ -148,6 +148,7 @@ async function doSub(){
   if(res&&res.ok&&data&&data.ok&&data.confirmationUrl){
     btn.textContent='Order saved ✓';
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
+    try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
     // Transition period: keep the Google Sheet copy. Its "source" names the Skyfly
     // reference, so a row marked "Skyfly LR-..." is the same order, not a duplicate.
     await skySheet(order,'Skyfly '+data.reference,1500);
@@ -193,5 +194,15 @@ function skyOldSuccess(fn,pr,addr){
 '''.replace('__SKYFLY_API__', api)
 
 html = html[:start] + new_sub + html[end:]
+
+if api:
+    # Skyfly page SDK: loads the pixels configured in Skyfly (Meta/TikTok) and fires
+    # InitiateCheckout when the visitor starts the order form. Loads async, invisible.
+    sdk = (f'<script src="{api}/sdk/skyfly.js" data-page="larosenigeria" async></script>\n'
+           '<script>document.addEventListener(\'focusin\',function(e){var f=document.getElementById(\'order\');'
+           'if(f&&f.contains(e.target)&&window.Skyfly&&Skyfly.trackInitiateCheckout)Skyfly.trackInitiateCheckout();});</script>\n')
+    if html.count('</body>') != 1:
+        sys.exit('</body> not found exactly once')
+    html = html.replace('</body>', sdk + '</body>')
 open(out, 'w', encoding='utf-8').write(html)
 print(f'Wrote {out} (Skyfly API: {api})')

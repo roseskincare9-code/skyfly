@@ -1,0 +1,25 @@
+# Places ONE clearly labelled test order through the live Larose page and checks it
+# reached Skyfly once and the Google Sheet backup once. Run manually only.
+name: Live end-to-end test (Larose -> Skyfly)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com)
+        required: true
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: node test/e2e/live.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}

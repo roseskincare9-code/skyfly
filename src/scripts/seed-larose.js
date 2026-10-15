@@ -14,6 +14,8 @@ export const LAROSE_PACKAGES = [
   { code: 'package-5', name: 'Package 5 – Total Transformation VIP Luxury (5kg Soap)', price: 202000 },
 ];
 
+export const LAROSE_META_PIXEL_ID = '1357015185691765';
+
 export async function seedLarose(pool, ownerEmail) {
   const owner = await pool.query('SELECT id FROM users WHERE email = $1', [ownerEmail.trim().toLowerCase()]);
   if (!owner.rows[0]) throw new Error(`No Skyfly user with email ${ownerEmail}. Sign up first.`);
@@ -52,6 +54,13 @@ export async function seedLarose(pool, ownerEmail) {
         WHERE lp.slug = 'larosenigeria' AND lp.business_id = $1 AND p.code LIKE 'package-%'
        ON CONFLICT DO NOTHING`,
       [businessId],
+    );
+    // The Meta Pixel already on the live page (public ID). Its access token is added by the owner on the Pixels screen.
+    await client.query(
+      `INSERT INTO pixel_settings (business_id, provider, enabled, pixel_id, events)
+       VALUES ($1, 'meta', true, $2, ARRAY['PageView', 'ViewContent', 'InitiateCheckout', 'Lead'])
+       ON CONFLICT (business_id, provider) WHERE landing_page_id IS NULL DO NOTHING`,
+      [businessId, LAROSE_META_PIXEL_ID],
     );
     await client.query('COMMIT');
     return businessId;

@@ -63,12 +63,12 @@
   function wants(p, event) { return p.events.indexOf(event) !== -1; }
 
   // Fires an event once per page view (or once per key, e.g. per order reference).
-  function track(event, params, onceKey) {
+  function track(event, params, onceKey, skipOwn) {
     var key = event + ':' + (onceKey || '');
     if (fired[key]) return;
     fired[key] = true;
     pixels.forEach(function (p) {
-      if (!wants(p, event)) return;
+      if (!wants(p, event) || (skipOwn && p.own)) return;
       try {
         if (p.provider === 'meta' && window.fbq) {
           window.fbq('trackSingle', p.id, event, params && params.data || {}, params && params.eventId ? { eventID: params.eventId } : undefined);
@@ -88,7 +88,7 @@
       try {
         if (!own) (p.provider === 'meta' ? loadMeta : loadTikTok)(p);
       } catch (e) { return; }
-      pixels.push({ provider: p.provider, id: p.id, events: own ? p.events.filter(function (e) { return e !== 'PageView'; }) : p.events });
+      pixels.push({ provider: p.provider, id: p.id, own: own, events: own ? p.events.filter(function (e) { return e !== 'PageView'; }) : p.events });
     });
     track('PageView');
     track('ViewContent');
@@ -200,6 +200,11 @@
     submitOrder: submitOrder,
     // For custom forms: call when the visitor starts filling in the order form.
     trackInitiateCheckout: function () { track('InitiateCheckout'); },
+    // For pages that save orders themselves and already fire Lead for their own pixel code:
+    // sends Lead only to the pixels Skyfly loaded, once per order reference.
+    trackLead: function (value, currency, reference) {
+      track('Lead', { data: { value: value, currency: currency }, eventId: 'lead_' + reference }, reference, true);
+    },
   };
 
   function start() {
