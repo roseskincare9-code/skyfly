@@ -1,0 +1,30 @@
+# Creates Skyfly's own Render resources in the "skyfly" workspace. Dry run unless the
+# confirm input is exactly "create-skyfly". Never touches other workspaces' resources.
+name: Provision Render (Skyfly only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type create-skyfly to create the paid resources (~$13/month); anything else is a dry run
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Plan or create
+        run: node scripts/provision-render.mjs ${{ inputs.confirm == 'create-skyfly' && '--apply' || '' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Verify the deployed service
+        if: inputs.confirm == 'create-skyfly'
+        run: node scripts/verify-deploy.mjs ""
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
