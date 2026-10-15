@@ -72,6 +72,18 @@ if (process.env.RENDER_API_KEY) {
           console.log('\n--- last service log lines ---\n' + lines.join('\n') + '\n---');
         } catch (err) { report(null, 'Render: logs', err.message); }
       }
+      // Read-only: did "Set up Larose" (or anything else) fail recently? Only short, masked lines are shown.
+      try {
+        const mask = (t) => String(t).replace(/[^\s@]+@[^\s@]+/g, '<email>').slice(0, 200);
+        const base = `/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&limit=100&direction=backward`;
+        const req = ((await render(`${base}&type=request`)).logs || []).map((l) => l.message || '');
+        const setup = req.filter((m) => m.includes('/setup/larose'));
+        const failed = req.filter((m) => /\s5\d\d\b|"statusCode":\s*5\d\d|status[=:]\s*5\d\d/.test(m));
+        report(null, 'Render logs: "Set up Larose" requests (latest 100 requests)', setup.length ? setup.slice(0, 5).map(mask).join(' | ') : 'none');
+        report(null, 'Render logs: server errors (HTTP 5xx, latest 100 requests)', failed.length ? failed.slice(0, 5).map(mask).join(' | ') : 'none');
+        const app = ((await render(`${base}&type=app`)).logs || []).map((l) => l.message || '').filter((m) => /error/i.test(m));
+        report(null, 'Render logs: recent app errors', app.length ? app.slice(0, 5).map((m) => mask(m.split('\n')[0])).join(' | ') : 'none');
+      } catch (err) { report(null, 'Render logs', err.message); }
     }
     report(db ? db.status === 'available' : false, 'Render: skyfly-db database', db ? `${db.status}, plan ${db.plan}, region ${db.region}` : 'not found in any workspace');
   } catch (err) {
