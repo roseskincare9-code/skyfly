@@ -18,8 +18,8 @@ repository list shows AIVORA but not `skyfly`, that app was installed with
 GitHub Apps → **Render** → **Configure** → Repository access → add `skyfly` →
 Save. The repository can stay private.
 
-Note: `onrender.com` names are global. If `skyfly.onrender.com` is already
-taken, Render gives the service another address (e.g. `skyfly-abcd.onrender.com`).
+Note: `onrender.com` names are global. `skyfly.onrender.com` is already
+taken by an unrelated app, so Render gives this service another address (e.g. `skyfly-abcd.onrender.com`).
 Always use the address shown in **your** Render dashboard.
 
 ## 2. Choose the database
@@ -45,7 +45,7 @@ Skyfly needs **two different hostnames**:
 
 | Setting | What it is | Example |
 |---|---|---|
-| `PUBLIC_BASE_URL` | the dashboard and order API | `https://skyfly.onrender.com` (free Render address) |
+| `PUBLIC_BASE_URL` | the dashboard and order API | the address Render shows for the `skyfly` service (free `onrender.com` address) |
 | `PAGES_BASE_URL` | where hosted landing pages live | `https://pages.yourbrand.com` |
 
 They must differ because a hosted page's scripts must never be able to read your

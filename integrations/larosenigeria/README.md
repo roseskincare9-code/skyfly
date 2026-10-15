@@ -70,7 +70,7 @@ copies too, delete the line `await skySheet(order,'Skyfly '+data.reference,1500)
 
 ## Applying it
 
-Apply this only after `https://skyfly.onrender.com/healthz` shows `{"status":"ok"}` **and** the
+Apply this only after your Skyfly service's `/healthz` (address from your Render dashboard) shows `{"status":"ok"}` **and** the
 Larose business has been set up in Skyfly (`npm run seed:larose -- your-email` in Render's Shell),
 because Skyfly only accepts orders for the registered form key `larosenigeria`.
 (If you apply it earlier, orders simply fall back to the Google Sheet.)
@@ -78,7 +78,7 @@ because Skyfly only accepts orders for the registered form key `larosenigeria`.
 The ready-made patched page is generated with:
 
 ```sh
-python3 integrations/larosenigeria/patch.py <original index.html> <output index.html> https://skyfly.onrender.com
+python3 integrations/larosenigeria/patch.py <original index.html> <output index.html> <your Skyfly address from Render>
 ```
 
 Upload the result as `index.html` in the `Larosenigeria` repository (GitHub → Larosenigeria →

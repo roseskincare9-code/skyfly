@@ -26,7 +26,7 @@ export function loadConfig() {
   const renderUrl = process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : '';
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || renderUrl).replace(/\/+$/, '');
   if (isProduction && !publicBaseUrl) {
-    throw new Error('PUBLIC_BASE_URL is required in production (e.g. https://skyfly.onrender.com)');
+    throw new Error('PUBLIC_BASE_URL is required in production (e.g. https://your-service.onrender.com)');
   }
 
   const pagesBaseUrl = (process.env.PAGES_BASE_URL || '').replace(/\/+$/, '');
