@@ -36,7 +36,7 @@ if (process.env.RENDER_API_KEY) {
   // Read-only. Every query is made per workspace, because a Blueprint may live in any of them.
   try {
     const owners = (await render('/owners?limit=20')).map((o) => o.owner ?? o);
-    report(null, 'Render: workspaces visible to this key', owners.map((o) => o.name).join(', ') || 'none');
+    report(null, 'Render: workspaces searched for Skyfly resources', String(owners.length));
     let svc = null;
     let db = null;
     for (const o of owners) {
@@ -45,7 +45,9 @@ if (process.env.RENDER_API_KEY) {
       const dbs = (await render(`/postgres?${q}`)).map((x) => x.postgres ?? x);
       let blueprints = [];
       try { blueprints = (await render(`/blueprints?${q}`)).map((x) => x.blueprint ?? x); } catch { /* not available */ }
-      report(null, `Workspace "${o.name}"`, `services: ${services.map((x) => `${x.name} (${x.type})`).join(', ') || 'none'}; databases: ${dbs.map((x) => `${x.name} [${x.status}]`).join(', ') || 'none'}; blueprints: ${blueprints.map((b) => `${b.name} [${b.status}]`).join(', ') || 'none'}`);
+      // Isolation: only Skyfly resources are reported; other projects' resources are never listed.
+      const mineHere = (x) => /skyfly/i.test(`${x.name} ${x.repo || ''}`);
+      report(null, `Workspace "${o.name}"`, `Skyfly services: ${services.filter(mineHere).map((x) => `${x.name} (${x.type})`).join(', ') || 'none'}; Skyfly databases: ${dbs.filter(mineHere).map((x) => `${x.name} [${x.status}]`).join(', ') || 'none'}; Skyfly blueprints: ${blueprints.filter(mineHere).map((b) => `${b.name} [${b.status}]`).join(', ') || 'none'}`);
       for (const b of blueprints.filter((x) => /skyfly/i.test(`${x.name} ${x.repo}`))) {
         try {
           const syncs = (await render(`/blueprints/${b.id}/syncs?limit=3`)).map((x) => x.sync ?? x);
