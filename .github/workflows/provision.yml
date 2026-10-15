@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: Type create-skyfly to create the paid resources (~$13/month); anything else is a dry run
+        description: create-skyfly-free (free plans, $0) or create-skyfly (paid, ~$13/month); anything else is a dry run
         required: false
         default: ''
 permissions:
@@ -20,11 +20,11 @@ jobs:
         with:
           node-version: 22
       - name: Plan or create
-        run: node scripts/provision-render.mjs ${{ inputs.confirm == 'create-skyfly' && '--apply' || '' }}
+        run: node scripts/provision-render.mjs ${{ inputs.confirm == 'create-skyfly' && '--apply' || '' }} ${{ inputs.confirm == 'create-skyfly-free' && '--apply --free' || '' }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       - name: Verify the deployed service
-        if: inputs.confirm == 'create-skyfly'
+        if: inputs.confirm == 'create-skyfly' || inputs.confirm == 'create-skyfly-free'
         run: node scripts/verify-deploy.mjs ""
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}

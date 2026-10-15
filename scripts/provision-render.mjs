@@ -3,6 +3,7 @@
 //
 //   node scripts/provision-render.mjs            -> dry run: shows the plan and cost, creates nothing
 //   node scripts/provision-render.mjs --apply    -> creates the resources, waits for the deploy
+//   add --free                                    -> Render free plans (no cost; DB can be upgraded in place later)
 //
 // Safety: only touches the "skyfly" workspace; refuses if any Skyfly resource already
 // exists (no duplicates); generated secrets and connection strings are never printed.
@@ -11,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 const API = 'https://api.render.com/v1';
 const KEY = process.env.RENDER_API_KEY;
 const APPLY = process.argv.includes('--apply');
+const FREE = process.argv.includes('--free');
 const WORKSPACE = 'skyfly';
 const REPO = 'https://github.com/roseskincare9-code/skyfly';
 const PLAN = {
@@ -20,6 +22,11 @@ const PLAN = {
     buildCommand: 'npm ci --omit=dev', preDeployCommand: 'npm run migrate', startCommand: 'npm start', healthCheckPath: '/healthz',
   },
 };
+if (FREE) {
+  // Free instances have no pre-deploy step, so migrations (idempotent) run at startup.
+  Object.assign(PLAN.db, { plan: 'free' });
+  Object.assign(PLAN.web, { plan: 'free', preDeployCommand: undefined, startCommand: 'npm run migrate && npm start' });
+}
 
 if (!KEY) { console.error('RENDER_API_KEY is not set'); process.exit(1); }
 
@@ -57,13 +64,13 @@ for (const o of owners) {
 
 console.log(`
 Plan (nothing exists yet):
-  1. PostgreSQL  ${PLAN.db.name}   plan Basic-256mb, ${PLAN.db.region}, Postgres ${PLAN.db.version}   ~ $6/month + storage
-  2. Web service ${PLAN.web.name}      plan Starter, ${PLAN.web.region}, Node, repo ${REPO} (branch ${PLAN.web.branch})   ~ $7/month
+  1. PostgreSQL  ${PLAN.db.name}   plan ${PLAN.db.plan}, ${PLAN.db.region}, Postgres ${PLAN.db.version}   ${FREE ? '$0 (free DB expires after 30 days unless upgraded)' : '~ $6/month + storage'}
+  2. Web service ${PLAN.web.name}      plan ${PLAN.web.plan}, ${PLAN.web.region}, Node, repo ${REPO} (branch ${PLAN.web.branch})   ${FREE ? '$0 (sleeps when idle)' : '~ $7/month'}
      build: ${PLAN.web.buildCommand} | pre-deploy: ${PLAN.web.preDeployCommand} | start: ${PLAN.web.startCommand} | health: ${PLAN.web.healthCheckPath}
      env: NODE_ENV, NODE_VERSION, DATABASE_URL (internal, from skyfly-db), DATABASE_SSL=false,
           SESSION_SECRET + SKYFLY_ENCRYPTION_KEY (random, generated here, never shown),
           ALLOWED_ORIGINS=https://roseskincare9-code.github.io, ALLOW_SIGNUP=first
-  Total ~ $13/month (Render list prices; confirm on render.com/pricing).`);
+  Total ${FREE ? '$0' : '~ $13/month (Render list prices; confirm on render.com/pricing)'}.`);
 
 if (!APPLY) { console.log('\nDRY RUN: nothing was created.'); process.exit(0); }
 
@@ -95,7 +102,7 @@ const svc = await api('POST', '/services', {
   ],
   serviceDetails: {
     runtime: PLAN.web.runtime, plan: PLAN.web.plan, region: PLAN.web.region, healthCheckPath: PLAN.web.healthCheckPath,
-    preDeployCommand: PLAN.web.preDeployCommand,
+    ...(PLAN.web.preDeployCommand ? { preDeployCommand: PLAN.web.preDeployCommand } : {}),
     envSpecificDetails: { buildCommand: PLAN.web.buildCommand, startCommand: PLAN.web.startCommand },
   },
 });
