@@ -36,7 +36,8 @@ function isExternal(ref) {
 function referencesIn(file) {
   const text = file.data.toString('utf8');
   const refs = new Set();
-  const add = (r) => { if (r && !isExternal(r)) refs.add(r.trim()); };
+  // "#id" and its encoded form "%23id" point inside the same document (e.g. an SVG filter), not to a file.
+  const add = (r) => { if (r && !isExternal(r) && !/^\s*(#|%23)/i.test(r)) refs.add(r.trim()); };
   if (isHtml(file.path)) {
     for (const m of text.matchAll(REF_ATTR)) add(m[1]);
     for (const m of text.matchAll(SRCSET)) m[1].split(',').forEach((part) => add(part.trim().split(/\s+/)[0]));

@@ -1,0 +1,504 @@
+{
+  "skyflyManifestVersion": 1,
+  "slug": "larose-uk",
+  "name": "Larose UK – Glow Packages (£)",
+  "pageType": "product-orders",
+  "source": {
+    "repository": "roseskincare9-code/Larose-Skincare-",
+    "file": "index.html",
+    "commit": "48cc0083915cf04a225e39f9ec3e185126ea2280",
+    "githubPagesUrl": "https://roseskincare9-code.github.io/Larose-Skincare-/",
+    "githubPagesUrlVerified": false,
+    "note": "Address follows the GitHub Pages pattern for this repository; not checked. Confirm before relying on it."
+  },
+  "entry": "index.html",
+  "assets": [
+    {
+      "file": "index.html",
+      "bytes": 50209
+    },
+    {
+      "file": "assets/images/image-01.jpg",
+      "bytes": 23039,
+      "sha256": "c26534bd3ac3f90a02fcce7dfa127dd1b5e51f5bf61f220f1f7f229c47bcf21e",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-02.jpg",
+      "bytes": 90246,
+      "sha256": "87336462e6239cdd04c63644f5d9ccf77811fef3cf413f1c7bf359bf7f7c6329",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-03.jpg",
+      "bytes": 26155,
+      "sha256": "742225b737e9d359336f2879c38182095d534c2d1d327d0a851219a914a2a1d6",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-04.jpg",
+      "bytes": 23338,
+      "sha256": "df5bcb639e54c2b733abf5c3b2ce8c8601dd200b9ea745cf0cb4a3ee2e9b3e81",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-05.jpg",
+      "bytes": 68906,
+      "sha256": "871d349383796e4863efba84976869ab96589b4043a8459b51b0672ecdca4d37",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-06.jpg",
+      "bytes": 19992,
+      "sha256": "e22bd7ccbb6abafe1671b234b10fd3bc062a340155456377b9394f27214a3c18",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-07.jpg",
+      "bytes": 20695,
+      "sha256": "68bc3fc01ba28aa1cc20a5e748257ca4f40c6355cc682afc8850c17f27afcf5a",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-08.jpg",
+      "bytes": 32029,
+      "sha256": "b50f3ac3e9cd3cc079dd45a9e6abeb101edb3be318b8d2a72e3cf07d9571f7aa",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-09.jpg",
+      "bytes": 42270,
+      "sha256": "d265cc42f8aa39a1e323b5442f8e123acd1edcd0b6d650cd5d8d45b5de25b7f0",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-10.jpg",
+      "bytes": 42173,
+      "sha256": "b0524f3fbe4613a0c3ad9b9af872ff69e1762f43784017b94a683123d144f20c",
+      "uses": 3
+    },
+    {
+      "file": "assets/images/image-11.jpg",
+      "bytes": 25027,
+      "sha256": "5c9b3f4008de114b553912796a15d43d35b404eec38180a41822e8cbc02e17bd",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-12.jpg",
+      "bytes": 28326,
+      "sha256": "549c6a4d6c678f8dc1c3a4bcf7f6837970c7a0829437ce75dc5c5e0e4c422006",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-13.jpg",
+      "bytes": 73064,
+      "sha256": "da18e6c47a4e3ea6af8456964ffded8a5a7c8b26d8ae72644060756a3b8d5c9f",
+      "uses": 1
+    }
+  ],
+  "orderFlow": {
+    "current": "skyfly+google-sheet-backup",
+    "skyflyFormKey": "larose-uk",
+    "currency": "GBP",
+    "products": [
+      {
+        "code": "uk-package-1",
+        "name": "Package 1 – The Starter Glow (1kg Soap + Free Glow Oil)",
+        "price": 75
+      },
+      {
+        "code": "uk-package-2",
+        "name": "Package 2 – The Power Glow (2kg Soap + Free Glow Oil)",
+        "price": 120
+      },
+      {
+        "code": "uk-package-3",
+        "name": "Package 3 – Total Transformation (2kg Soap + Oil + Body Milk + Facial Set)",
+        "price": 220
+      }
+    ],
+    "connectionTested": "locally only (see IMPORT.md); not yet tested against the live Skyfly service"
+  },
+  "changesFromOriginal": [
+    {
+      "change": "Embedded base64 images moved to assets/images/ (same files, same order; the page looks the same)"
+    },
+    {
+      "change": "Package options tagged with Skyfly product codes uk-package-1..3 and prices"
+    },
+    {
+      "change": "Added Quantity and optional Notes fields, a hidden spam trap and an error box; submit button no longer mentions WhatsApp"
+    },
+    {
+      "change": "doSub(): saves the order in Skyfly first (one retry with the same submission ID), then copies it to the Google Sheet marked \"Skyfly <reference>\" and opens the Skyfly confirmation page. If Skyfly cannot save it, the order goes to the Google Sheet marked \"NOT IN SKYFLY\" and the original success box is shown. Validation errors are shown on the form."
+    },
+    {
+      "change": "Added the Skyfly page script (loads pixels configured in Skyfly; the page's own Meta Pixel is not loaded twice)"
+    },
+    {
+      "from": "Yes! I Want This — WhatsApp Me (opened WhatsApp)",
+      "to": "Yes! I Want This — Order Now (scrolls to the order form)"
+    },
+    {
+      "from": "Floating bubble \"Order on WhatsApp!\"",
+      "to": "\"Questions? Chat on WhatsApp!\" (same bubble, contact only)"
+    }
+  ],
+  "integrations": [
+    {
+      "service": "Skyfly order API",
+      "endpoint": "https://skyfly-gybf.onrender.com/api/public/orders",
+      "formKey": "larose-uk",
+      "auth": "none in the browser: Skyfly accepts orders only from the page's registered website address (Origin check). No API key in the page."
+    },
+    {
+      "service": "Google Sheets via SheetDB (backup)",
+      "endpoint": "https://sheetdb.io/api/v1/m111fq96ve953",
+      "note": "Public SheetDB endpoint already used by the live page; no secret. Keep until Skyfly is verified end to end."
+    },
+    {
+      "service": "Meta Pixel (in page code)",
+      "ids": [
+        "1357015185691765"
+      ]
+    },
+    {
+      "service": "Google Fonts",
+      "families": [
+        "DM Sans",
+        "Playfair Display"
+      ]
+    }
+  ],
+  "environment": {
+    "requiredInPage": [],
+    "requiredInSkyfly": [
+      "business with currency GBP",
+      "products with the codes above",
+      "landing page with form key \"larose-uk\""
+    ],
+    "secrets": "none: the page contains no private keys or tokens. Pixel access tokens are entered only in Skyfly's Pixels screen."
+  },
+  "editableFields": {
+    "seo": {
+      "title": "Larose Natural Skincare | Glow Packages – UK Delivery",
+      "description": null,
+      "og": {}
+    },
+    "headings": [
+      {
+        "level": "h1",
+        "text": "Finally.Skin You're Proud Of."
+      },
+      {
+        "level": "h2",
+        "text": "Does Any of ThisSound Like You?"
+      },
+      {
+        "level": "h2",
+        "text": "See The Transformation"
+      },
+      {
+        "level": "h2",
+        "text": "3 Packages.One Goal — Your Glow."
+      },
+      {
+        "level": "h3",
+        "text": "The Starter Glow"
+      },
+      {
+        "level": "h3",
+        "text": "The Power Glow"
+      },
+      {
+        "level": "h3",
+        "text": "Total Transformation"
+      },
+      {
+        "level": "h2",
+        "text": "What Real CustomersAre Saying"
+      },
+      {
+        "level": "h2",
+        "text": "Numbers ThatSpeak For Themselves"
+      },
+      {
+        "level": "h2",
+        "text": "Order in 3 Simple Steps"
+      },
+      {
+        "level": "h2",
+        "text": "Secure Your PackageToday"
+      },
+      {
+        "level": "h3",
+        "text": "Order Received!"
+      }
+    ],
+    "callsToAction": [
+      {
+        "text": "⚡ FLASH SALE ENDS SOON — ONLY 7 LEFT — ORDER NOW →",
+        "action": "#order"
+      },
+      {
+        "text": "👉 See My Package Options",
+        "action": "smoothTo('packages',event)"
+      },
+      {
+        "text": "Chat With Us on WhatsApp",
+        "action": "https://wa.me/2349049206695?text=Hi%20Larose!%20I%20want%20to%20fix%20my%20skin!"
+      },
+      {
+        "text": "Yes! I Want This — Order Now",
+        "action": "smoothTo('order',event)"
+      },
+      {
+        "text": "👉 Order Package 1 — £75",
+        "action": "selectPkg('Package 1 – The Starter Glow (1kg Soap + Free Glow Oil) – £75')"
+      },
+      {
+        "text": "👉 Order Package 2 — £120",
+        "action": "selectPkg('Package 2 – The Power Glow (2kg Soap + Free Glow Oil) – £120')"
+      },
+      {
+        "text": "👉 Order Package 3 — £220",
+        "action": "selectPkg('Package 3 – Total Transformation (2kg Soap + Oil + Body Milk + Facial Set) – £220')"
+      },
+      {
+        "text": "👉 Place My Order Now",
+        "action": "smoothTo('order',event)"
+      },
+      {
+        "text": "📲 Place My Order →",
+        "action": "doSub()"
+      },
+      {
+        "text": "Message Larose on WhatsApp",
+        "action": "#"
+      },
+      {
+        "text": "WhatsApp: +234 904 920 6695",
+        "action": "https://wa.me/2349049206695"
+      }
+    ],
+    "packages": [
+      {
+        "label": "📦 Package 1 — The Starter Glow · £75",
+        "value": "Package 1 – The Starter Glow (1kg Soap + Free Glow Oil) – £75",
+        "productCode": "uk-package-1"
+      },
+      {
+        "label": "⭐ Package 2 — The Power Glow · £120",
+        "value": "Package 2 – The Power Glow (2kg Soap + Free Glow Oil) – £120",
+        "productCode": "uk-package-2"
+      },
+      {
+        "label": "✨ Package 3 — Total Transformation · £220",
+        "value": "Package 3 – Total Transformation (2kg Soap + Oil + Body Milk + Facial Set) – £220",
+        "productCode": "uk-package-3"
+      }
+    ],
+    "contact": {
+      "whatsappNumbers": [
+        "2349049206695"
+      ],
+      "ownerWhatsApp": "09049206695"
+    },
+    "formFields": [
+      {
+        "id": "fn",
+        "type": "text",
+        "required": true,
+        "placeholder": "Your full name",
+        "label": "Full Name *"
+      },
+      {
+        "id": "addr",
+        "type": "text",
+        "required": true,
+        "placeholder": "Your full UK delivery address",
+        "label": "Delivery Address *"
+      },
+      {
+        "id": "ph",
+        "type": "tel",
+        "required": true,
+        "placeholder": "+44 7700 000000",
+        "label": "Phone / WhatsApp Number *"
+      },
+      {
+        "id": "em",
+        "type": "email",
+        "required": false,
+        "placeholder": "your@email.com",
+        "label": "Email Address"
+      },
+      {
+        "id": "pr",
+        "type": "select",
+        "required": true,
+        "placeholder": null,
+        "label": "Which Package Are You Ordering? *"
+      },
+      {
+        "id": "qty",
+        "type": "select",
+        "required": false,
+        "placeholder": null,
+        "label": "Quantity"
+      },
+      {
+        "id": "nt",
+        "type": "text",
+        "required": false,
+        "placeholder": "Postcode, best time to call, etc.",
+        "label": "Notes (optional)"
+      }
+    ],
+    "design": {
+      "colors": {
+        "gold": "#C9A96E",
+        "gold2": "#A8854A",
+        "gl": "#F0DEB8",
+        "cream": "#FAF6EF",
+        "dark": "#12100E",
+        "brown": "#2E1F12",
+        "text": "#1E150A",
+        "muted": "#7A6A5A",
+        "green": "#25D366",
+        "red": "#DC2626"
+      },
+      "fonts": [
+        "DM Sans",
+        "Playfair Display"
+      ]
+    },
+    "sections": [
+      {
+        "tag": "div",
+        "id": "wabub",
+        "class": "wabub"
+      },
+      {
+        "tag": "div",
+        "id": "sbot",
+        "class": "sbot"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "hero"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "probs-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "ba-sec"
+      },
+      {
+        "tag": "section",
+        "id": "packages",
+        "class": "pkg-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "rev-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "stat-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "hiw-sec"
+      },
+      {
+        "tag": "section",
+        "id": "order",
+        "class": "form-sec"
+      },
+      {
+        "tag": "div",
+        "id": "formContent",
+        "class": null
+      },
+      {
+        "tag": "div",
+        "id": "skyErr",
+        "class": null
+      },
+      {
+        "tag": "div",
+        "id": "sb2",
+        "class": "succbox"
+      }
+    ],
+    "images": [
+      {
+        "file": "assets/images/image-01.jpg",
+        "bytes": 23039
+      },
+      {
+        "file": "assets/images/image-02.jpg",
+        "bytes": 90246
+      },
+      {
+        "file": "assets/images/image-03.jpg",
+        "bytes": 26155
+      },
+      {
+        "file": "assets/images/image-04.jpg",
+        "bytes": 23338
+      },
+      {
+        "file": "assets/images/image-05.jpg",
+        "bytes": 68906
+      },
+      {
+        "file": "assets/images/image-06.jpg",
+        "bytes": 19992
+      },
+      {
+        "file": "assets/images/image-07.jpg",
+        "bytes": 20695
+      },
+      {
+        "file": "assets/images/image-08.jpg",
+        "bytes": 32029
+      },
+      {
+        "file": "assets/images/image-09.jpg",
+        "bytes": 42270
+      },
+      {
+        "file": "assets/images/image-10.jpg",
+        "bytes": 42173
+      },
+      {
+        "file": "assets/images/image-11.jpg",
+        "bytes": 25027
+      },
+      {
+        "file": "assets/images/image-12.jpg",
+        "bytes": 28326
+      },
+      {
+        "file": "assets/images/image-13.jpg",
+        "bytes": 73064
+      }
+    ],
+    "pixels": [
+      {
+        "provider": "meta",
+        "id": "1357015185691765"
+      }
+    ]
+  }
+}

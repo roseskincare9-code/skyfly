@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScaleForge London — Elite Digital Sales Systems</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #F8F4EE;
+    --cream-dark: #EDE8DF;
+    --ink: #0D0D0B;
+    --ink-soft: #1C1C19;
+    --charcoal: #2E2E2B;
+    --silver: #8C8C88;
+    --silver-light: #B8B4AC;
+    --gold: #BFA060;
+    --gold-light: #D4B87A;
+    --gold-pale: #F0E4C4;
+    --rule: #D8D2C8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: 'Montserrat', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── GRAIN OVERLAY ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 900;
+    padding: 28px 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(248,244,238,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .logo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .logo-main {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .logo-sub {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 500;
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+  }
+
+  .nav-link {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--silver);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s;
+  }
+
+  .nav-link:hover { color: var(--ink); }
+
+  .nav-cta {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--cream);
+    background: var(--ink);
+    padding: 12px 28px;
+    text-decoration: none;
+    transition: all 0.3s;
+  }
+
+  .nav-cta:hover { background: var(--gold); }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    padding-top: 90px;
+    overflow: hidden;
+  }
+
+  .hero-left {
+    padding: 80px 60px 80px 60px;
+  }
+
+  .hero-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 40px;
+    animation: fadeIn 1s ease both;
+  }
+
+  .eyebrow-rule {
+    width: 40px;
+    height: 1px;
+    background: var(--gold);
+  }
+
+  .eyebrow-text {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 600;
+  }
+
+  .hero h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(52px, 6vw, 80px);
+    font-weight: 300;
+    line-height: 1.05;
+    color: var(--ink);
+    margin-bottom: 32px;
+    animation: fadeIn 1s ease 0.15s both;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--gold);
+  }
+
+  .hero h1 strong {
+    font-weight: 600;
+    display: block;
+  }
+
+  .hero-desc {
+    font-size: 15px;
+    font-weight: 300;
+    color: var(--silver);
+    line-height: 1.9;
+    max-width: 440px;
+    margin-bottom: 48px;
+    animation: fadeIn 1s ease 0.25s both;
+  }
+
+  .hero-desc strong { color: var(--ink); font-weight: 500; }
+
+  .hero-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 1s ease 0.35s both;
+  }
+
+  .btn-ink {
+    display: inline-block;
+    background: var(--ink);
+    color: var(--cream);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 18px 40px;
+    text-decoration: none;
+    transition: all 0.4s;
+    width: fit-content;
+  }
+
+  .btn-ink:hover {
+    background: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(191,160,96,0.25);
+  }
+
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--silver);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s;
+  }
+
+  .btn-outline:hover { color: var(--ink); }
+
+  .btn-outline::after {
+    content: '→';
+    transition: transform 0.3s;
+  }
+
+  .btn-outline:hover::after { transform: translateX(4px); }
+
+  .hero-right {
+    height: 100vh;
+    background: var(--ink-soft);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hero-right::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 40%, rgba(191,160,96,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 80%, rgba(191,160,96,0.06) 0%, transparent 50%);
+  }
+
+  .hero-stat-block {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 60px;
+  }
+
+  .hero-big-num {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 120px;
+    font-weight: 300;
+    color: var(--cream);
+    line-height: 0.85;
+    letter-spacing: -2px;
+    opacity: 0.9;
+  }
+
+  .hero-big-label {
+    font-size: 10px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-top: 20px;
+    margin-bottom: 48px;
+  }
+
+  .hero-divider {
+    width: 1px;
+    height: 60px;
+    background: linear-gradient(to bottom, transparent, var(--gold), transparent);
+    margin: 0 auto 48px;
+  }
+
+  .hero-mini-stats {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+  }
+
+  .mini-stat-num {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 36px;
+    font-weight: 400;
+    color: var(--cream);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .mini-stat-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+  }
+
+  /* ── MARQUEE ── */
+  .marquee-wrap {
+    overflow: hidden;
+    background: var(--ink);
+    padding: 16px 0;
+    border-top: 1px solid var(--charcoal);
+    border-bottom: 1px solid var(--charcoal);
+  }
+
+  .marquee {
+    display: flex;
+    animation: marquee 30s linear infinite;
+    white-space: nowrap;
+  }
+
+  .marquee-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 48px;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+  }
+
+  .marquee-item .gem { color: var(--gold); font-size: 8px; }
+  .marquee-item .highlight { color: var(--gold-light); }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* ── SECTIONS ── */
+  section { padding: 120px 60px; }
+
+  .section-header { margin-bottom: 72px; }
+
+  .section-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .section-eyebrow .rule { width: 32px; height: 1px; background: var(--gold); }
+
+  .section-eyebrow span {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 600;
+  }
+
+  .section-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(40px, 5vw, 64px);
+    font-weight: 300;
+    line-height: 1.1;
+    color: var(--ink);
+  }
+
+  .section-title em { font-style: italic; color: var(--gold); }
+  .section-title strong { font-weight: 600; }
+
+  .section-body {
+    font-size: 15px;
+    color: var(--silver);
+    line-height: 1.9;
+    font-weight: 300;
+    max-width: 480px;
+    margin-top: 20px;
+  }
+
+  /* ── DELIVERABLES ── */
+  .deliverables-section {
+    background: var(--ink);
+    color: var(--cream);
+  }
+
+  .deliverables-section .section-title { color: var(--cream); }
+  .deliverables-section .section-body { color: var(--silver); }
+
+  .deliver-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--charcoal);
+    margin-top: 64px;
+  }
+
+  .deliver-card {
+    background: var(--ink-soft);
+    padding: 48px 36px;
+    transition: background 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .deliver-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--gold), transparent);
+    transform: scaleX(0);
+    transition: transform 0.4s;
+  }
+
+  .deliver-card:hover { background: var(--charcoal); }
+  .deliver-card:hover::after { transform: scaleX(1); }
+
+  .deliver-number {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--gold);
+    margin-bottom: 28px;
+    font-weight: 400;
+  }
+
+  .deliver-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--cream);
+    margin-bottom: 14px;
+    line-height: 1.2;
+  }
+
+  .deliver-desc {
+    font-size: 13px;
+    color: var(--silver);
+    line-height: 1.8;
+    font-weight: 300;
+  }
+
+  /* ── PROCESS ── */
+  .process-section { background: var(--cream-dark); }
+
+  .process-list {
+    margin-top: 64px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .process-item {
+    display: grid;
+    grid-template-columns: 120px 1fr 1fr;
+    gap: 48px;
+    align-items: start;
+    padding: 48px 0;
+    border-bottom: 1px solid var(--rule);
+    transition: all 0.3s;
+  }
+
+  .process-item:hover { background: rgba(255,255,255,0.4); padding-left: 16px; padding-right: 16px; }
+
+  .process-day {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    color: var(--gold);
+    text-transform: uppercase;
+    padding-top: 4px;
+  }
+
+  .process-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+
+  .process-desc {
+    font-size: 14px;
+    color: var(--silver);
+    line-height: 1.9;
+    font-weight: 300;
+  }
+
+  /* ── PROOF ── */
+  .proof-section { background: var(--ink); }
+  .proof-section .section-title { color: var(--cream); }
+  .proof-section .section-body { color: var(--silver); }
+
+  .proof-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    margin-top: 64px;
+    align-items: start;
+  }
+
+  .proof-orders {
+    border: 1px solid var(--charcoal);
+    overflow: hidden;
+  }
+
+  .proof-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--charcoal);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .proof-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    background: #4ade80;
+    border-radius: 50%;
+    animation: livepulse 2s infinite;
+  }
+
+  @keyframes livepulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.4); }
+    50% { box-shadow: 0 0 0 5px rgba(74,222,128,0); }
+  }
+
+  .proof-header span {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+  }
+
+  .proof-header .total {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 1px;
+  }
+
+  .order-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    align-items: center;
+    padding: 16px 28px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background 0.2s;
+  }
+
+  .order-row:hover { background: rgba(255,255,255,0.03); }
+
+  .order-name {
+    font-size: 13px;
+    color: var(--cream);
+    font-weight: 400;
+    margin-bottom: 3px;
+  }
+
+  .order-source {
+    font-size: 11px;
+    color: var(--silver);
+    letter-spacing: 1px;
+  }
+
+  .order-amount {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    color: var(--gold);
+    font-weight: 400;
+    text-align: right;
+  }
+
+  .proof-summary {
+    padding: 20px 28px;
+    background: rgba(191,160,96,0.06);
+    border-top: 1px solid rgba(191,160,96,0.2);
+    text-align: center;
+  }
+
+  .proof-summary .big { 
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 48px; 
+    color: var(--gold-light); 
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .proof-summary .label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+  }
+
+  .proof-right { display: flex; flex-direction: column; gap: 24px; }
+
+  .proof-stat-card {
+    border: 1px solid var(--charcoal);
+    padding: 36px 32px;
+    transition: border-color 0.3s;
+  }
+
+  .proof-stat-card:hover { border-color: var(--gold); }
+
+  .proof-stat-num {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 52px;
+    color: var(--gold-light);
+    font-weight: 300;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .proof-stat-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+    margin-bottom: 10px;
+  }
+
+  .proof-stat-desc {
+    font-size: 13px;
+    color: var(--silver);
+    line-height: 1.7;
+    font-weight: 300;
+  }
+
+  /* ── TESTIMONIALS ── */
+  .testi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 64px;
+  }
+
+  .testi-card {
+    background: var(--cream-dark);
+    border: 1px solid var(--rule);
+    padding: 44px 36px;
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  .testi-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-3px);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.06);
+  }
+
+  .testi-ornament {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 80px;
+    color: var(--gold-pale);
+    line-height: 0.6;
+    margin-bottom: 24px;
+    font-style: italic;
+  }
+
+  .testi-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    font-style: italic;
+    color: var(--charcoal);
+    line-height: 1.8;
+    margin-bottom: 32px;
+    font-weight: 400;
+  }
+
+  .testi-rule {
+    width: 32px;
+    height: 1px;
+    background: var(--gold);
+    margin-bottom: 20px;
+  }
+
+  .testi-name {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  .testi-role {
+    font-size: 11px;
+    color: var(--silver);
+    letter-spacing: 1px;
+  }
+
+  /* ── PRICING ── */
+  .pricing-section { background: var(--ink); }
+  .pricing-section .section-title { color: var(--cream); }
+  .pricing-section .section-body { color: var(--silver); }
+
+  .price-container {
+    max-width: 680px;
+    margin: 64px auto 0;
+    border: 1px solid var(--charcoal);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .price-container::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--gold), transparent);
+  }
+
+  .price-top {
+    padding: 56px 60px 48px;
+    border-bottom: 1px solid var(--charcoal);
+    background: rgba(191,160,96,0.03);
+  }
+
+  .price-label {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 20px;
+    font-weight: 600;
+  }
+
+  .price-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    margin-bottom: 8px;
+  }
+
+  .price-was {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    color: var(--charcoal);
+    text-decoration: line-through;
+    font-weight: 300;
+    padding-bottom: 8px;
+  }
+
+  .price-now {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 80px;
+    color: var(--cream);
+    font-weight: 300;
+    line-height: 0.85;
+  }
+
+  .price-currency {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 36px;
+    color: var(--gold);
+    font-weight: 300;
+    padding-bottom: 12px;
+  }
+
+  .price-caveat {
+    font-size: 12px;
+    color: var(--silver);
+    letter-spacing: 1px;
+    margin-top: 16px;
+  }
+
+  .price-savings {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    margin-top: 16px;
+  }
+
+  /* COUNTDOWN */
+  .countdown-box {
+    padding: 32px 60px;
+    border-bottom: 1px solid var(--charcoal);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255,255,255,0.02);
+  }
+
+  .countdown-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--silver);
+  }
+
+  #countdown-uk {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 40px;
+    color: var(--gold-light);
+    font-weight: 300;
+    letter-spacing: 3px;
+  }
+
+  .price-features {
+    padding: 48px 60px;
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-bottom: 1px solid var(--charcoal);
+  }
+
+  .price-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 13px;
+    color: var(--silver);
+    font-weight: 300;
+    line-height: 1.5;
+  }
+
+  .price-features li::before {
+    content: '—';
+    color: var(--gold);
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+
+  .price-cta {
+    padding: 48px 60px;
+    text-align: center;
+  }
+
+  .btn-gold {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    padding: 20px 56px;
+    text-decoration: none;
+    transition: all 0.4s;
+    width: 100%;
+    text-align: center;
+  }
+
+  .btn-gold:hover {
+    background: var(--gold-light);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(191,160,96,0.25);
+  }
+
+  .price-cta-sub {
+    font-size: 12px;
+    color: var(--silver);
+    margin-top: 16px;
+    letter-spacing: 1px;
+  }
+
+  /* ── GUARANTEE ── */
+  .guarantee-section {
+    background: var(--cream-dark);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .guarantee-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
+    align-items: center;
+    margin-top: 64px;
+  }
+
+  .guarantee-left {
+    border: 1px solid var(--rule);
+    padding: 60px 48px;
+    text-align: center;
+    position: relative;
+    background: white;
+  }
+
+  .guarantee-left::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--gold), transparent);
+  }
+
+  .shield-icon {
+    font-size: 56px;
+    margin-bottom: 24px;
+    display: block;
+  }
+
+  .guarantee-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 36px;
+    font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+
+  .guarantee-subtitle {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 24px;
+    font-weight: 600;
+  }
+
+  .guarantee-text {
+    font-size: 14px;
+    color: var(--silver);
+    line-height: 1.8;
+    font-weight: 300;
+  }
+
+  .guarantee-text strong { color: var(--ink); font-weight: 500; }
+
+  .guarantee-right { }
+
+  .guarantee-right h3 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 40px;
+    font-weight: 300;
+    color: var(--ink);
+    line-height: 1.15;
+    margin-bottom: 24px;
+  }
+
+  .guarantee-right h3 em { font-style: italic; color: var(--gold); }
+
+  .guarantee-right p {
+    font-size: 15px;
+    color: var(--silver);
+    line-height: 1.9;
+    font-weight: 300;
+    margin-bottom: 32px;
+  }
+
+  .conditions-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .conditions-list li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    color: var(--charcoal);
+    font-weight: 300;
+  }
+
+  .conditions-list li::before {
+    content: '✦';
+    color: var(--gold);
+    font-size: 9px;
+    flex-shrink: 0;
+  }
+
+  /* ── FINAL CTA ── */
+  .final-cta {
+    background: var(--ink);
+    text-align: center;
+    padding: 140px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .final-cta::before {
+    content: 'SCALEFORGE';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 200px;
+    color: rgba(255,255,255,0.02);
+    white-space: nowrap;
+    pointer-events: none;
+    font-weight: 300;
+    letter-spacing: 20px;
+  }
+
+  .final-cta .eyebrow {
+    font-size: 10px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 32px;
+    font-weight: 600;
+  }
+
+  .final-cta h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(48px, 7vw, 88px);
+    font-weight: 300;
+    color: var(--cream);
+    line-height: 1.05;
+    margin-bottom: 28px;
+  }
+
+  .final-cta h2 em { font-style: italic; color: var(--gold); }
+
+  .final-cta p {
+    font-size: 16px;
+    color: var(--silver);
+    font-weight: 300;
+    max-width: 460px;
+    margin: 0 auto 56px;
+    line-height: 1.8;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--ink-soft);
+    border-top: 1px solid var(--charcoal);
+    padding: 48px 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .footer-logo-main {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--cream);
+  }
+
+  .footer-logo-sub {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-top: 4px;
+  }
+
+  footer p {
+    font-size: 12px;
+    color: var(--silver);
+    letter-spacing: 1px;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 1024px) {
+    .deliver-grid { grid-template-columns: repeat(2, 1fr); }
+    .testi-grid { grid-template-columns: 1fr 1fr; }
+    .hero { grid-template-columns: 1fr; }
+    .hero-right { height: 400px; }
+    .proof-grid { grid-template-columns: 1fr; }
+    .guarantee-inner { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    nav { padding: 20px 24px; }
+    .nav-right .nav-link { display: none; }
+    section { padding: 80px 24px; }
+    .hero-left { padding: 80px 24px 48px; }
+    .price-features { grid-template-columns: 1fr; padding: 36px 32px; }
+    .price-top { padding: 40px 32px; }
+    .price-cta { padding: 32px 32px; }
+    .countdown-box { padding: 24px 32px; }
+    .deliver-grid { grid-template-columns: 1fr; }
+    .testi-grid { grid-template-columns: 1fr; }
+    .process-item { grid-template-columns: 1fr; gap: 12px; }
+    footer { flex-direction: column; gap: 16px; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">
+    <div class="logo-main">ScaleForge</div>
+    <div class="logo-sub">London · Elite Digital Systems</div>
+  </div>
+  <div class="nav-right">
+    <a href="#services" class="nav-link">Services</a>
+    <a href="#proof" class="nav-link">Results</a>
+    <a href="#pricing" class="nav-link">Investment</a>
+    <a href="#book" class="nav-cta">Enquire Now</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-left">
+    <div class="hero-eyebrow">
+      <div class="eyebrow-rule"></div>
+      <div class="eyebrow-text">Done-For-You · London</div>
+    </div>
+    <h1>
+      Your Complete<br>
+      <em>Sales System,</em><br>
+      <strong>Built in 10 Days.</strong>
+    </h1>
+    <p class="hero-desc">
+      We build your <strong>landing page, ad campaigns, WhatsApp automation,</strong> and email integration — fully connected, fully running. You focus on closing. We handle everything else.
+    </p>
+    <div class="hero-actions">
+      <a href="#book" class="btn-ink">Reserve Your Place →</a>
+      <a href="#services" class="btn-outline">Explore the Service</a>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-stat-block">
+      <div class="hero-big-num">46K</div>
+      <div class="hero-big-label">Orders Generated · Our Own Brand</div>
+      <div class="hero-divider"></div>
+      <div class="hero-mini-stats">
+        <div>
+          <div class="mini-stat-num">10</div>
+          <div class="mini-stat-label">Day Setup</div>
+        </div>
+        <div>
+          <div class="mini-stat-num">500+</div>
+          <div class="mini-stat-label">Monthly Sales</div>
+        </div>
+        <div>
+          <div class="mini-stat-num">50%</div>
+          <div class="mini-stat-label">Guarantee</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee">
+    <div class="marquee-item"><span class="gem">✦</span> <span class="highlight">46,456 Orders</span> Generated For Our Own Brand</div>
+    <div class="marquee-item"><span class="gem">✦</span> Full Setup Completed In 10 Days</div>
+    <div class="marquee-item"><span class="gem">✦</span> Facebook · Instagram · WhatsApp · Email — All Connected</div>
+    <div class="marquee-item"><span class="gem">✦</span> One Investment. No Monthly Fees.</div>
+    <div class="marquee-item"><span class="gem">✦</span> 50% Money-Back Guarantee</div>
+    <div class="marquee-item"><span class="gem">✦</span> <span class="highlight">500+ Monthly Sales</span> Target After Launch</div>
+    <div class="marquee-item"><span class="gem">✦</span> 46,456 Orders Generated For Our Own Brand</div>
+    <div class="marquee-item"><span class="gem">✦</span> Full Setup Completed In 10 Days</div>
+    <div class="marquee-item"><span class="gem">✦</span> Facebook · Instagram · WhatsApp · Email — All Connected</div>
+    <div class="marquee-item"><span class="gem">✦</span> One Investment. No Monthly Fees.</div>
+    <div class="marquee-item"><span class="gem">✦</span> 50% Money-Back Guarantee</div>
+    <div class="marquee-item"><span class="gem">✦</span> 500+ Monthly Sales Target After Launch</div>
+  </div>
+</div>
+
+<!-- DELIVERABLES -->
+<section class="deliverables-section" id="services">
+  <div class="section-header reveal">
+    <div class="section-eyebrow"><div class="rule"></div><span>What We Build For You</span></div>
+    <h2 class="section-title">Everything You Need<br>To <em>Sell at Scale</em></h2>
+    <p class="section-body">A complete done-for-you system. Every element designed, connected, and launched within 10 days.</p>
+  </div>
+
+  <div class="deliver-grid">
+    <div class="deliver-card reveal">
+      <div class="deliver-number">01 ——</div>
+      <div class="deliver-title">Custom Landing Page</div>
+      <div class="deliver-desc">A conversion-focused landing page designed specifically for your brand, product, and audience. Built to turn visitors into buyers.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">02 ——</div>
+      <div class="deliver-title">Facebook & Instagram Campaigns</div>
+      <div class="deliver-desc">Full ad account setup. Engagement, traffic, and sales campaigns configured, launched, and optimised for your market.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">03 ——</div>
+      <div class="deliver-title">Precision Audience Targeting</div>
+      <div class="deliver-desc">We research and build your ideal customer audience so every pound of ad spend reaches the people most likely to buy.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">04 ——</div>
+      <div class="deliver-title">WhatsApp Automation</div>
+      <div class="deliver-desc">Intelligent automated responses that qualify your leads, handle enquiries, and guide prospects to purchase — around the clock.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">05 ——</div>
+      <div class="deliver-title">Email Integration</div>
+      <div class="deliver-desc">Every lead is captured and followed up automatically. A fully connected email system so no prospect ever falls through the cracks.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">06 ——</div>
+      <div class="deliver-title">Video Scripts & Creative Direction</div>
+      <div class="deliver-desc">We write your ad scripts and develop creative concepts tailored to your niche — content that stops the scroll and converts.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">07 ——</div>
+      <div class="deliver-title">Private Entrepreneur Network</div>
+      <div class="deliver-desc">Access to an exclusive community of business owners. Ongoing guidance, updates, and strategic support from our team.</div>
+    </div>
+    <div class="deliver-card reveal">
+      <div class="deliver-number">08 ——</div>
+      <div class="deliver-title">Campaign Refresh (Available Later)</div>
+      <div class="deliver-desc">After 2–3 months, we refresh your creatives, deploy new campaigns, and reignite your pipeline. Available as a one-off add-on.</div>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section class="process-section" id="process">
+  <div class="section-header reveal">
+    <div class="section-eyebrow"><div class="rule"></div><span>The Process</span></div>
+    <h2 class="section-title">Launched in<br><em>Ten Days, Precisely.</em></h2>
+    <p class="section-body">A structured, hands-on 10-day engagement. You provide the materials; we build the machine.</p>
+  </div>
+
+  <div class="process-list">
+    <div class="process-item reveal">
+      <div class="process-day">Days 1–2</div>
+      <div class="process-title">Onboarding & Strategy</div>
+      <div class="process-desc">You confirm your slot, receive a detailed brief, and provide your brand assets, product details, and account access. We map your entire system architecture.</div>
+    </div>
+    <div class="process-item reveal">
+      <div class="process-day">Days 3–5</div>
+      <div class="process-title">Build & Connect</div>
+      <div class="process-desc">Your landing page is built. Facebook and Instagram accounts are connected, your ad account configured, and your target audience researched and constructed.</div>
+    </div>
+    <div class="process-item reveal">
+      <div class="process-day">Days 6–8</div>
+      <div class="process-title">Launch & Automate</div>
+      <div class="process-desc">All three campaigns go live. WhatsApp automation is activated. Email integration is connected. Leads begin flowing into your system.</div>
+    </div>
+    <div class="process-item reveal">
+      <div class="process-day">Days 9–10</div>
+      <div class="process-title">Review & Hand Over</div>
+      <div class="process-desc">We review performance together, optimise where needed, and transfer full ownership to you. You are added to our private network for ongoing support.</div>
+    </div>
+    <div class="process-item reveal">
+      <div class="process-day">Ongoing</div>
+      <div class="process-title">You Close. We Support.</div>
+      <div class="process-desc">Qualified leads arrive directly in your WhatsApp, ready to purchase. Your role is simply to close the sale. We remain available in the community for guidance.</div>
+    </div>
+  </div>
+</section>
+
+<!-- PROOF -->
+<section class="proof-section" id="proof">
+  <div class="section-header reveal">
+    <div class="section-eyebrow"><div class="rule"></div><span>Verified Results</span></div>
+    <h2 class="section-title" style="color: var(--cream);">The System We Use<br><em>For Ourselves</em></h2>
+    <p class="section-body">These results are from our own brand — built on the identical system we deploy for every client.</p>
+  </div>
+
+  <div class="proof-grid">
+    <div class="proof-orders reveal">
+      <div class="proof-header">
+        <div class="proof-header-left">
+          <div class="live-dot"></div>
+          <span>Live Orders · Larose Skincare</span>
+        </div>
+        <span class="total">46,456 total</span>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">Lucky</div><div class="order-source">Facebook · 23 hours ago</div></div>
+        <div class="order-amount">₦18,000</div>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">Bolanle Alaka</div><div class="order-source">Facebook Referral · 23 May</div></div>
+        <div class="order-amount">₦23,500</div>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">Orizuamaka</div><div class="order-source">Direct · 23 May</div></div>
+        <div class="order-amount">₦23,500</div>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">John Paul</div><div class="order-source">Facebook · 23 May</div></div>
+        <div class="order-amount">₦18,000</div>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">Mimi</div><div class="order-source">Direct · 23 May</div></div>
+        <div class="order-amount">₦48,500</div>
+      </div>
+      <div class="order-row">
+        <div><div class="order-name">Samson</div><div class="order-source">Facebook Referral · 23 May</div></div>
+        <div class="order-amount">₦23,500</div>
+      </div>
+      <div class="proof-summary">
+        <div class="big">46,456</div>
+        <div class="label">Total Orders · Growing Daily</div>
+      </div>
+    </div>
+    <div class="proof-right">
+      <div class="proof-stat-card reveal">
+        <div class="proof-stat-num">46K+</div>
+        <div class="proof-stat-label">Orders Processed</div>
+        <div class="proof-stat-desc">Real orders from a real brand, driven entirely by the Facebook, Instagram and WhatsApp system we build for our clients.</div>
+      </div>
+      <div class="proof-stat-card reveal">
+        <div class="proof-stat-num">500+</div>
+        <div class="proof-stat-label">Monthly Sales Target</div>
+        <div class="proof-stat-desc">The benchmark we set for every client's system after the 10-day setup is complete and campaigns are fully optimised.</div>
+      </div>
+      <div class="proof-stat-card reveal">
+        <div class="proof-stat-num">10</div>
+        <div class="proof-stat-label">Days to Full Launch</div>
+        <div class="proof-stat-desc">From onboarding to live campaigns — your entire sales infrastructure, built and running within ten working days.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section id="testimonials">
+  <div class="section-header reveal">
+    <div class="section-eyebrow"><div class="rule"></div><span>Client Experiences</span></div>
+    <h2 class="section-title">Results That<br><em>Speak Plainly</em></h2>
+  </div>
+
+  <div class="testi-grid">
+    <div class="testi-card reveal">
+      <div class="testi-ornament">"</div>
+      <p class="testi-text">I had tried agencies before and spent a fortune with nothing to show. ScaleForge set everything up in 10 days and I had consistent leads within weeks. Genuinely transformative.</p>
+      <div class="testi-rule"></div>
+      <div class="testi-name">Adaeze O.</div>
+      <div class="testi-role">Fashion Brand Owner, Lagos</div>
+    </div>
+    <div class="testi-card reveal">
+      <div class="testi-ornament">"</div>
+      <p class="testi-text">The WhatsApp automation alone changed my business. Customers arrive pre-qualified and ready to buy. I simply close the sale. It is exactly as they described.</p>
+      <div class="testi-rule"></div>
+      <div class="testi-name">Kunle B.</div>
+      <div class="testi-role">Food Business, Abuja</div>
+    </div>
+    <div class="testi-card reveal">
+      <div class="testi-ornament">"</div>
+      <p class="testi-text">Worth every penny. My only regret is not investing sooner. The system runs itself — I wake up each morning to new enquiries already warmed up in my WhatsApp.</p>
+      <div class="testi-rule"></div>
+      <div class="testi-name">Temi A.</div>
+      <div class="testi-role">Skincare Brand, Port Harcourt</div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing-section" id="pricing">
+  <div class="section-header reveal" style="text-align: center;">
+    <div class="section-eyebrow" style="justify-content: center;"><div class="rule"></div><span>Your Investment</span><div class="rule"></div></div>
+    <h2 class="section-title" style="color: var(--cream);">One Payment.<br><em>Your Entire System.</em></h2>
+    <p class="section-body" style="margin: 20px auto 0;">No monthly retainers. No hidden fees. One investment — your complete sales infrastructure, built and running.</p>
+  </div>
+
+  <div class="price-container reveal">
+    <div class="price-top">
+      <div class="price-label">🇬🇧 United Kingdom — Limited Availability</div>
+      <div class="price-row">
+        <div class="price-was">£1,000</div>
+        <div class="price-currency">£</div>
+        <div class="price-now">750</div>
+      </div>
+      <div class="price-caveat">One-time payment · No monthly fees · No subscription</div>
+      <div class="price-savings">You Save £250 — Today Only</div>
+    </div>
+
+    <div class="countdown-box">
+      <div class="countdown-label">⏱ This price expires in</div>
+      <div id="countdown-uk">23:59:59</div>
+    </div>
+
+    <ul class="price-features">
+      <li>Custom landing page, designed for you</li>
+      <li>Facebook & Instagram campaign setup</li>
+      <li>WhatsApp automation, fully activated</li>
+      <li>Precision audience research & targeting</li>
+      <li>Email integration & lead capture</li>
+      <li>Video scripts & creative direction</li>
+      <li>Private entrepreneur network access</li>
+      <li>10-day hands-on setup, start to finish</li>
+      <li>500+ monthly sales system activated</li>
+      <li>Ongoing community support included</li>
+    </ul>
+
+    <div class="price-cta">
+      <a href="https://wa.me/2347035912743?text=Hi%2C%20I%27d%20like%20to%20enquire%20about%20the%20ScaleForge%20London%20slot%20at%20%C2%A3750" class="btn-gold">
+        📲 Enquire on WhatsApp — Reserve Your Slot
+      </a>
+      <p class="price-cta-sub">We'll confirm availability and send your start date within 24 hours.</p>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 32px; padding: 28px; border: 1px solid var(--charcoal); max-width: 680px; margin-left: auto; margin-right: auto;" class="reveal">
+    <p style="font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--silver); margin-bottom: 8px;">Campaign Refresh · Available After 2–3 Months</p>
+    <p style="font-family: 'Cormorant Garamond', serif; font-size: 36px; color: var(--gold-light); font-weight: 300;">£150 <span style="color: var(--silver); font-size: 18px; font-family: 'Montserrat', sans-serif; font-weight: 300;">per refresh</span></p>
+    <p style="font-size: 12px; color: var(--silver); margin-top: 6px; letter-spacing: 1px;">New creatives, fresh campaigns, renewed momentum.</p>
+  </div>
+</section>
+
+<!-- GUARANTEE -->
+<section class="guarantee-section" id="guarantee">
+  <div class="section-header reveal">
+    <div class="section-eyebrow"><div class="rule"></div><span>Our Commitment</span></div>
+    <h2 class="section-title">We Stand Behind<br><em>Every Setup</em></h2>
+  </div>
+
+  <div class="guarantee-inner">
+    <div class="guarantee-left reveal">
+      <span class="shield-icon">🛡️</span>
+      <div class="guarantee-title">50% Refund Guarantee</div>
+      <div class="guarantee-subtitle">60-Day Results Promise</div>
+      <p class="guarantee-text">
+        If your campaigns are live, your system is running, and you do not see results within <strong>60 days of launch</strong> — we will refund <strong>50% of your investment.</strong> No disputes. No delay.
+      </p>
+    </div>
+
+    <div class="guarantee-right reveal">
+      <h3>Because We Build Systems<br>That <em>Actually Work</em></h3>
+      <p>This guarantee exists because we are confident in the system — we use it ourselves. We have processed over 46,000 orders through it. We have no reason to doubt it will work for you.</p>
+      <p style="font-size: 13px;">To qualify for the guarantee, the following conditions apply:</p>
+      <ul class="conditions-list">
+        <li>All campaigns must be actively running with adequate budget</li>
+        <li>All materials must have been provided during the 10-day setup</li>
+        <li>WhatsApp must be active and leads responded to promptly</li>
+        <li>Campaigns must not have been altered after handover</li>
+        <li>Claim must be made within 60 days of your launch date</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final-cta" id="book">
+  <div class="eyebrow reveal">✦ Limited Slots Available This Month ✦</div>
+  <h2 class="reveal">
+    Ready to Build<br>
+    Something <em>Remarkable?</em>
+  </h2>
+  <p class="reveal">Stop spending on campaigns that don't convert. Let us build a system that delivers qualified buyers directly to your WhatsApp — every single day.</p>
+  <a href="https://wa.me/2347035912743?text=Hi%2C%20I%27d%20like%20to%20enquire%20about%20the%20ScaleForge%20London%20slot%20at%20%C2%A3750" class="btn-gold reveal" style="display: inline-block; font-size: 12px; padding: 22px 64px;">
+    📲 Reserve Your London Slot →
+  </a>
+  <p style="margin-top: 20px; font-size: 12px; color: var(--silver); letter-spacing: 1px;" class="reveal">Message us on WhatsApp — we'll confirm your slot and start date within 24 hours.</p>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div>
+    <div class="footer-logo-main">ScaleForge</div>
+    <div class="footer-logo-sub">London · Elite Digital Systems</div>
+  </div>
+  <p>© 2026 ScaleForge. All rights reserved.</p>
+</footer>
+
+<script>
+  // Countdown — 24hrs from first visit
+  (function() {
+    const key = 'sf_uk_deadline';
+    let deadline = localStorage.getItem(key);
+    if (!deadline) {
+      deadline = Date.now() + 24 * 60 * 60 * 1000;
+      localStorage.setItem(key, deadline);
+    }
+    function update() {
+      const diff = +deadline - Date.now();
+      if (diff <= 0) { document.getElementById('countdown-uk').textContent = '00:00:00'; return; }
+      const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+      const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+      const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+      document.getElementById('countdown-uk').textContent = `${h}:${m}:${s}`;
+      setTimeout(update, 1000);
+    }
+    update();
+  })();
+
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        setTimeout(() => e.target.classList.add('visible'), i * 60);
+        obs.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.08 });
+  reveals.forEach(el => obs.observe(el));
+</script>
+</body>
+</html>

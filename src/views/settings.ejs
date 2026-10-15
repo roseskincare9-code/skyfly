@@ -11,6 +11,11 @@
     <label for="whatsapp_number">WhatsApp number for customers</label>
     <input id="whatsapp_number" name="whatsapp_number" type="tel" value="<%= business.whatsapp_number || '' %>" placeholder="09049206695">
     <p class="muted" style="font-size:13px;margin:4px 0 0">Used for the WhatsApp button on order confirmation pages. If empty, 09049206695 is used. Changes apply to every confirmation page immediately, including for past orders.</p>
+    <label for="currency">Currency for prices and orders</label>
+    <select id="currency" name="currency" <%= currencyLocked ? 'disabled' : '' %>>
+      <% CURRENCIES.forEach((c) => { %><option value="<%= c %>" <%= business.currency === c ? 'selected' : '' %>><%= { NGN: 'Nigerian naira (₦)', GBP: 'British pound (£)', USD: 'US dollar ($)', EUR: 'Euro (€)' }[c] %></option><% }) %>
+    </select>
+    <p class="muted" style="font-size:13px;margin:4px 0 0"><%= currencyLocked ? 'Fixed because this business already has orders.' : 'Set this before adding products. It cannot be changed once the business has orders.' %></p>
     <label for="order_prefix">Order reference prefix</label>
     <input id="order_prefix" name="order_prefix" value="<%= business.order_prefix %>" required pattern="[A-Za-z]{2,5}" maxlength="5">
     <p class="muted" style="font-size:13px;margin:4px 0 0">New orders look like <code><%= business.order_prefix %>-7KQ3M9X</code>.</p>

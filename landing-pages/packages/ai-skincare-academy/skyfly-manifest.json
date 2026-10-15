@@ -1,0 +1,170 @@
+{
+  "skyflyManifestVersion": 1,
+  "slug": "ai-skincare-academy",
+  "name": "AI Skincare Business Academy",
+  "pageType": "course-booking",
+  "source": {
+    "repository": "roseskincare9-code/AI-ACADEMY",
+    "file": "index.html",
+    "commit": "a897622b3b1fb0a8978a6835e26388429917df38",
+    "githubPagesUrl": "https://roseskincare9-code.github.io/AI-ACADEMY/",
+    "githubPagesUrlVerified": false,
+    "note": "Address follows the GitHub Pages pattern for this repository; not checked. Confirm before relying on it."
+  },
+  "entry": "index.html",
+  "assets": [
+    {
+      "file": "index.html",
+      "bytes": 17408
+    }
+  ],
+  "orderFlow": {
+    "current": "none",
+    "skyflyFormKey": null,
+    "currency": null,
+    "products": [],
+    "connectionTested": "not applicable"
+  },
+  "changesFromOriginal": [
+    {
+      "change": "Embedded base64 images moved to assets/images/ (same files, same order; the page looks the same)"
+    }
+  ],
+  "integrations": [
+    {
+      "service": "Meta Pixel (in page code)",
+      "ids": [
+        "2189120765250980"
+      ]
+    }
+  ],
+  "environment": {
+    "requiredInPage": [],
+    "requiredInSkyfly": [],
+    "secrets": "none: the page contains no private keys or tokens. Pixel access tokens are entered only in Skyfly's Pixels screen."
+  },
+  "editableFields": {
+    "seo": {
+      "title": "AI Skincare Business Academy — Learn. Create. Market. Scale.",
+      "description": "Turn knowledge and AI into a thriving skincare business. Only 20 spots per intake — once we hit 20, the doors close.",
+      "og": {}
+    },
+    "headings": [
+      {
+        "level": "h1",
+        "text": "AI Skincare Business Academy"
+      },
+      {
+        "level": "h2",
+        "text": "Everything between \"I know skincare\" and \"I run a skincare brand.\""
+      },
+      {
+        "level": "h3",
+        "text": "Skincare, from scratch"
+      },
+      {
+        "level": "h3",
+        "text": "Formulas & promix recipes"
+      },
+      {
+        "level": "h3",
+        "text": "Marketing strategy"
+      },
+      {
+        "level": "h3",
+        "text": "AI product photos & videos"
+      },
+      {
+        "level": "h3",
+        "text": "TikTok & Snapchat ads"
+      },
+      {
+        "level": "h3",
+        "text": "WhatsApp marketing"
+      },
+      {
+        "level": "h2",
+        "text": "By the end, you will be able to:"
+      },
+      {
+        "level": "h2",
+        "text": "Everything you need to launch, in one folder."
+      },
+      {
+        "level": "h2",
+        "text": "Invest in knowledge today, build freedom tomorrow."
+      }
+    ],
+    "callsToAction": [
+      {
+        "text": "Book Your Seat — ₦3,000",
+        "action": "#"
+      },
+      {
+        "text": "See what's inside ↓",
+        "action": "#curriculum"
+      },
+      {
+        "text": "Book Your Seat — ₦3,000",
+        "action": "#"
+      }
+    ],
+    "packages": [],
+    "contact": {
+      "whatsappNumbers": [],
+      "ownerWhatsApp": "09049206695"
+    },
+    "formFields": [],
+    "design": {
+      "colors": {
+        "ink": "#120C14",
+        "plum": "#3B1F3D",
+        "plum-deep": "#241329",
+        "gold": "#C9A24B",
+        "gold-bright": "#E4C377",
+        "cream": "#F7F0E4",
+        "paper": "#FBF7EF"
+      },
+      "fonts": []
+    },
+    "sections": [
+      {
+        "tag": "div",
+        "id": "barFill",
+        "class": "bar-fill"
+      },
+      {
+        "tag": "section",
+        "id": "curriculum",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": null
+      }
+    ],
+    "images": [],
+    "pixels": [
+      {
+        "provider": "meta",
+        "id": "2189120765250980"
+      }
+    ]
+  }
+}

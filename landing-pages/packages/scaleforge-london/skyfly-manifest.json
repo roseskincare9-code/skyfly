@@ -1,0 +1,199 @@
+{
+  "skyflyManifestVersion": 1,
+  "slug": "scaleforge-london",
+  "name": "ScaleForge London – Elite Digital Sales Systems",
+  "pageType": "service-enquiry",
+  "source": {
+    "repository": "roseskincare9-code/Scaleforgelondon",
+    "file": "index.html",
+    "commit": "3e767a0acbb94395216ff2fa3fdaeb6132e48e49",
+    "githubPagesUrl": "https://roseskincare9-code.github.io/Scaleforgelondon/",
+    "githubPagesUrlVerified": false,
+    "note": "Address follows the GitHub Pages pattern for this repository; not checked. Confirm before relying on it."
+  },
+  "entry": "index.html",
+  "assets": [
+    {
+      "file": "index.html",
+      "bytes": 43962
+    }
+  ],
+  "orderFlow": {
+    "current": "whatsapp-links-only",
+    "skyflyFormKey": null,
+    "currency": null,
+    "products": [],
+    "connectionTested": "not applicable"
+  },
+  "changesFromOriginal": [
+    {
+      "change": "Embedded base64 images moved to assets/images/ (same files, same order; the page looks the same)"
+    }
+  ],
+  "integrations": [
+    {
+      "service": "Google Fonts",
+      "families": [
+        "Cormorant Garamond",
+        "Montserrat",
+        "Playfair Display"
+      ]
+    }
+  ],
+  "environment": {
+    "requiredInPage": [],
+    "requiredInSkyfly": [],
+    "secrets": "none: the page contains no private keys or tokens. Pixel access tokens are entered only in Skyfly's Pixels screen."
+  },
+  "editableFields": {
+    "seo": {
+      "title": "ScaleForge London — Elite Digital Sales Systems",
+      "description": null,
+      "og": {}
+    },
+    "headings": [
+      {
+        "level": "h1",
+        "text": "Your Complete Sales System, Built in 10 Days."
+      },
+      {
+        "level": "h2",
+        "text": "Everything You NeedTo Sell at Scale"
+      },
+      {
+        "level": "h2",
+        "text": "Launched inTen Days, Precisely."
+      },
+      {
+        "level": "h2",
+        "text": "The System We UseFor Ourselves"
+      },
+      {
+        "level": "h2",
+        "text": "Results ThatSpeak Plainly"
+      },
+      {
+        "level": "h2",
+        "text": "One Payment.Your Entire System."
+      },
+      {
+        "level": "h2",
+        "text": "We Stand BehindEvery Setup"
+      },
+      {
+        "level": "h3",
+        "text": "Because We Build SystemsThat Actually Work"
+      },
+      {
+        "level": "h2",
+        "text": "Ready to Build Something Remarkable?"
+      }
+    ],
+    "callsToAction": [
+      {
+        "text": "Services",
+        "action": "#services"
+      },
+      {
+        "text": "Results",
+        "action": "#proof"
+      },
+      {
+        "text": "Investment",
+        "action": "#pricing"
+      },
+      {
+        "text": "Enquire Now",
+        "action": "#book"
+      },
+      {
+        "text": "Reserve Your Place →",
+        "action": "#book"
+      },
+      {
+        "text": "Explore the Service",
+        "action": "#services"
+      },
+      {
+        "text": "📲 Enquire on WhatsApp — Reserve Your Slot",
+        "action": "https://wa.me/2347035912743?text=Hi%2C%20I%27d%20like%20to%20enquire%20about%20t"
+      },
+      {
+        "text": "📲 Reserve Your London Slot →",
+        "action": "https://wa.me/2347035912743?text=Hi%2C%20I%27d%20like%20to%20enquire%20about%20t"
+      }
+    ],
+    "packages": [],
+    "contact": {
+      "whatsappNumbers": [
+        "2347035912743"
+      ],
+      "ownerWhatsApp": "09049206695"
+    },
+    "formFields": [],
+    "design": {
+      "colors": {
+        "cream": "#F8F4EE",
+        "cream-dark": "#EDE8DF",
+        "ink": "#0D0D0B",
+        "ink-soft": "#1C1C19",
+        "charcoal": "#2E2E2B",
+        "silver": "#8C8C88",
+        "silver-light": "#B8B4AC",
+        "gold": "#BFA060",
+        "gold-light": "#D4B87A",
+        "gold-pale": "#F0E4C4",
+        "rule": "#D8D2C8"
+      },
+      "fonts": [
+        "Cormorant Garamond",
+        "Montserrat",
+        "Playfair Display"
+      ]
+    },
+    "sections": [
+      {
+        "tag": "section",
+        "id": "services",
+        "class": "deliverables-section"
+      },
+      {
+        "tag": "section",
+        "id": "process",
+        "class": "process-section"
+      },
+      {
+        "tag": "section",
+        "id": "proof",
+        "class": "proof-section"
+      },
+      {
+        "tag": "section",
+        "id": "testimonials",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": "pricing",
+        "class": "pricing-section"
+      },
+      {
+        "tag": "div",
+        "id": "countdown-uk",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": "guarantee",
+        "class": "guarantee-section"
+      },
+      {
+        "tag": "section",
+        "id": "book",
+        "class": "final-cta"
+      }
+    ],
+    "images": [],
+    "pixels": []
+  }
+}

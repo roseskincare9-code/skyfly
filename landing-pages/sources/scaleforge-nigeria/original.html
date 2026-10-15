@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScaleForge — Done-For-You Digital Sales System</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #D4A843;
+    --gold-light: #F0C96A;
+    --gold-dim: #8a6a20;
+    --black: #0A0A08;
+    --dark: #111110;
+    --card: #161614;
+    --border: #2a2a26;
+    --white: #F5F2EC;
+    --muted: #8a8880;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: 'DM Sans', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 900;
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(to bottom, rgba(10,10,8,0.95), transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 3px;
+    color: var(--gold);
+  }
+
+  .logo span { color: var(--white); }
+
+  nav a {
+    color: var(--white);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 24px;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    transition: all 0.3s;
+  }
+
+  nav a:hover {
+    background: var(--gold);
+    color: var(--black);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 120px 40px 80px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px; right: -200px;
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(212,168,67,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -100px; left: -100px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(212,168,67,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid var(--gold-dim);
+    padding: 6px 16px;
+    margin-bottom: 32px;
+    width: fit-content;
+    animation: fadeUp 0.8s ease both;
+  }
+
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(56px, 10vw, 120px);
+    line-height: 0.92;
+    letter-spacing: 2px;
+    margin-bottom: 32px;
+    animation: fadeUp 0.8s ease 0.1s both;
+  }
+
+  .hero h1 .gold { color: var(--gold); }
+  .hero h1 .outline {
+    -webkit-text-stroke: 1px var(--gold-dim);
+    color: transparent;
+  }
+
+  .hero-sub {
+    font-size: clamp(16px, 2.5vw, 20px);
+    font-weight: 300;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.7;
+    margin-bottom: 48px;
+    animation: fadeUp 0.8s ease 0.2s both;
+  }
+
+  .hero-sub strong { color: var(--white); font-weight: 500; }
+
+  .hero-ctas {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    animation: fadeUp 0.8s ease 0.3s both;
+  }
+
+  .btn-primary {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--black);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 18px 40px;
+    text-decoration: none;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.15);
+    transform: translateX(-100%);
+    transition: transform 0.3s;
+  }
+
+  .btn-primary:hover::after { transform: translateX(0); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(212,168,67,0.3); }
+
+  .btn-secondary {
+    display: inline-block;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 18px 32px;
+    text-decoration: none;
+    transition: all 0.3s;
+  }
+
+  .btn-secondary:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* ── PROOF TICKER ── */
+  .ticker-wrap {
+    overflow: hidden;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 0;
+    margin: 0;
+  }
+
+  .ticker {
+    display: flex;
+    gap: 0;
+    animation: ticker 25s linear infinite;
+    white-space: nowrap;
+  }
+
+  .ticker-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 40px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .ticker-item .dot {
+    width: 6px; height: 6px;
+    background: var(--gold);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .ticker-item .num { color: var(--gold); font-weight: 700; }
+
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* ── STATS ── */
+  .stats {
+    padding: 80px 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .stat {
+    background: var(--black);
+    padding: 48px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.3s;
+  }
+
+  .stat:hover { background: var(--card); }
+
+  .stat::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--gold), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .stat:hover::before { opacity: 1; }
+
+  .stat-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    color: var(--gold);
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ── SECTIONS ── */
+  section { padding: 100px 40px; }
+
+  .section-tag {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(40px, 6vw, 72px);
+    line-height: 1;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+  }
+
+  .section-title .gold { color: var(--gold); }
+
+  .section-sub {
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 520px;
+    line-height: 1.7;
+    font-weight: 300;
+  }
+
+  /* ── WHAT YOU GET ── */
+  .deliverables {
+    background: var(--dark);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .deliverables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    margin-top: 60px;
+  }
+
+  .deliver-item {
+    background: var(--dark);
+    padding: 40px 36px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+
+  .deliver-item:hover { background: var(--card); }
+
+  .deliver-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 80px;
+    color: var(--border);
+    line-height: 0.8;
+    position: absolute;
+    top: 20px; right: 24px;
+    transition: color 0.3s;
+  }
+
+  .deliver-item:hover .deliver-num { color: rgba(212,168,67,0.1); }
+
+  .deliver-icon {
+    font-size: 28px;
+    margin-bottom: 20px;
+  }
+
+  .deliver-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--white);
+  }
+
+  .deliver-desc {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  /* ── PROCESS ── */
+  .process-steps {
+    margin-top: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 32px;
+    padding: 40px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+    transition: all 0.3s;
+  }
+
+  .step:hover .step-num { color: var(--gold); }
+
+  .step-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    color: var(--border);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .step-content h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--white);
+  }
+
+  .step-content p {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 560px;
+  }
+
+  .step-tag {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(212,168,67,0.08);
+    padding: 4px 10px;
+    margin-bottom: 10px;
+  }
+
+  /* ── PRICING ── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 60px;
+  }
+
+  .price-card {
+    border: 1px solid var(--border);
+    padding: 48px 40px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s;
+  }
+
+  .price-card.featured {
+    border-color: var(--gold);
+    background: linear-gradient(135deg, rgba(212,168,67,0.06), transparent);
+  }
+
+  .price-card:hover { transform: translateY(-4px); }
+
+  .price-card.featured:hover {
+    box-shadow: 0 24px 60px rgba(212,168,67,0.15);
+  }
+
+  .price-badge {
+    position: absolute;
+    top: 0; right: 0;
+    background: var(--gold);
+    color: var(--black);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+  }
+
+  .price-location {
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  .price-amount {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 60px;
+    color: var(--gold);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .price-note {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 32px;
+  }
+
+  .price-features {
+    list-style: none;
+    margin-bottom: 40px;
+  }
+
+  .price-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .price-features li::before {
+    content: '✦';
+    color: var(--gold);
+    font-size: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ── GUARANTEE ── */
+  .guarantee {
+    background: var(--dark);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .guarantee-box {
+    border: 1px solid var(--gold-dim);
+    padding: 60px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 48px;
+    align-items: center;
+    margin-top: 60px;
+    background: linear-gradient(135deg, rgba(212,168,67,0.04), transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .guarantee-box::before {
+    content: 'GUARANTEED';
+    position: absolute;
+    bottom: -20px; right: -10px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 120px;
+    color: rgba(212,168,67,0.03);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .guarantee-shield {
+    font-size: 72px;
+    filter: drop-shadow(0 0 20px rgba(212,168,67,0.3));
+  }
+
+  .guarantee-content h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 40px;
+    color: var(--gold);
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+  }
+
+  .guarantee-content p {
+    font-size: 16px;
+    color: var(--muted);
+    line-height: 1.8;
+    max-width: 560px;
+  }
+
+  .guarantee-content p strong { color: var(--white); }
+
+  .guarantee-conditions {
+    margin-top: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .condition-tag {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--gold);
+    background: rgba(212,168,67,0.08);
+    border: 1px solid rgba(212,168,67,0.2);
+    padding: 5px 12px;
+  }
+
+  /* ── TESTIMONIALS ── */
+  .testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    margin-top: 60px;
+  }
+
+  .testi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 36px 32px;
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  .testi-card:hover {
+    border-color: var(--gold-dim);
+    transform: translateY(-2px);
+  }
+
+  .testi-quote {
+    font-size: 48px;
+    color: var(--gold);
+    line-height: 0.5;
+    font-family: 'Bebas Neue', sans-serif;
+    margin-bottom: 20px;
+    opacity: 0.4;
+  }
+
+  .testi-text {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.7;
+    margin-bottom: 24px;
+    font-style: italic;
+  }
+
+  .testi-author {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .testi-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    color: var(--black);
+    flex-shrink: 0;
+  }
+
+  .testi-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .testi-role { font-size: 12px; color: var(--muted); }
+
+  /* ── ORDER PROOF ── */
+  .proof-section { background: var(--dark); }
+
+  .orders-live {
+    margin-top: 60px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .orders-header {
+    background: var(--card);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .live-dot {
+    width: 8px; height: 8px;
+    background: #4ade80;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,222,128,0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+  }
+
+  .orders-header span {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .order-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 20px;
+    align-items: center;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    transition: background 0.2s;
+  }
+
+  .order-row:hover { background: var(--card); }
+
+  .order-name { color: var(--white); font-weight: 500; }
+  .order-time { color: var(--muted); font-size: 12px; }
+  .order-amount { color: var(--gold); font-weight: 600; font-family: 'Syne', sans-serif; }
+
+  .orders-footer {
+    padding: 20px 24px;
+    background: var(--card);
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .orders-footer strong { color: var(--gold); font-size: 20px; font-family: 'Bebas Neue', sans-serif; }
+
+  /* ── CTA SECTION ── */
+  .cta-section {
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(212,168,67,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-section h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(48px, 8vw, 96px);
+    line-height: 0.95;
+    margin-bottom: 24px;
+    letter-spacing: 2px;
+  }
+
+  .cta-section p {
+    font-size: 18px;
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 auto 48px;
+    line-height: 1.7;
+  }
+
+  .slots-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid var(--gold-dim);
+    padding: 8px 20px;
+    margin-bottom: 32px;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 40px;
+    text-align: center;
+  }
+
+  .footer-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 4px;
+    color: var(--gold);
+    margin-bottom: 12px;
+  }
+
+  footer p {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.7s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    nav { padding: 16px 20px; }
+    .hero { padding: 100px 20px 60px; }
+    section { padding: 70px 20px; }
+    .stats { padding: 0; }
+    .stat { padding: 36px 24px; }
+    .guarantee-box {
+      grid-template-columns: 1fr;
+      padding: 36px 28px;
+      text-align: center;
+    }
+    .guarantee-shield { font-size: 52px; justify-self: center; }
+    .step { grid-template-columns: 60px 1fr; gap: 20px; }
+    .order-row { grid-template-columns: 1fr auto; }
+    .order-time { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">Scale<span>Forge</span></div>
+  <a href="#book">Book Your Slot →</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-tag">✦ Done-For-You Digital Sales System</div>
+  <h1>
+    We Build<br>
+    Your <span class="gold">Entire</span><br>
+    <span class="outline">Sales Machine</span>
+  </h1>
+  <p class="hero-sub">
+    Landing page. Facebook & Instagram ads. WhatsApp automation. Email setup. All connected, all running — in <strong>just 10 days.</strong> You sit back. Customers come to you.
+  </p>
+  <div class="hero-ctas">
+    <a href="#book" class="btn-primary">Claim Your Slot Now</a>
+    <a href="#what-you-get" class="btn-secondary">See What's Included</a>
+  </div>
+</section>
+
+<!-- LIVE TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker">
+    <div class="ticker-item"><span class="dot"></span> <span class="num">46,456</span> Orders Generated For Our Brand</div>
+    <div class="ticker-item"><span class="dot"></span> Facebook & Instagram Traffic Proven</div>
+    <div class="ticker-item"><span class="dot"></span> <span class="num">10-Day</span> Full Setup Guaranteed</div>
+    <div class="ticker-item"><span class="dot"></span> WhatsApp Automation Included</div>
+    <div class="ticker-item"><span class="dot"></span> One-Time Investment. Lifetime Results</div>
+    <div class="ticker-item"><span class="dot"></span> <span class="num">46,456</span> Orders Generated For Our Brand</div>
+    <div class="ticker-item"><span class="dot"></span> Facebook & Instagram Traffic Proven</div>
+    <div class="ticker-item"><span class="dot"></span> <span class="num">10-Day</span> Full Setup Guaranteed</div>
+    <div class="ticker-item"><span class="dot"></span> WhatsApp Automation Included</div>
+    <div class="ticker-item"><span class="dot"></span> One-Time Investment. Lifetime Results</div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat reveal">
+    <div class="stat-num">46K+</div>
+    <div class="stat-label">Orders Processed</div>
+  </div>
+  <div class="stat reveal">
+    <div class="stat-num">10</div>
+    <div class="stat-label">Days to Full Setup</div>
+  </div>
+  <div class="stat reveal">
+    <div class="stat-num">500+</div>
+    <div class="stat-label">Monthly Sales Target</div>
+  </div>
+  <div class="stat reveal">
+    <div class="stat-num">50%</div>
+    <div class="stat-label">Money-Back Guarantee</div>
+  </div>
+</div>
+
+<!-- WHAT YOU GET -->
+<section class="deliverables" id="what-you-get">
+  <div class="section-tag">✦ What's Included</div>
+  <h2 class="section-title">Everything You Need<br>To <span class="gold">Start Selling</span></h2>
+  <p class="section-sub">We handle the entire technical setup so you never have to figure it out alone.</p>
+
+  <div class="deliverables-grid">
+    <div class="deliver-item reveal">
+      <div class="deliver-num">01</div>
+      <div class="deliver-icon">🌐</div>
+      <div class="deliver-title">Custom Landing Page</div>
+      <div class="deliver-desc">A high-converting landing page built for your brand, designed to turn visitors into buyers immediately.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">02</div>
+      <div class="deliver-icon">📱</div>
+      <div class="deliver-title">Facebook & Instagram Campaigns</div>
+      <div class="deliver-desc">Full ad account setup. Engagement, traffic, and sales campaigns — all configured and launched for you.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">03</div>
+      <div class="deliver-icon">🎯</div>
+      <div class="deliver-title">Targeted Audience Setup</div>
+      <div class="deliver-desc">We research and build your ideal customer audience so every naira or pound spent reaches the right people.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">04</div>
+      <div class="deliver-icon">💬</div>
+      <div class="deliver-title">WhatsApp Automation</div>
+      <div class="deliver-desc">Automated responses that qualify leads, answer questions, and push them towards buying — even while you sleep.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">05</div>
+      <div class="deliver-icon">📧</div>
+      <div class="deliver-title">Email Integration</div>
+      <div class="deliver-desc">Connected email system so every lead is captured and followed up automatically. Never lose a prospect again.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">06</div>
+      <div class="deliver-icon">🎬</div>
+      <div class="deliver-title">Video Script & Creative Ideas</div>
+      <div class="deliver-desc">We write your video scripts and brainstorm ad creatives that convert in your specific niche.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">07</div>
+      <div class="deliver-icon">👥</div>
+      <div class="deliver-title">Private Entrepreneur Community</div>
+      <div class="deliver-desc">Join an exclusive group of business owners. Ongoing support, updates, and guidance from our team.</div>
+    </div>
+    <div class="deliver-item reveal">
+      <div class="deliver-num">08</div>
+      <div class="deliver-icon">🔄</div>
+      <div class="deliver-title">Campaign Refresh (Add-On)</div>
+      <div class="deliver-desc">After 2–3 months, refresh your creatives and fire up a new campaign. New videos, new energy, more sales.</div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="process">
+  <div class="section-tag">✦ The Process</div>
+  <h2 class="section-title">How It Works<br>In <span class="gold">10 Days</span></h2>
+
+  <div class="process-steps">
+    <div class="step reveal">
+      <div class="step-num">01</div>
+      <div class="step-content">
+        <div class="step-tag">Day 1–2</div>
+        <h3>You Book, We Onboard</h3>
+        <p>You claim your slot on WhatsApp, confirm your start date, and we send you a clear checklist of everything we need. You provide your brand details, products, and access.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="step-num">02</div>
+      <div class="step-content">
+        <div class="step-tag">Day 3–5</div>
+        <h3>We Build Your Foundation</h3>
+        <p>We create your landing page, connect your Facebook and Instagram accounts, set up your ad account, and build your target audience from scratch.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="step-num">03</div>
+      <div class="step-content">
+        <div class="step-tag">Day 6–8</div>
+        <h3>Automation & Campaigns Go Live</h3>
+        <p>We launch your engagement, traffic, and sales campaigns. WhatsApp automation is activated. Email integration is connected. Everything is live and running.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="step-num">04</div>
+      <div class="step-content">
+        <div class="step-tag">Day 9–10</div>
+        <h3>Review, Optimise & Hand Over</h3>
+        <p>We review all campaigns together, make final adjustments, and hand everything over to you. You get added to our private community for ongoing support.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="step-num">05</div>
+      <div class="step-content">
+        <div class="step-tag">Ongoing</div>
+        <h3>Leads Flow to Your WhatsApp</h3>
+        <p>Customers land on your page, get automated, and arrive in your WhatsApp ready to buy. You close the deals. We handle the rest from the community.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LIVE ORDERS PROOF -->
+<section class="proof-section reveal" id="proof">
+  <div class="section-tag">✦ Real Proof</div>
+  <h2 class="section-title">This Is What Our<br><span class="gold">System Produces</span></h2>
+  <p class="section-sub">These are real orders from our own brand — built on the exact same system we'll set up for you.</p>
+
+  <div class="orders-live">
+    <div class="orders-header">
+      <div class="live-dot"></div>
+      <span>Live Orders — Larose Skincare</span>
+    </div>
+    <div class="order-row">
+      <div class="order-name">Lucky</div>
+      <div class="order-time">23 hours ago · Source: Facebook</div>
+      <div class="order-amount">₦18,000</div>
+    </div>
+    <div class="order-row">
+      <div class="order-name">Bolanle Alaka</div>
+      <div class="order-time">23 May 2026 · Facebook Referral</div>
+      <div class="order-amount">₦23,500</div>
+    </div>
+    <div class="order-row">
+      <div class="order-name">Orizuamaka</div>
+      <div class="order-time">23 May 2026 · Direct</div>
+      <div class="order-amount">₦23,500</div>
+    </div>
+    <div class="order-row">
+      <div class="order-name">John Paul</div>
+      <div class="order-time">23 May 2026 · Source: Facebook</div>
+      <div class="order-amount">₦18,000</div>
+    </div>
+    <div class="order-row">
+      <div class="order-name">Mimi</div>
+      <div class="order-time">23 May 2026 · Direct</div>
+      <div class="order-amount">₦48,500</div>
+    </div>
+    <div class="order-row">
+      <div class="order-name">Samson</div>
+      <div class="order-time">23 May 2026 · Facebook Referral</div>
+      <div class="order-amount">₦23,500</div>
+    </div>
+    <div class="orders-footer">
+      Total orders generated: <strong>46,456</strong> &nbsp;·&nbsp; And counting daily.
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section id="testimonials">
+  <div class="section-tag">✦ What Clients Say</div>
+  <h2 class="section-title">Real Results,<br><span class="gold">Real People</span></h2>
+
+  <div class="testimonials-grid">
+    <div class="testi-card reveal">
+      <div class="testi-quote">"</div>
+      <p class="testi-text">Before ScaleForge, I was boosting posts and getting nothing. They set everything up and within 3 weeks I had over 200 leads coming to my WhatsApp. I was closing every day.</p>
+      <div class="testi-author">
+        <div class="testi-avatar">A</div>
+        <div>
+          <div class="testi-name">Adaeze O.</div>
+          <div class="testi-role">Fashion Brand Owner, Lagos</div>
+        </div>
+      </div>
+    </div>
+    <div class="testi-card reveal">
+      <div class="testi-quote">"</div>
+      <p class="testi-text">I didn't know anything about Facebook ads. They handled everything — landing page, automation, all of it. Now I wake up to new WhatsApp messages from customers daily.</p>
+      <div class="testi-author">
+        <div class="testi-avatar">K</div>
+        <div>
+          <div class="testi-name">Kunle B.</div>
+          <div class="testi-role">Food Business, Abuja</div>
+        </div>
+      </div>
+    </div>
+    <div class="testi-card reveal">
+      <div class="testi-quote">"</div>
+      <p class="testi-text">Worth every kobo. My only regret is not doing this sooner. The WhatsApp automation alone has saved me hours every day and I'm converting more leads than ever.</p>
+      <div class="testi-author">
+        <div class="testi-avatar">T</div>
+        <div>
+          <div class="testi-name">Temi A.</div>
+          <div class="testi-role">Skincare Brand, Port Harcourt</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" style="background: var(--dark); border-top: 1px solid var(--border);">
+  <div class="section-tag">✦ Investment</div>
+  <h2 class="section-title">One Payment.<br><span class="gold">Lifetime System.</span></h2>
+  <p class="section-sub">No monthly fees. No subscriptions. You pay once, we build everything, and it runs for you.</p>
+
+  <div class="pricing-grid">
+    <div class="price-card reveal">
+      <div class="price-location">🇳🇬 Nigeria</div>
+      <div class="price-amount">₦399K</div>
+      <div class="price-note">One-time payment · No monthly fees</div>
+      <ul class="price-features">
+        <li>Custom landing page built for you</li>
+        <li>Facebook & Instagram campaign setup</li>
+        <li>WhatsApp automation activated</li>
+        <li>Targeted audience research</li>
+        <li>Email integration & lead capture</li>
+        <li>Video script & creative ideas</li>
+        <li>Private entrepreneur community access</li>
+        <li>10-day hands-on setup with you</li>
+      </ul>
+      <a href="https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%20slot%20%28Nigeria%20-%20%E2%82%A6399K%29" class="btn-primary" style="width: 100%; text-align: center; display: block;">Book Nigeria Slot →</a>
+    </div>
+    <div class="price-card featured reveal">
+      <div class="price-badge">Most Popular</div>
+      <div class="price-location">🇬🇧 United Kingdom</div>
+      <div class="price-amount">£750</div>
+      <div class="price-note">One-time payment · No monthly fees</div>
+      <ul class="price-features">
+        <li>Custom landing page built for you</li>
+        <li>Facebook & Instagram campaign setup</li>
+        <li>WhatsApp automation activated</li>
+        <li>Targeted audience research</li>
+        <li>Email integration & lead capture</li>
+        <li>Video script & creative ideas</li>
+        <li>Private entrepreneur community access</li>
+        <li>10-day hands-on setup with you</li>
+      </ul>
+      <a href="https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%20slot%20%28London%20-%20%C2%A3750%29" class="btn-primary" style="width: 100%; text-align: center; display: block;">Book London Slot →</a>
+    </div>
+  </div>
+
+  <div style="margin-top: 32px; text-align: center; padding: 24px; border: 1px solid var(--border); background: var(--card);" class="reveal">
+    <p style="font-size: 14px; color: var(--muted); margin-bottom: 8px;">🔄 Campaign Refresh Add-On (Available after 2–3 months)</p>
+    <p style="font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--gold);">₦100,000 <span style="color: var(--muted); font-size: 18px;">/ refresh</span></p>
+    <p style="font-size: 13px; color: var(--muted);">New creatives, fresh campaigns, more sales — whenever you're ready.</p>
+  </div>
+</section>
+
+<!-- GUARANTEE -->
+<section class="guarantee" id="guarantee">
+  <div class="section-tag">✦ Our Promise</div>
+  <h2 class="section-title">We Put Our<br><span class="gold">Money Where</span><br>Our Mouth Is</h2>
+
+  <div class="guarantee-box reveal">
+    <div class="guarantee-shield">🛡️</div>
+    <div class="guarantee-content">
+      <h3>50% Money-Back Guarantee</h3>
+      <p>
+        If we set up <strong>everything</strong> for you — campaigns running, landing page live, WhatsApp automated — and you still don't see results within <strong>60 days</strong>, we will refund <strong>50% of your investment.</strong> No arguments. No stress.
+      </p>
+      <p style="margin-top: 12px; font-size: 14px; color: var(--muted);">We are that confident in this system. Because we use it ourselves.</p>
+      <div class="guarantee-conditions">
+        <span class="condition-tag">✦ Campaigns must be actively running</span>
+        <span class="condition-tag">✦ Client must respond to WhatsApp leads</span>
+        <span class="condition-tag">✦ All materials provided during setup</span>
+        <span class="condition-tag">✦ 60 days from launch date</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-section" id="book">
+  <div class="slots-left">⚡ Limited Slots Available This Month</div>
+  <h2 class="section-title" style="font-family: 'Bebas Neue', sans-serif;">
+    Ready To<br><span class="gold">Scale?</span>
+  </h2>
+  <p>Stop boosting posts and hoping. Let us build a real system that brings customers to your WhatsApp every single day.</p>
+  <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+    <a href="https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%20slot" class="btn-primary" style="font-size: 18px; padding: 22px 48px;">
+      📲 Chat Us on WhatsApp
+    </a>
+  </div>
+  <p style="margin-top: 24px; font-size: 13px; color: var(--muted);">We'll confirm your slot and send you a start date within 24 hours.</p>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">ScaleForge</div>
+  <p>Done-For-You Digital Sales Systems · Nigeria & United Kingdom</p>
+  <p style="margin-top: 8px;">© 2026 ScaleForge. All rights reserved.</p>
+</footer>
+
+<script>
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('visible'), i * 80);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1 });
+  reveals.forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

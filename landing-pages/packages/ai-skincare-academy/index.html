@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Skincare Business Academy — Learn. Create. Market. Scale.</title>
+<meta name="description" content="Turn knowledge and AI into a thriving skincare business. Only 20 spots per intake — once we hit 20, the doors close.">
+
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '2189120765250980');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=2189120765250980&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+
+<!--
+  EDIT THESE TWO LINES ONLY — everything on the page updates from them.
+  1) ENROLL_LINK: your Selar checkout link (or WhatsApp link) for the Academy
+  2) SEATS_TAKEN: how many of the 20 spots are already gone today
+-->
+<script>
+  const ENROLL_LINK = "https://selar.com/a7038n520z";
+  const SEATS_TAKEN = 12;
+</script>
+
+<style>
+  :root{
+    --ink:#120C14;
+    --plum:#3B1F3D;
+    --plum-deep:#241329;
+    --gold:#C9A24B;
+    --gold-bright:#E4C377;
+    --cream:#F7F0E4;
+    --paper:#FBF7EF;
+    --line: rgba(201,162,75,0.35);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--ink);
+    color:var(--cream);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    color:var(--paper);
+  }
+  a{color:inherit; text-decoration:none;}
+  img{max-width:100%; display:block;}
+  .wrap{max-width:960px; margin:0 auto; padding:0 22px;}
+
+  /* Eyebrow / labels */
+  .eyebrow{
+    display:inline-block;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--gold-bright);
+    font-weight:700;
+    border:1px solid var(--line);
+    padding:6px 12px;
+    border-radius:999px;
+  }
+
+  /* HERO */
+  .hero{
+    position:relative;
+    padding:64px 0 56px;
+    background:
+      radial-gradient(600px 300px at 85% -10%, rgba(201,162,75,0.18), transparent 60%),
+      linear-gradient(180deg, var(--plum-deep) 0%, var(--ink) 65%);
+    border-bottom:1px solid var(--line);
+    overflow:hidden;
+  }
+  .hero::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(115deg, rgba(201,162,75,0.05) 0px, rgba(201,162,75,0.05) 1px, transparent 1px, transparent 90px);
+    pointer-events:none;
+  }
+  .hero-inner{position:relative; z-index:1;}
+  .kicker{
+    color:var(--gold-bright);
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:0.16em;
+    font-weight:700;
+    margin-bottom:14px;
+  }
+  h1.headline{
+    font-size:clamp(34px, 6vw, 58px);
+    line-height:1.04;
+  }
+  h1.headline .accent{
+    color:var(--gold-bright);
+    font-style:italic;
+  }
+  .sub{
+    margin-top:18px;
+    font-size:clamp(16px,2.4vw,19px);
+    color:#E9DFC9;
+    max-width:560px;
+  }
+
+  /* Seats badge — the signature element */
+  .seats-card{
+    margin-top:30px;
+    max-width:420px;
+    background:rgba(0,0,0,0.28);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 18px;
+  }
+  .seats-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:13px; letter-spacing:0.04em; text-transform:uppercase;
+    color:#D8CBA8; font-weight:600; margin-bottom:10px;
+  }
+  .seats-row strong{color:var(--gold-bright); font-size:15px;}
+  .bar-track{
+    height:10px; border-radius:999px; background:rgba(255,255,255,0.08);
+    overflow:hidden; border:1px solid var(--line);
+  }
+  .bar-fill{
+    height:100%;
+    background:linear-gradient(90deg, var(--gold) 0%, var(--gold-bright) 100%);
+    border-radius:999px 0 0 999px;
+  }
+  .seats-note{margin-top:10px; font-size:13px; color:#C9BC9C;}
+
+  .cta-row{margin-top:26px; display:flex; gap:14px; flex-wrap:wrap;}
+  .btn{
+    display:inline-block;
+    padding:16px 28px;
+    border-radius:10px;
+    font-weight:700;
+    font-size:16px;
+    letter-spacing:0.01em;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .btn-primary{
+    background:linear-gradient(180deg, var(--gold-bright), var(--gold));
+    color:#1B1207;
+    box-shadow:0 10px 24px rgba(201,162,75,0.25);
+  }
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 14px 30px rgba(201,162,75,0.35);}
+  .btn-ghost{
+    border:1px solid var(--line);
+    color:var(--paper);
+  }
+  .btn-ghost:hover{background:rgba(255,255,255,0.05);}
+  .micro{margin-top:12px; font-size:13px; color:#B9AC8A;}
+
+  /* SECTIONS */
+  section{padding:56px 0;}
+  .section-head{max-width:620px; margin-bottom:32px;}
+  .section-head h2{font-size:clamp(26px,4vw,36px); margin-top:10px;}
+  .section-head p{color:#CFC3A3; margin-top:10px; font-size:16px;}
+
+  /* Learn grid */
+  .learn-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:16px;
+    overflow:hidden;
+  }
+  .learn-item{
+    background:var(--plum-deep);
+    padding:24px;
+  }
+  .learn-item .num{
+    font-family:ui-serif, Georgia, serif;
+    font-size:13px;
+    color:var(--gold-bright);
+    letter-spacing:0.08em;
+  }
+  .learn-item h3{font-size:18px; margin-top:8px; color:var(--paper);}
+  .learn-item p{font-size:14.5px; color:#C9BC9C; margin-top:6px;}
+  .value-tag{
+    display:inline-block;
+    margin-top:12px;
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:0.03em;
+    color:var(--gold-bright);
+    background:rgba(201,162,75,0.12);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:4px 10px;
+  }
+
+  .stack-summary{
+    margin-top:24px;
+    background:var(--plum-deep);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:26px 24px;
+  }
+  .stack-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 0; font-size:14.5px; color:#D8CBA8;
+    border-bottom:1px dashed rgba(201,162,75,0.2);
+  }
+  .stack-row span:last-child{color:var(--gold-bright); font-weight:700;}
+  .stack-total{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-top:14px; padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+  .stack-total .label{font-size:14px; color:#C9BC9C; text-transform:uppercase; letter-spacing:0.06em;}
+  .stack-total .amount{
+    font-family:ui-serif, Georgia, serif;
+    font-size:24px; color:var(--paper); text-decoration:line-through; text-decoration-color:rgba(201,162,75,0.6);
+  }
+  .stack-offer{
+    margin-top:18px;
+    text-align:center;
+    padding:16px;
+    background:rgba(201,162,75,0.1);
+    border:1px solid var(--line);
+    border-radius:12px;
+  }
+  .stack-offer p{font-size:15px; color:#E9DFC9;}
+  .stack-offer strong{color:var(--gold-bright); font-size:19px; font-family:ui-serif, Georgia, serif;}
+
+  /* Outcomes */
+  .outcomes{
+    background:var(--paper);
+    color:var(--ink);
+    border-radius:20px;
+    padding:36px;
+  }
+  .outcomes h2{color:var(--ink); font-size:26px; margin-bottom:18px;}
+  .outcomes ul{list-style:none;}
+  .outcomes li{
+    display:flex; gap:12px; align-items:flex-start;
+    padding:12px 0;
+    border-bottom:1px solid rgba(59,31,61,0.12);
+    font-size:16px; font-weight:500;
+  }
+  .outcomes li:last-child{border-bottom:none;}
+  .check{
+    flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+    background:var(--plum); color:var(--gold-bright);
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:900;
+  }
+
+  /* Trust bar */
+  .trust-bar{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:18px;
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    padding:28px 0;
+  }
+  .trust-item{text-align:center; padding:0 8px;}
+  .trust-item .ico{font-size:22px; color:var(--gold-bright); margin-bottom:8px;}
+  .trust-item p{font-size:13.5px; color:#CFC3A3;}
+
+  /* Bonus */
+  .bonus{
+    background:var(--plum-deep);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:32px;
+    display:grid;
+    grid-template-columns:1fr;
+    gap:20px;
+  }
+  .bonus h2{font-size:24px;}
+  .bonus ul{margin-top:14px; list-style:none;}
+  .bonus li{padding:8px 0; font-size:15.5px; color:#E4D8B8; display:flex; gap:10px;}
+  .bonus li::before{content:"✓"; color:var(--gold-bright); font-weight:900;}
+  .bonus-tag{font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:var(--gold-bright); font-weight:700;}
+
+  /* Final CTA */
+  .final{
+    text-align:center;
+    background:
+      radial-gradient(500px 260px at 50% 0%, rgba(201,162,75,0.2), transparent 60%),
+      var(--plum-deep);
+    border:1px solid var(--line);
+    border-radius:24px;
+    padding:52px 28px;
+  }
+  .final h2{font-size:clamp(26px,4.5vw,38px); max-width:640px; margin:0 auto;}
+  .final p{color:#D8CBA8; margin-top:14px; max-width:520px; margin-left:auto; margin-right:auto;}
+  .price{
+    margin-top:22px; font-size:15px; color:#C9BC9C;
+  }
+  .price strong{color:var(--gold-bright); font-size:22px; font-family:ui-serif, Georgia, serif;}
+  .final .cta-row{justify-content:center;}
+
+  footer{
+    padding:30px 0 50px; text-align:center;
+    color:#8C7F60; font-size:12.5px; letter-spacing:0.06em; text-transform:uppercase;
+  }
+
+  @media (max-width:640px){
+    .cta-row{flex-direction:column;}
+    .btn{text-align:center;}
+    section{padding:44px 0;}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    .btn{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap hero-inner">
+    <div class="kicker">Turn knowledge + AI into a thriving skincare business</div>
+    <h1 class="headline">AI Skincare Business <span class="accent">Academy</span></h1>
+    <p class="sub">Learn. Create. Market. Scale. — go from zero to your own skincare brand, with AI doing the product photos, videos and ad copy for you.</p>
+
+    <div class="seats-card">
+      <div class="seats-row">
+        <span>Seats claimed this intake</span>
+        <strong><span id="seatsTaken"></span> / 20</strong>
+      </div>
+      <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+      <p class="seats-note" id="seatsNote"></p>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" id="ctaTop" href="#" target="_blank" rel="noopener">Book Your Seat — ₦3,000</a>
+      <a class="btn btn-ghost" href="#curriculum">See what's inside ↓</a>
+    </div>
+    <p class="micro">No experience needed · Step-by-step training · Lifetime access · Community support</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="curriculum">
+    <div class="section-head">
+      <span class="eyebrow">What you will learn</span>
+      <h2>Everything between "I know skincare" and "I run a skincare brand."</h2>
+      <p>Six modules, built for phone-first founders — no camera, no models, no studio required.</p>
+    </div>
+
+    <div class="learn-grid">
+      <div class="learn-item">
+        <div class="num">01</div>
+        <h3>Skincare, from scratch</h3>
+        <p>Formulation basics through advanced, professional-level skincare knowledge.</p>
+        <span class="value-tag">Value: ₦300,000</span>
+      </div>
+      <div class="learn-item">
+        <div class="num">02</div>
+        <h3>Formulas &amp; promix recipes</h3>
+        <p>Proven, tested recipes you can start making and selling immediately.</p>
+        <span class="value-tag">Value: ₦150,000</span>
+      </div>
+      <div class="learn-item">
+        <div class="num">03</div>
+        <h3>Marketing strategy</h3>
+        <p>Position your brand, attract the right customers, and increase sales.</p>
+        <span class="value-tag">Value: ₦450,000</span>
+      </div>
+      <div class="learn-item">
+        <div class="num">04</div>
+        <h3>AI product photos &amp; videos</h3>
+        <p>Create stunning content without a camera, a model, or the stress.</p>
+        <span class="value-tag">Value: ₦45,000</span>
+      </div>
+      <div class="learn-item">
+        <div class="num">05</div>
+        <h3>TikTok &amp; Snapchat ads</h3>
+        <p>Run profitable ads that convert and scale your brand fast.</p>
+        <span class="value-tag">Value: ₦435,000</span>
+      </div>
+      <div class="learn-item">
+        <div class="num">06</div>
+        <h3>WhatsApp marketing</h3>
+        <p>Build real relationships, close more sales, and keep loyal customers.</p>
+        <span class="value-tag">Value: ₦50,000</span>
+      </div>
+    </div>
+
+    <div class="stack-summary">
+      <div class="stack-row"><span>Skincare, from scratch</span><span>₦300,000</span></div>
+      <div class="stack-row"><span>Formulas &amp; promix recipes</span><span>₦150,000</span></div>
+      <div class="stack-row"><span>Marketing strategy</span><span>₦450,000</span></div>
+      <div class="stack-row"><span>AI product photos &amp; videos</span><span>₦45,000</span></div>
+      <div class="stack-row"><span>TikTok &amp; Snapchat ads</span><span>₦435,000</span></div>
+      <div class="stack-row" style="border-bottom:none;"><span>WhatsApp marketing blueprint</span><span>₦50,000</span></div>
+      <div class="stack-total">
+        <span class="label">Total value</span>
+        <span class="amount">₦1,430,000</span>
+      </div>
+      <div class="stack-offer">
+        <p>You're getting all of this today for just a token — <strong>book your seat for just ₦3,000 only.</strong></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="outcomes">
+      <h2>By the end, you will be able to:</h2>
+      <ul>
+        <li><span class="check">✓</span> Create your own skincare brand with confidence</li>
+        <li><span class="check">✓</span> Produce high-quality products that sell</li>
+        <li><span class="check">✓</span> Create AI content that looks expensive — for free</li>
+        <li><span class="check">✓</span> Run ads that bring in customers daily</li>
+        <li><span class="check">✓</span> Build a profitable skincare business from your phone</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="trust-bar">
+      <div class="trust-item"><div class="ico">✦</div><p>No experience needed</p></div>
+      <div class="trust-item"><div class="ico">◷</div><p>Step-by-step practical training</p></div>
+      <div class="trust-item"><div class="ico">∞</div><p>Lifetime access to materials</p></div>
+      <div class="trust-item"><div class="ico">✉</div><p>Community support</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="bonus">
+      <div>
+        <span class="bonus-tag">Bonus package — included free</span>
+        <h2>Everything you need to launch, in one folder.</h2>
+      </div>
+      <ul>
+        <li>100+ skincare promix recipes</li>
+        <li>AI prompt templates for product photos &amp; videos</li>
+        <li>Supplier list &amp; packaging guide</li>
+        <li>Business plan template</li>
+        <li>Content calendar for skincare brands</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="final">
+      <span class="eyebrow">20 seats. No more.</span>
+      <h2 style="margin-top:14px;">Invest in knowledge today, build freedom tomorrow.</h2>
+      <p>We only open the Academy to 20 students at a time, so every student gets real support — once seat 20 is booked, enrollment closes until the next intake.</p>
+      <p class="price">₦1,430,000 worth of training — <strong>book your seat for just ₦3,000</strong></p>
+      <div class="cta-row">
+        <a class="btn btn-primary" id="ctaBottom" href="#" target="_blank" rel="noopener">Book Your Seat — ₦3,000</a>
+      </div>
+      <p class="micro" id="seatsNoteBottom" style="margin-top:16px;"></p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Skills + AI + Strategy = A Profitable Skincare Brand
+</footer>
+
+<script>
+  (function(){
+    var total = 20;
+    var taken = Math.max(0, Math.min(total, SEATS_TAKEN));
+    var left = total - taken;
+    var pct = Math.round((taken/total)*100);
+
+    document.getElementById('seatsTaken').textContent = taken;
+    document.getElementById('barFill').style.width = pct + '%';
+
+    var note = left > 0
+      ? left + ' seat' + (left === 1 ? '' : 's') + ' left in this intake — once they\'re gone, we close until next round.'
+      : 'This intake is full. Join the waitlist for the next round.';
+    document.getElementById('seatsNote').textContent = note;
+    document.getElementById('seatsNoteBottom').textContent = note;
+
+    document.getElementById('ctaTop').href = ENROLL_LINK;
+    document.getElementById('ctaBottom').href = ENROLL_LINK;
+
+    ['ctaTop','ctaBottom'].forEach(function(id){
+      document.getElementById(id).addEventListener('click', function(){
+        if (typeof fbq === 'function') { fbq('track', 'Lead'); }
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

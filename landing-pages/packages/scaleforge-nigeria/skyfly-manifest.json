@@ -1,0 +1,209 @@
+{
+  "skyflyManifestVersion": 1,
+  "slug": "scaleforge-nigeria",
+  "name": "ScaleForge Nigeria – Done-For-You Sales System",
+  "pageType": "service-enquiry",
+  "source": {
+    "repository": "roseskincare9-code/Scaleforge-nigeria",
+    "file": "index.html",
+    "commit": "99d8c0d5e8330d3e892aa3adc9d7373719b71a5c",
+    "githubPagesUrl": "https://roseskincare9-code.github.io/Scaleforge-nigeria/",
+    "githubPagesUrlVerified": false,
+    "note": "Address follows the GitHub Pages pattern for this repository; not checked. Confirm before relying on it."
+  },
+  "entry": "index.html",
+  "assets": [
+    {
+      "file": "index.html",
+      "bytes": 34950
+    }
+  ],
+  "orderFlow": {
+    "current": "whatsapp-links-only",
+    "skyflyFormKey": null,
+    "currency": null,
+    "products": [],
+    "connectionTested": "not applicable"
+  },
+  "changesFromOriginal": [
+    {
+      "change": "Embedded base64 images moved to assets/images/ (same files, same order; the page looks the same)"
+    }
+  ],
+  "integrations": [
+    {
+      "service": "Google Fonts",
+      "families": [
+        "Bebas Neue",
+        "DM Sans",
+        "Syne"
+      ]
+    }
+  ],
+  "environment": {
+    "requiredInPage": [],
+    "requiredInSkyfly": [],
+    "secrets": "none: the page contains no private keys or tokens. Pixel access tokens are entered only in Skyfly's Pixels screen."
+  },
+  "editableFields": {
+    "seo": {
+      "title": "ScaleForge — Done-For-You Digital Sales System",
+      "description": null,
+      "og": {}
+    },
+    "headings": [
+      {
+        "level": "h1",
+        "text": "We Build Your Entire Sales Machine"
+      },
+      {
+        "level": "h2",
+        "text": "Everything You NeedTo Start Selling"
+      },
+      {
+        "level": "h2",
+        "text": "How It WorksIn 10 Days"
+      },
+      {
+        "level": "h3",
+        "text": "You Book, We Onboard"
+      },
+      {
+        "level": "h3",
+        "text": "We Build Your Foundation"
+      },
+      {
+        "level": "h3",
+        "text": "Automation & Campaigns Go Live"
+      },
+      {
+        "level": "h3",
+        "text": "Review, Optimise & Hand Over"
+      },
+      {
+        "level": "h3",
+        "text": "Leads Flow to Your WhatsApp"
+      },
+      {
+        "level": "h2",
+        "text": "This Is What OurSystem Produces"
+      },
+      {
+        "level": "h2",
+        "text": "Real Results,Real People"
+      },
+      {
+        "level": "h2",
+        "text": "One Payment.Lifetime System."
+      },
+      {
+        "level": "h2",
+        "text": "We Put OurMoney WhereOur Mouth Is"
+      },
+      {
+        "level": "h3",
+        "text": "50% Money-Back Guarantee"
+      },
+      {
+        "level": "h2",
+        "text": "Ready ToScale?"
+      }
+    ],
+    "callsToAction": [
+      {
+        "text": "Book Your Slot →",
+        "action": "#book"
+      },
+      {
+        "text": "Claim Your Slot Now",
+        "action": "#book"
+      },
+      {
+        "text": "See What's Included",
+        "action": "#what-you-get"
+      },
+      {
+        "text": "Book Nigeria Slot →",
+        "action": "https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%2"
+      },
+      {
+        "text": "Book London Slot →",
+        "action": "https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%2"
+      },
+      {
+        "text": "📲 Chat Us on WhatsApp",
+        "action": "https://wa.me/2347035912743?text=Hi%2C%20I%20want%20to%20book%20a%20ScaleForge%2"
+      }
+    ],
+    "packages": [],
+    "contact": {
+      "whatsappNumbers": [
+        "2347035912743"
+      ],
+      "ownerWhatsApp": "09049206695"
+    },
+    "formFields": [],
+    "design": {
+      "colors": {
+        "gold": "#D4A843",
+        "gold-light": "#F0C96A",
+        "gold-dim": "#8a6a20",
+        "black": "#0A0A08",
+        "dark": "#111110",
+        "card": "#161614",
+        "border": "#2a2a26",
+        "white": "#F5F2EC",
+        "muted": "#8a8880"
+      },
+      "fonts": [
+        "Bebas Neue",
+        "DM Sans",
+        "Syne"
+      ]
+    },
+    "sections": [
+      {
+        "tag": "section",
+        "id": null,
+        "class": "hero"
+      },
+      {
+        "tag": "section",
+        "id": "what-you-get",
+        "class": "deliverables"
+      },
+      {
+        "tag": "section",
+        "id": "process",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": "proof",
+        "class": "proof-section reveal"
+      },
+      {
+        "tag": "section",
+        "id": "testimonials",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": "pricing",
+        "class": null
+      },
+      {
+        "tag": "section",
+        "id": "guarantee",
+        "class": "guarantee"
+      },
+      {
+        "tag": "section",
+        "id": "book",
+        "class": "cta-section"
+      }
+    ],
+    "images": [],
+    "pixels": []
+  }
+}

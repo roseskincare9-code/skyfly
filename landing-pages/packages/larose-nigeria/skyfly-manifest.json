@@ -1,0 +1,559 @@
+{
+  "skyflyManifestVersion": 1,
+  "slug": "larose-nigeria",
+  "name": "Larose Nigeria – Glow Packages (₦)",
+  "pageType": "product-orders",
+  "source": {
+    "repository": "roseskincare9-code/Larosenigeria",
+    "file": "index.html",
+    "commit": "44d8337f091e83aa343da269556a8ec1432b6c68",
+    "githubPagesUrl": "https://roseskincare9-code.github.io/Larosenigeria/",
+    "githubPagesUrlVerified": true
+  },
+  "entry": "index.html",
+  "assets": [
+    {
+      "file": "index.html",
+      "bytes": 58771
+    },
+    {
+      "file": "assets/images/image-01.jpg",
+      "bytes": 5848,
+      "sha256": "36c6b23b275795e7da52dc560839b2f8961c6cc2597d8ca8ce9d57b1022ac68c",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-02.jpg",
+      "bytes": 5639,
+      "sha256": "240b03120620bf145ee6adb676fe77f4cfd38bad7b0605c729457472e24e0d95",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-03.jpg",
+      "bytes": 10865,
+      "sha256": "64fb16e8b7a45974f66a9575a75f306c7bc1ae374468bb1a2bf5fa5fc0e851f5",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-04.jpg",
+      "bytes": 23722,
+      "sha256": "8c964a71395830c78707a17ed720bb645ae743f2f759201efa76d20d9c753726",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-05.jpg",
+      "bytes": 16828,
+      "sha256": "db772c9153c831f104b5b82d59e0c7b67dc017dfa5cc1970972496480562205d",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-06.jpg",
+      "bytes": 5839,
+      "sha256": "6254b42c35061a2aacc10b57dda6571be0effce8256ea1551cb28e3034a55c83",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-07.jpg",
+      "bytes": 10686,
+      "sha256": "37763db605ee49f561e30f6ebf52f8fbdb3ef0c75db1370c618f8d69d66ebe3a",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-08.jpg",
+      "bytes": 8173,
+      "sha256": "373a112b79169cba7ab2a59f8e9b0b5a475203168beace673420edc44111e541",
+      "uses": 1
+    },
+    {
+      "file": "assets/images/image-09.jpg",
+      "bytes": 11103,
+      "sha256": "23a3f3cb058f0fc6a0136adc405e743e3c399dd731c28b945515b5a47f4c73f5",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-10.jpg",
+      "bytes": 11245,
+      "sha256": "a46b2a72b9ad42312876a9d67a3a57fa161bb41857e1896f070986f393f54581",
+      "uses": 4
+    },
+    {
+      "file": "assets/images/image-11.jpg",
+      "bytes": 6232,
+      "sha256": "f0ba6c382de5cbfccae1a12e8b5cface6b2dda8ede321f30b5b3b81b1d74d762",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-12.jpg",
+      "bytes": 6746,
+      "sha256": "b9b2de63ce9e0f6b20b5615e6aa261e661acbfc7ebd9444365950166a30ac509",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-13.jpg",
+      "bytes": 9904,
+      "sha256": "023a0f9e94840687367ebfdab77d8bec29bf20f55a93bee4c737ed6d82162538",
+      "uses": 2
+    },
+    {
+      "file": "assets/images/image-14.jpg",
+      "bytes": 11982,
+      "sha256": "10d0d4e3683e6d602154ade7faf09caa457e9f4bc1094129265d8b2052d4e06d",
+      "uses": 1
+    }
+  ],
+  "orderFlow": {
+    "current": "skyfly+google-sheet-backup",
+    "skyflyFormKey": "larosenigeria",
+    "currency": "NGN",
+    "products": [
+      {
+        "code": "package-1",
+        "name": "Package 1 – Starter Glow Soap (1kg Soap)",
+        "price": 23500
+      },
+      {
+        "code": "package-2",
+        "name": "Package 2 – Starter Glow Combo",
+        "price": 33000
+      },
+      {
+        "code": "package-3",
+        "name": "Package 3 – Power Glow",
+        "price": 51500
+      },
+      {
+        "code": "package-4",
+        "name": "Package 4 – Total Revive Full",
+        "price": 93500
+      },
+      {
+        "code": "package-5",
+        "name": "Package 5 – Total Transformation VIP Luxury (5kg Soap)",
+        "price": 202000
+      }
+    ],
+    "connectionTested": "locally only (see IMPORT.md); not yet tested against the live Skyfly service"
+  },
+  "changesFromOriginal": [
+    {
+      "change": "Embedded base64 images moved to assets/images/ (same files, same order; the page looks the same)"
+    },
+    {
+      "from": "Order on WhatsApp Now (opened WhatsApp)",
+      "to": "Order Now (scrolls to the order form)"
+    },
+    {
+      "from": "Yes! I Want This — WhatsApp Me (opened WhatsApp)",
+      "to": "Yes! I Want This — Order Now (scrolls to the order form)"
+    },
+    {
+      "from": "Floating bubble \"Order on WhatsApp!\"",
+      "to": "\"Questions? Chat on WhatsApp!\" (same bubble, contact only)"
+    }
+  ],
+  "integrations": [
+    {
+      "service": "Skyfly order API",
+      "endpoint": "https://skyfly-gybf.onrender.com/api/public/orders",
+      "formKey": "larosenigeria",
+      "auth": "none in the browser: Skyfly accepts orders only from the page's registered website address (Origin check). No API key in the page."
+    },
+    {
+      "service": "Google Sheets via SheetDB (backup)",
+      "endpoint": "https://sheetdb.io/api/v1/m111fq96ve953",
+      "note": "Public SheetDB endpoint already used by the live page; no secret. Keep until Skyfly is verified end to end."
+    },
+    {
+      "service": "Meta Pixel (in page code)",
+      "ids": [
+        "1357015185691765"
+      ]
+    },
+    {
+      "service": "Google Fonts",
+      "families": [
+        "DM Sans",
+        "Playfair Display"
+      ]
+    }
+  ],
+  "environment": {
+    "requiredInPage": [],
+    "requiredInSkyfly": [
+      "business with currency NGN",
+      "products with the codes above",
+      "landing page with form key \"larosenigeria\""
+    ],
+    "secrets": "none: the page contains no private keys or tokens. Pixel access tokens are entered only in Skyfly's Pixels screen."
+  },
+  "editableFields": {
+    "seo": {
+      "title": "Larose Natural Skincare Nigeria | Lagos · Abuja · Port Harcourt",
+      "description": null,
+      "og": {}
+    },
+    "headings": [
+      {
+        "level": "h1",
+        "text": "Finally.Skin You're Proud Of."
+      },
+      {
+        "level": "h2",
+        "text": "Your Skin Can Change.We Have Proof."
+      },
+      {
+        "level": "h2",
+        "text": "Does Any of ThisSound Like You?"
+      },
+      {
+        "level": "h2",
+        "text": "See The Transformation"
+      },
+      {
+        "level": "h2",
+        "text": "5 Packages.One Goal — Your Glow."
+      },
+      {
+        "level": "h3",
+        "text": "Starter Glow Soap"
+      },
+      {
+        "level": "h3",
+        "text": "Starter Glow Combo"
+      },
+      {
+        "level": "h3",
+        "text": "Power Glow"
+      },
+      {
+        "level": "h3",
+        "text": "Total Revive Full"
+      },
+      {
+        "level": "h3",
+        "text": "Total Transformation VIP"
+      },
+      {
+        "level": "h2",
+        "text": "What Real CustomersAre Saying"
+      },
+      {
+        "level": "h2",
+        "text": "Numbers ThatSpeak For Themselves"
+      },
+      {
+        "level": "h2",
+        "text": "Order in 3 Simple Steps"
+      },
+      {
+        "level": "h2",
+        "text": "Order Your PackageToday"
+      },
+      {
+        "level": "h3",
+        "text": "Order Received!"
+      }
+    ],
+    "callsToAction": [
+      {
+        "text": "⚡ PROMO ENDS SOON — ORDER NOW & GET FREE DELIVERY →",
+        "action": "#order"
+      },
+      {
+        "text": "👉 See Packages & Prices",
+        "action": "smoothTo('packages',event)"
+      },
+      {
+        "text": "Order Now",
+        "action": "smoothTo('order',event)"
+      },
+      {
+        "text": "Chat With Us on WhatsApp",
+        "action": "https://wa.me/2349049206695?text=Hi%20Larose!%20I%20want%20to%20fix%20my%20skin!"
+      },
+      {
+        "text": "Yes! I Want This — Order Now",
+        "action": "smoothTo('order',event)"
+      },
+      {
+        "text": "👉 Order Starter Glow Soap — ₦23,500",
+        "action": "selectPkg('Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500')"
+      },
+      {
+        "text": "👉 Order Starter Combo — ₦33,000",
+        "action": "selectPkg('Package 2 – Starter Glow Combo – ₦33,000')"
+      },
+      {
+        "text": "👉 Order Power Glow — ₦51,500",
+        "action": "selectPkg('Package 3 – Power Glow – ₦51,500')"
+      },
+      {
+        "text": "👉 Order Total Revive — ₦93,500",
+        "action": "selectPkg('Package 4 – Total Revive Full – ₦93,500')"
+      },
+      {
+        "text": "👑 Order VIP Package — ₦202,000",
+        "action": "selectPkg('Package 5 – Total Transformation VIP Luxury (5kg Soap) – ₦202,000')"
+      },
+      {
+        "text": "👉 Place My Order Now",
+        "action": "smoothTo('order',event)"
+      },
+      {
+        "text": "📲 Place My Order — Call/WhatsApp Me →",
+        "action": "doSub()"
+      },
+      {
+        "text": "Message Larose on WhatsApp",
+        "action": "#"
+      },
+      {
+        "text": "WhatsApp: 09049206695",
+        "action": "https://wa.me/2349049206695"
+      }
+    ],
+    "packages": [
+      {
+        "label": "🌿 Package 1 — Starter Glow Soap · ₦23,500",
+        "value": "Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500",
+        "productCode": "package-1"
+      },
+      {
+        "label": "✨ Package 2 — Starter Glow Combo · ₦33,000",
+        "value": "Package 2 – Starter Glow Combo – ₦33,000",
+        "productCode": "package-2"
+      },
+      {
+        "label": "⭐ Package 3 — Power Glow · ₦51,500",
+        "value": "Package 3 – Power Glow – ₦51,500",
+        "productCode": "package-3"
+      },
+      {
+        "label": "💜 Package 4 — Total Revive Full · ₦93,500",
+        "value": "Package 4 – Total Revive Full – ₦93,500",
+        "productCode": "package-4"
+      },
+      {
+        "label": "👑 Package 5 — VIP Luxury · ₦202,000",
+        "value": "Package 5 – Total Transformation VIP Luxury (5kg Soap) – ₦202,000",
+        "productCode": "package-5"
+      }
+    ],
+    "contact": {
+      "whatsappNumbers": [
+        "2349049206695"
+      ],
+      "ownerWhatsApp": "09049206695"
+    },
+    "formFields": [
+      {
+        "id": "fn",
+        "type": "text",
+        "required": true,
+        "placeholder": "Your full name",
+        "label": "Full Name *"
+      },
+      {
+        "id": "addr",
+        "type": "text",
+        "required": true,
+        "placeholder": "Your full delivery address",
+        "label": "Delivery Address *"
+      },
+      {
+        "id": "ph",
+        "type": "tel",
+        "required": true,
+        "placeholder": "08XXXXXXXXXX",
+        "label": "Phone / WhatsApp Number *"
+      },
+      {
+        "id": "em",
+        "type": "email",
+        "required": false,
+        "placeholder": "your@email.com",
+        "label": "Email Address"
+      },
+      {
+        "id": "pr",
+        "type": "select",
+        "required": true,
+        "placeholder": null,
+        "label": "Which Package? *"
+      },
+      {
+        "id": "st",
+        "type": "select",
+        "required": true,
+        "placeholder": null,
+        "label": "State *"
+      },
+      {
+        "id": "qty",
+        "type": "select",
+        "required": false,
+        "placeholder": null,
+        "label": "Quantity"
+      },
+      {
+        "id": "nt",
+        "type": "text",
+        "required": false,
+        "placeholder": "Landmark, best time to call, etc.",
+        "label": "Notes (optional)"
+      }
+    ],
+    "design": {
+      "colors": {
+        "purple": "#7B2D8B",
+        "purple2": "#9B4DAB",
+        "pink": "#E91E8C",
+        "pink2": "#FF69B4",
+        "pinklight": "#FFD6EC",
+        "gray": "#F5F3F7",
+        "graydark": "#E8E4ED",
+        "dark": "#1A0A1E",
+        "text": "#2D1635",
+        "muted": "#7A6A82",
+        "green": "#25D366",
+        "red": "#DC2626",
+        "cream": "#FDF8FF"
+      },
+      "fonts": [
+        "DM Sans",
+        "Playfair Display"
+      ]
+    },
+    "sections": [
+      {
+        "tag": "div",
+        "id": "wabub",
+        "class": "wabub"
+      },
+      {
+        "tag": "div",
+        "id": "sbot",
+        "class": "sbot"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "hero"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "probs-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "ba-sec"
+      },
+      {
+        "tag": "section",
+        "id": "packages",
+        "class": "pkg-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "rev-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "stat-sec"
+      },
+      {
+        "tag": "section",
+        "id": null,
+        "class": "hiw-sec"
+      },
+      {
+        "tag": "section",
+        "id": "order",
+        "class": "form-sec"
+      },
+      {
+        "tag": "div",
+        "id": "formContent",
+        "class": null
+      },
+      {
+        "tag": "div",
+        "id": "skyErr",
+        "class": null
+      },
+      {
+        "tag": "div",
+        "id": "sb2",
+        "class": "succbox"
+      }
+    ],
+    "images": [
+      {
+        "file": "assets/images/image-01.jpg",
+        "bytes": 5848
+      },
+      {
+        "file": "assets/images/image-02.jpg",
+        "bytes": 5639
+      },
+      {
+        "file": "assets/images/image-03.jpg",
+        "bytes": 10865
+      },
+      {
+        "file": "assets/images/image-04.jpg",
+        "bytes": 23722
+      },
+      {
+        "file": "assets/images/image-05.jpg",
+        "bytes": 16828
+      },
+      {
+        "file": "assets/images/image-06.jpg",
+        "bytes": 5839
+      },
+      {
+        "file": "assets/images/image-07.jpg",
+        "bytes": 10686
+      },
+      {
+        "file": "assets/images/image-08.jpg",
+        "bytes": 8173
+      },
+      {
+        "file": "assets/images/image-09.jpg",
+        "bytes": 11103
+      },
+      {
+        "file": "assets/images/image-10.jpg",
+        "bytes": 11245
+      },
+      {
+        "file": "assets/images/image-11.jpg",
+        "bytes": 6232
+      },
+      {
+        "file": "assets/images/image-12.jpg",
+        "bytes": 6746
+      },
+      {
+        "file": "assets/images/image-13.jpg",
+        "bytes": 9904
+      },
+      {
+        "file": "assets/images/image-14.jpg",
+        "bytes": 11982
+      }
+    ],
+    "pixels": [
+      {
+        "provider": "meta",
+        "id": "1357015185691765"
+      }
+    ]
+  }
+}

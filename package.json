@@ -14,7 +14,9 @@
     "test": "node --env-file-if-exists=.env.test --test --test-concurrency=1 'test/**/*.test.js'",
     "seed:larose": "node --env-file-if-exists=.env src/scripts/seed-larose.js",
     "test:e2e": "node --env-file-if-exists=.env.test test/e2e/landing-page.e2e.js",
-    "test:e2e:hosting": "node --env-file-if-exists=.env.test test/e2e/hosting.e2e.js"
+    "test:e2e:hosting": "node --env-file-if-exists=.env.test test/e2e/hosting.e2e.js",
+    "test:e2e:packages": "node --env-file-if-exists=.env.test test/e2e/packages.e2e.js",
+    "pages:prepare": "python3 landing-pages/prepare.py"
   },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",

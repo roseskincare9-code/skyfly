@@ -11,7 +11,7 @@ export function formatMoney(minor, currency = 'NGN') {
 
 // Parses an admin-entered major amount like "23,500" or "23500.50" into minor units.
 export function parseMajorToMinor(input) {
-  const cleaned = String(input ?? '').replace(/[,\s₦]/g, '');
+  const cleaned = String(input ?? '').replace(/[,\s₦£$€]/g, '');
   if (!/^\d{1,12}(\.\d{1,2})?$/.test(cleaned)) return null;
   const [whole, frac = ''] = cleaned.split('.');
   return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
