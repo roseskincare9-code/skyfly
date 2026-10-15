@@ -1,0 +1,23 @@
+# Manually-run, read-only check of the deployed Skyfly service (creates no data).
+name: Verify deployment
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Skyfly service URL (optional if the RENDER_API_KEY secret is set)
+        required: false
+        default: https://skyfly.onrender.com
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/verify-deploy.mjs "${{ inputs.url }}"
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
