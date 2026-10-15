@@ -2,8 +2,8 @@
 <%- include('partials/nav') %>
 <main style="max-width:820px">
   <h1>Tracking pixels</h1>
-  <p>Add a pixel by entering its ID in the <a href="#meta">Meta</a> or <a href="#tiktok">TikTok</a> box below and pressing <strong>Add</strong>. You can change or remove it at any time.</p>
-  <p class="muted">Enter only your pixel IDs. Skyfly adds the official pixel code to pages it hosts. Pages hosted elsewhere get it through the Skyfly script tag (see the guide). You can't paste custom scripts here; that keeps your pages and data safe.</p>
+  <p>Add your <a href="#meta">Meta</a> or <a href="#tiktok">TikTok</a> pixel in one of two ways: <strong>enter the Pixel ID</strong>, or <strong>paste the pixel code</strong> from the platform. You can change or remove it at any time.</p>
+  <p class="muted">Either way, Skyfly loads the platform's official pixel script itself, once per page. Pasted code is only checked and used to read your Pixel ID; it is never run or stored, so nothing unexpected can be added to your pages and a pixel is never loaded twice.</p>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
 
@@ -24,7 +24,7 @@
     <% } %>
   </div>
 
-  <% PROVIDERS.forEach((provider) => { const saved = Boolean(settings[provider]); const s = settings[provider] || { enabled: false, pixel_id: '', events: ['PageView', 'InitiateCheckout', 'Lead'], server_purchase: false }; %>
+  <% PROVIDERS.forEach((provider) => { const saved = Boolean(settings[provider]); const method = (form && form.provider === provider && form.method) || (settings[provider] && settings[provider].install_method) || 'id'; const pname = provider === 'meta' ? 'Meta' : 'TikTok'; const s = settings[provider] || { enabled: false, pixel_id: '', events: ['PageView', 'InitiateCheckout', 'Lead'], server_purchase: false }; %>
   <div class="card" id="<%= provider %>">
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0"><%= LABELS[provider] %></h2>
@@ -32,7 +32,8 @@
     </div>
     <% const configured = s.enabled && s.pixel_id; const serverOn = s.server_purchase && s.access_token_enc; %>
     <dl class="kv" style="margin:12px 0" data-status="<%= provider %>">
-      <dt>Configured</dt><dd><%= configured ? 'Yes: pixel ' + s.pixel_id + ' is on' : (s.pixel_id ? 'Saved but switched off' : 'No') %></dd>
+      <dt>Configured</dt><dd><%= configured ? 'Yes: pixel ' + s.pixel_id + ' is on' : (s.pixel_id ? 'Pixel ' + s.pixel_id + ' saved but switched off' : 'No') %></dd>
+      <% if (saved && s.pixel_id) { %><dt>Installed by</dt><dd><%= s.install_method === 'code' ? 'Pasted pixel code (Pixel ID ' + s.pixel_id + ' read from it)' : 'Pixel ID' %></dd><% } %>
       <dt>Browser events</dt><dd>
         <% if (!configured) { %><span class="muted">—</span>
         <% } else if (s.browser_verified_at) { %><span class="pill active">Verified</span> <span class="muted">confirmed by you on <%= formatDate(s.browser_verified_at) %></span>
@@ -64,9 +65,30 @@
       <%- include('partials/csrf') %>
       <input type="hidden" name="provider" value="<%= provider %>">
       <% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
-      <label><input type="checkbox" name="enabled" <%= s.enabled ? 'checked' : '' %>> Turn on</label>
-      <label for="<%= provider %>-id">Pixel ID</label>
-      <input id="<%= provider %>-id" name="pixel_id" value="<%= s.pixel_id || '' %>" placeholder="<%= 'Example: ' + PIXEL_ID_RULES[provider].hint.replace(/^.*e\.g\. /, '') %>" autocomplete="off">
+      <fieldset class="method">
+        <legend>Installation method</legend>
+        <label class="choice"><input type="radio" name="install_method" value="id" <%= method === 'id' ? 'checked' : '' %>> Enter Pixel ID</label>
+        <label class="choice"><input type="radio" name="install_method" value="code" <%= method === 'code' ? 'checked' : '' %>> Paste <%= pname %> Pixel Code</label>
+      </fieldset>
+      <div class="m-id">
+        <label for="<%= provider %>-id"><%= pname %> Pixel ID</label>
+        <input id="<%= provider %>-id" name="pixel_id" value="<%= s.install_method === 'code' ? '' : (s.pixel_id || '') %>" placeholder="<%= 'Example: ' + PIXEL_ID_RULES[provider].hint.replace(/^.*e\.g\. /, '') %>" autocomplete="off">
+        <details class="help"><summary>Where do I find my Pixel ID?</summary>
+          <% if (provider === 'meta') { %><p>Meta Events Manager (business.facebook.com/events_manager) → <strong>Data sources</strong> → select your pixel. The <strong>Pixel ID</strong> (a long number) is shown under the pixel's name and in <strong>Settings</strong>.</p>
+          <% } else { %><p>TikTok Ads Manager → <strong>Tools → Events</strong> (Events Manager) → <strong>Web events</strong> → select your pixel. The <strong>Pixel ID</strong> (letters and digits, e.g. C4AB…) is shown next to the pixel's name.</p><% } %>
+        </details>
+      </div>
+      <div class="m-code">
+        <label for="<%= provider %>-code">Paste <%= pname %> Pixel Code</label>
+        <textarea id="<%= provider %>-code" name="pixel_code" rows="7" spellcheck="false" autocomplete="off" style="font-family:ui-monospace,monospace;font-size:13px" placeholder="<%= provider === 'meta' ? '<!-- Meta Pixel Code -->\n<script>\n!function(f,b,e,v,n,t,s) …\nfbq(\'init\', \'…\');\n…' : '<script>\n!function (w, d, t) { … ttq.load(\'…\'); ttq.page(); …' %>"></textarea>
+        <% if (s.install_method === 'code' && s.pixel_id) { %><p class="muted" style="font-size:13px;margin:4px 0 0">Saved from pasted code: Pixel ID <strong><%= s.pixel_id %></strong>. Leave this box empty to keep it, or paste new code to replace it.</p><% } %>
+        <details class="help"><summary>Where do I find the pixel code?</summary>
+          <% if (provider === 'meta') { %><p>Meta Events Manager → <strong>Data sources</strong> → your pixel → <strong>Settings</strong> (or <strong>Add events → From a new website</strong>) → <strong>Install code manually</strong> → <strong>Copy code</strong>. Paste the whole base code here.</p>
+          <% } else { %><p>TikTok Events Manager → <strong>Web events</strong> → your pixel → <strong>Settings</strong> (or <strong>Set up web events → Manually install pixel code</strong>) → <strong>Copy code</strong>. Paste the whole base code here.</p><% } %>
+          <p>Skyfly checks the code is the official <%= pname %> pixel, reads the Pixel ID from it, and loads the official script itself. Event lines in the pasted code are not used; choose the events below.</p>
+        </details>
+      </div>
+      <label class="toggle"><input type="checkbox" name="enabled" <%= s.enabled ? 'checked' : '' %>> Tracking on (load this pixel on your pages)</label>
 
       <label>Browser events</label>
       <% const help = { PageView: 'every visit', ViewContent: 'visit to a product page', InitiateCheckout: 'visitor starts filling in the order form', Lead: 'order saved by Skyfly' }; %>
@@ -86,7 +108,7 @@
       <p><button type="submit"><%= saved ? 'Save changes' : (provider === 'meta' ? 'Add Meta Pixel' : 'Add TikTok Pixel') %></button></p>
     </form>
     <% if (saved) { %>
-      <form method="post" action="<%= base %>/pixels/remove" onsubmit="return confirm('Remove this pixel and its saved access token?')">
+      <form method="post" action="<%= base %>/pixels/remove">
         <%- include('partials/csrf') %><input type="hidden" name="provider" value="<%= provider %>"><% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
         <button class="secondary" type="submit"><%= page ? 'Remove this page\'s ' : 'Remove ' %><%= provider === 'meta' ? 'Meta' : 'TikTok' %> pixel</button>
       </form>

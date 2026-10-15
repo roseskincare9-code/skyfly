@@ -152,13 +152,31 @@ try {
     await meta.locator('input[name=pixel_id]').fill('123456789012345');
     await meta.locator('input[name=server_purchase]').check();
     await meta.locator('input[name=access_token]').fill('EAAB-e2e-meta-token-0123456789');
-    await meta.locator('button[type=submit]').click();
+    await meta.locator('form[action$="/pixels"] button[type=submit]').click();
     await dash.waitForSelector('.notice');
     const tiktok = dash.locator('#tiktok');
     await tiktok.locator('input[name=enabled]').check();
     await tiktok.locator('input[name=pixel_id]').fill('C4E2ETEST1234567890A');
-    await tiktok.locator('button[type=submit]').click();
+    await tiktok.locator('form[action$="/pixels"] button[type=submit]').click();
     await dash.waitForSelector('.notice');
+    await noSideScroll(dash, 'pixels');
+  });
+
+  await step('install TikTok by pasting its pixel code: only the matching box shows, the ID is read from the code', async () => {
+    const tiktok = dash.locator('#tiktok');
+    await tiktok.locator('input[name=install_method][value=code]').check();
+    if (await tiktok.locator('input[name=pixel_id]').isVisible()) throw new Error('Pixel ID box still shown in code mode');
+    await tiktok.locator('textarea[name=pixel_code]').fill(`<script>
+!function (w, d, t) {
+  w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";n=document.createElement("script");n.async=!0,n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e)};
+  ttq.load('C4E2ETEST1234567890A');
+  ttq.page();
+}(window, document, 'ttq');
+</script>`);
+    await tiktok.locator('form[action$="/pixels"] button[type=submit]').click();
+    await dash.waitForSelector('.notice');
+    const text = await dash.locator('#tiktok').textContent();
+    if (!text.includes('Pasted pixel code (Pixel ID C4E2ETEST1234567890A read from it)')) throw new Error('code install not shown');
     await noSideScroll(dash, 'pixels');
     await dash.screenshot({ path: path.join(shots, 'h2-pixels-mobile.png'), fullPage: true });
   });

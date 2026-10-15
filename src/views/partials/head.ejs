@@ -29,6 +29,14 @@
     textarea { min-height:80px; }
     input[type=checkbox] { width:auto; }
     ::placeholder { color:#9ca3af; opacity:1; }
+    fieldset.method { border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin:12px 0; }
+    fieldset.method legend { font-size:14px; color:var(--muted, #6b7280); padding:0 4px; }
+    label.choice { display:inline-flex; align-items:center; gap:6px; margin-right:18px; color:var(--text); font-weight:600; }
+    label.toggle { color:var(--text); font-weight:600; margin-top:12px; }
+    details.help { font-size:13px; margin-top:6px; } details.help p { margin:6px 0; }
+    /* Show only the input for the chosen installation method (both stay visible without :has support). */
+    form:has(input[name=install_method][value=id]:checked) .m-code { display:none; }
+    form:has(input[name=install_method][value=code]:checked) .m-id { display:none; }
     .btn, button { display:inline-block; padding:9px 14px; border:1px solid var(--accent); border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; }
     .btn.secondary, button.secondary { background:#fff; color:var(--text); border-color:var(--border); }
     .btn.wa { background:var(--wa); border-color:var(--wa); }
