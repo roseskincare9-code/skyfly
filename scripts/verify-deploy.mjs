@@ -33,45 +33,45 @@ if (/^https?:\/\/skyfly\.onrender\.com$/i.test(url)) {
 }
 
 if (process.env.RENDER_API_KEY) {
-  // Read-only context: which workspaces the key can see, and every Blueprint with its last sync result.
+  // Read-only. Every query is made per workspace, because a Blueprint may live in any of them.
   try {
     const owners = (await render('/owners?limit=20')).map((o) => o.owner ?? o);
-    report(null, 'Render: workspaces visible to this key', owners.map((o) => `${o.name} (${o.type})`).join(', ') || 'none');
-  } catch (err) {
-    report(null, 'Render: workspaces', err.message);
-  }
-  try {
-    const blueprints = (await render('/blueprints?limit=50')).map((b) => b.blueprint ?? b);
-    report(null, 'Render: Blueprints', blueprints.length
-      ? blueprints.map((b) => `${b.name} [${b.status}] repo=${b.repo || '?'} branch=${b.branch || '?'} lastSync=${b.lastSync || 'never'}`).join(' | ')
-      : 'none');
-    for (const b of blueprints.filter((x) => /skyfly/i.test(`${x.name} ${x.repo}`))) {
-      try {
-        const syncs = (await render(`/blueprints/${b.id}/syncs?limit=3`)).map((x) => x.sync ?? x);
-        report(null, `Render: Blueprint ${b.name} recent syncs`, syncs.map((x) => `${x.state || x.status} ${x.completedAt || x.startedAt || ''} ${x.error || x.message || ''}`.trim()).join(' | ') || 'none');
-      } catch (err) {
-        report(null, `Render: Blueprint ${b.name} syncs`, err.message);
+    report(null, 'Render: workspaces visible to this key', owners.map((o) => o.name).join(', ') || 'none');
+    let svc = null;
+    let db = null;
+    for (const o of owners) {
+      const q = `ownerId=${encodeURIComponent(o.id)}&limit=100`;
+      const services = (await render(`/services?${q}`)).map((x) => x.service ?? x);
+      const dbs = (await render(`/postgres?${q}`)).map((x) => x.postgres ?? x);
+      let blueprints = [];
+      try { blueprints = (await render(`/blueprints?${q}`)).map((x) => x.blueprint ?? x); } catch { /* not available */ }
+      report(null, `Workspace "${o.name}"`, `services: ${services.map((x) => `${x.name} (${x.type})`).join(', ') || 'none'}; databases: ${dbs.map((x) => `${x.name} [${x.status}]`).join(', ') || 'none'}; blueprints: ${blueprints.map((b) => `${b.name} [${b.status}]`).join(', ') || 'none'}`);
+      for (const b of blueprints.filter((x) => /skyfly/i.test(`${x.name} ${x.repo}`))) {
+        try {
+          const syncs = (await render(`/blueprints/${b.id}/syncs?limit=3`)).map((x) => x.sync ?? x);
+          report(null, `  Blueprint ${b.name} syncs`, syncs.map((x) => JSON.stringify(x).slice(0, 300)).join(' | ') || 'none');
+        } catch (err) { report(null, `  Blueprint ${b.name} syncs`, err.message); }
       }
+      svc ||= services.find((x) => x.name === 'skyfly' || x.repo?.endsWith('/skyfly'));
+      db ||= dbs.find((x) => x.name === 'skyfly-db');
     }
-  } catch (err) {
-    report(null, 'Render: Blueprints', err.message);
-  }
-  try {
-    const services = (await render('/services?limit=100')).map((s) => s.service ?? s);
-    const mine = services.filter((s) => s.name === 'skyfly' || s.repo?.endsWith('/skyfly'));
-    report(mine.length > 0, 'Render: skyfly web service exists', mine.map((s) => `${s.name} (${s.type}${s.suspended === 'suspended' ? ', suspended' : ''})`).join(', ') || `services found: ${services.map((s) => s.name).join(', ') || 'none'}`);
-    const svc = mine.find((s) => s.type === 'web_service') || mine[0];
+    report(Boolean(svc), 'Render: skyfly web service exists', svc ? `${svc.name} (${svc.type}${svc.suspended === 'suspended' ? ', SUSPENDED' : ''})` : 'not found in any workspace');
     if (svc) {
       const renderUrl = svc.serviceDetails?.url;
       report(Boolean(renderUrl), 'Render: service URL', renderUrl || 'not assigned');
       if (renderUrl && !url) url = renderUrl.replace(/\/+$/, '');
-      const deploys = (await render(`/services/${svc.id}/deploys?limit=1`)).map((d) => d.deploy ?? d);
+      const deploys = (await render(`/services/${svc.id}/deploys?limit=3`)).map((d) => d.deploy ?? d);
       const d = deploys[0];
       report(d?.status === 'live', 'Render: latest deploy', d ? `${d.status} (commit ${d.commit?.id?.slice(0, 7) || '?'}, ${d.finishedAt || d.createdAt})` : 'no deploys');
+      if (d && d.status !== 'live') {
+        try {
+          const logs = await render(`/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&limit=60&direction=backward`);
+          const lines = (logs.logs || []).map((l) => l.message).filter(Boolean).reverse();
+          console.log('\n--- last service log lines ---\n' + lines.join('\n') + '\n---');
+        } catch (err) { report(null, 'Render: logs', err.message); }
+      }
     }
-    const dbs = (await render('/postgres?limit=100')).map((p) => p.postgres ?? p);
-    const db = dbs.find((p) => p.name === 'skyfly-db');
-    report(db ? db.status === 'available' : false, 'Render: skyfly-db database', db ? `${db.status}, plan ${db.plan}` : `not found (databases: ${dbs.map((p) => p.name).join(', ') || 'none'})`);
+    report(db ? db.status === 'available' : false, 'Render: skyfly-db database', db ? `${db.status}, plan ${db.plan}, region ${db.region}` : 'not found in any workspace');
   } catch (err) {
     report(false, 'Render API', err.message);
   }
