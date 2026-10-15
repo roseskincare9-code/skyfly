@@ -4,11 +4,12 @@
   <div class="card">
     <h1>Your businesses</h1>
     <% if (businesses.length === 0) { %>
-      <p class="muted">No businesses yet. Create your first workspace below.</p>
+      <p class="muted">No businesses yet. <%= offerLarose ? 'Click "Set up Larose" below' : 'Create one below' %> to get its Orders, Pixels and other settings.</p>
     <% } else { %>
       <ul class="list">
         <% businesses.forEach((b) => { %>
-          <li><a href="/businesses/<%= b.id %>"><%= b.name %></a> <span class="muted">/<%= b.slug %></span></li>
+          <li><a href="/businesses/<%= b.id %>"><%= b.name %></a> <span class="muted">/<%= b.slug %></span>
+            <div class="row" style="gap:12px;font-size:14px;margin-top:4px"><a href="/businesses/<%= b.id %>/orders">Orders</a><a href="/businesses/<%= b.id %>/pixels">Pixels (Meta / TikTok)</a><a href="/businesses/<%= b.id %>/landing-pages">Pages</a></div></li>
         <% }) %>
       </ul>
     <% } %>

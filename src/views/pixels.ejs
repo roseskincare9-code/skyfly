@@ -2,6 +2,7 @@
 <%- include('partials/nav') %>
 <main style="max-width:820px">
   <h1>Tracking pixels</h1>
+  <p>Add a pixel by entering its ID in the <a href="#meta">Meta</a> or <a href="#tiktok">TikTok</a> box below and pressing <strong>Add</strong>. You can change or remove it at any time.</p>
   <p class="muted">Enter only your pixel IDs. Skyfly adds the official pixel code to pages it hosts. Pages hosted elsewhere get it through the Skyfly script tag (see the guide). You can't paste custom scripts here; that keeps your pages and data safe.</p>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
@@ -23,7 +24,7 @@
     <% } %>
   </div>
 
-  <% PROVIDERS.forEach((provider) => { const s = settings[provider] || { enabled: false, pixel_id: '', events: ['PageView', 'InitiateCheckout', 'Lead'], server_purchase: false }; %>
+  <% PROVIDERS.forEach((provider) => { const saved = Boolean(settings[provider]); const s = settings[provider] || { enabled: false, pixel_id: '', events: ['PageView', 'InitiateCheckout', 'Lead'], server_purchase: false }; %>
   <div class="card" id="<%= provider %>">
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0"><%= LABELS[provider] %></h2>
@@ -82,8 +83,14 @@
       <% if (s.access_token_enc) { %><label style="color:var(--text)"><input type="checkbox" name="remove_token"> Remove saved token</label><% } %>
       <label for="<%= provider %>-test">Test event code (optional)</label>
       <input id="<%= provider %>-test" name="test_event_code" value="<%= s.test_event_code || '' %>" placeholder="e.g. TEST12345">
-      <p><button type="submit">Save <%= provider === 'meta' ? 'Meta' : 'TikTok' %> settings</button></p>
+      <p><button type="submit"><%= saved ? 'Save changes' : (provider === 'meta' ? 'Add Meta Pixel' : 'Add TikTok Pixel') %></button></p>
     </form>
+    <% if (saved) { %>
+      <form method="post" action="<%= base %>/pixels/remove" onsubmit="return confirm('Remove this pixel and its saved access token?')">
+        <%- include('partials/csrf') %><input type="hidden" name="provider" value="<%= provider %>"><% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
+        <button class="secondary" type="submit"><%= page ? 'Remove this page\'s ' : 'Remove ' %><%= provider === 'meta' ? 'Meta' : 'TikTok' %> pixel</button>
+      </form>
+    <% } %>
     <% if (s.access_token_enc && s.test_event_code) { %>
       <form method="post" action="<%= base %>/pixels/test"><%- include('partials/csrf') %><input type="hidden" name="provider" value="<%= provider %>"><% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
         <button class="secondary" type="submit">Send test Purchase</button></form>

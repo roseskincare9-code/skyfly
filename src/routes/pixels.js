@@ -41,7 +41,7 @@ export function pixelRoutes({ pool, config }) {
 
   router.get('/', asyncHandler(async (req, res) => {
     const { page } = await scope(req);
-    const notice = { saved: 'Saved.', removed: 'Page now uses the business defaults.' }[req.query.done] ?? null;
+    const notice = { saved: 'Saved.', removed: 'Page now uses the business defaults.', deleted: 'Pixel removed.' }[req.query.done] ?? null;
     await render(req, res, { page, notice });
   }));
 
@@ -103,6 +103,24 @@ export function pixelRoutes({ pool, config }) {
       details: { pixelId: normalizedId || null, enabled, events, serverPurchase, tokenChanged: Boolean(token) || req.body.remove_token === 'on' },
     });
     res.redirect(`${res.locals.base}/pixels?${page ? `page=${page.id}&` : ''}done=saved`);
+  }));
+
+  // Deletes one platform's pixel (and its encrypted token) for this scope.
+  router.post('/remove', asyncHandler(async (req, res) => {
+    const { page } = await scope(req);
+    const provider = String(req.body.provider);
+    if (!PROVIDERS.includes(provider)) return res.status(400).render('error', { message: 'Unknown provider.' });
+    const { rows: [removed] } = await pool.query(
+      `DELETE FROM pixel_settings WHERE business_id = $1 AND provider = $2 AND landing_page_id ${page ? '= $3' : 'IS NULL'} RETURNING pixel_id`,
+      page ? [req.business.id, provider, page.id] : [req.business.id, provider],
+    );
+    if (removed) {
+      await audit(pool, req, {
+        action: 'pixel.removed', businessId: req.business.id, entityType: 'pixel', entityId: `${provider}${page ? `:page:${page.id}` : ''}`,
+        details: { pixelId: removed.pixel_id },
+      });
+    }
+    res.redirect(`${res.locals.base}/pixels?${page ? `page=${page.id}&` : ''}done=deleted`);
   }));
 
   router.post('/remove-override', asyncHandler(async (req, res) => {
