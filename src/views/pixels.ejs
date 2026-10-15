@@ -66,7 +66,7 @@
       <% if (page) { %><input type="hidden" name="page" value="<%= page.id %>"><% } %>
       <label><input type="checkbox" name="enabled" <%= s.enabled ? 'checked' : '' %>> Turn on</label>
       <label for="<%= provider %>-id">Pixel ID</label>
-      <input id="<%= provider %>-id" name="pixel_id" value="<%= s.pixel_id || '' %>" placeholder="<%= PIXEL_ID_RULES[provider].hint.replace(/^.*e\.g\. /, '') %>" autocomplete="off">
+      <input id="<%= provider %>-id" name="pixel_id" value="<%= s.pixel_id || '' %>" placeholder="<%= 'Example: ' + PIXEL_ID_RULES[provider].hint.replace(/^.*e\.g\. /, '') %>" autocomplete="off">
 
       <label>Browser events</label>
       <% const help = { PageView: 'every visit', ViewContent: 'visit to a product page', InitiateCheckout: 'visitor starts filling in the order form', Lead: 'order saved by Skyfly' }; %>
