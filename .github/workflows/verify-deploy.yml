@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: Skyfly service URL (optional if the RENDER_API_KEY secret is set)
+        description: Skyfly service URL (leave empty to find it via the RENDER_API_KEY secret)
         required: false
-        default: https://skyfly.onrender.com
+        default: ''
 permissions:
   contents: read
 jobs:

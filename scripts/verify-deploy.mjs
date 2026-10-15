@@ -26,6 +26,11 @@ async function render(path) {
 }
 
 let url = (process.argv[2] || '').replace(/\/+$/, '');
+// skyfly.onrender.com belongs to an unrelated Java app on another Render account (verified 2026-10-15).
+if (/^https?:\/\/skyfly\.onrender\.com$/i.test(url)) {
+  report(false, 'Service URL', 'skyfly.onrender.com is NOT this project (another account\'s Java app); not checking it');
+  url = '';
+}
 
 if (process.env.RENDER_API_KEY) {
   try {
