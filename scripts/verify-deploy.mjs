@@ -33,6 +33,29 @@ if (/^https?:\/\/skyfly\.onrender\.com$/i.test(url)) {
 }
 
 if (process.env.RENDER_API_KEY) {
+  // Read-only context: which workspaces the key can see, and every Blueprint with its last sync result.
+  try {
+    const owners = (await render('/owners?limit=20')).map((o) => o.owner ?? o);
+    report(null, 'Render: workspaces visible to this key', owners.map((o) => `${o.name} (${o.type})`).join(', ') || 'none');
+  } catch (err) {
+    report(null, 'Render: workspaces', err.message);
+  }
+  try {
+    const blueprints = (await render('/blueprints?limit=50')).map((b) => b.blueprint ?? b);
+    report(null, 'Render: Blueprints', blueprints.length
+      ? blueprints.map((b) => `${b.name} [${b.status}] repo=${b.repo || '?'} branch=${b.branch || '?'} lastSync=${b.lastSync || 'never'}`).join(' | ')
+      : 'none');
+    for (const b of blueprints.filter((x) => /skyfly/i.test(`${x.name} ${x.repo}`))) {
+      try {
+        const syncs = (await render(`/blueprints/${b.id}/syncs?limit=3`)).map((x) => x.sync ?? x);
+        report(null, `Render: Blueprint ${b.name} recent syncs`, syncs.map((x) => `${x.state || x.status} ${x.completedAt || x.startedAt || ''} ${x.error || x.message || ''}`.trim()).join(' | ') || 'none');
+      } catch (err) {
+        report(null, `Render: Blueprint ${b.name} syncs`, err.message);
+      }
+    }
+  } catch (err) {
+    report(null, 'Render: Blueprints', err.message);
+  }
   try {
     const services = (await render('/services?limit=100')).map((s) => s.service ?? s);
     const mine = services.filter((s) => s.name === 'skyfly' || s.repo?.endsWith('/skyfly'));
