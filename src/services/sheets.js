@@ -56,8 +56,8 @@ export async function syncOrder(pool, orderId) {
   }
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
   try {
-    // First attempt writes straight away (one request); retries check first so a slow earlier write is never doubled.
-    if (o.sheet_sync_attempts === 0 || !(await alreadyInSheet(o.sheet_backup_url, o.reference))) {
+    // Always check first: the landing page (older versions) or a slow earlier attempt may already have written this order.
+    if (!(await alreadyInSheet(o.sheet_backup_url, o.reference))) {
       await call(o.sheet_backup_url, { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
     }
     await pool.query(
@@ -83,6 +83,10 @@ export async function syncDue(pool, { limit = 10 } = {}) {
   for (const r of rows) await syncOrder(pool, r.id);
   return rows.length;
 }
+
+// New orders wait a few minutes before their first copy, so a row the landing page
+// writes itself (older page versions) is in the sheet before Skyfly checks for it.
+export const FIRST_COPY_DELAY_MINUTES = 3;
 
 // Background loop in the web process: runs every minute, and right away when an order arrives.
 export function startSheetWorker(pool, { intervalMs = 60000, log = console } = {}) {

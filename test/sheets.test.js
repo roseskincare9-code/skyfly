@@ -50,7 +50,9 @@ const order = (name = 'Ngozi Adeyemi') => request(app).post('/api/public/orders'
   items: [{ product: 'package-3', quantity: 2 }],
 });
 const statusOf = async (ref) => (await pool.query('SELECT * FROM orders WHERE reference = $1', [ref])).rows[0];
-const dueNow = () => pool.query("UPDATE orders SET sheet_sync_next_at = now() WHERE sheet_sync_status = 'failed'");
+// In production a new order's first copy waits 3 minutes; tests move the clock forward instead.
+const duePending = () => pool.query("UPDATE orders SET sheet_sync_next_at = now() WHERE sheet_sync_status = 'pending'");
+const dueNow = () => pool.query("UPDATE orders SET sheet_sync_next_at = now() WHERE sheet_sync_status IN ('failed', 'pending')");
 
 before(async () => {
   await resetDatabase(pool);
@@ -67,7 +69,7 @@ describe('copying orders to the Google Sheet from the server', () => {
     assert.equal(res.status, 201);
     assert.equal(kicked.length, 1, 'the sync is started right away');
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'pending');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     const o = await statusOf(res.body.reference);
     assert.equal(o.sheet_sync_status, 'synced');
     assert.ok(o.sheet_synced_at);
@@ -78,22 +80,36 @@ describe('copying orders to the Google Sheet from the server', () => {
     assert.equal(row.package, 'Package 3 – Power Glow x2');
     assert.equal(row.address, '14 Admiralty Way, Lekki, Lagos');
     assert.equal(row.total, 103000);
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal(sheet.rows.length, 1, 'nothing is copied twice');
   });
 
-  test('a repeated submission (same key) is not copied again', async () => {
-    n -= 1;
-    const again = await order();
-    assert.equal(again.status, 200);
+  test('a new order waits before its first copy, then the server checks the sheet first', async () => {
+    const res = await order('Delayed Copy Customer');
     await syncDue(pool);
-    assert.equal(sheet.rows.length, 1);
+    assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'pending', 'not copied in the first minutes');
+    // An older landing page already wrote this order itself:
+    sheet.rows.push({ source: `Larose Nigeria Landing Page 2026 | Skyfly ${res.body.reference} | ID abcdabcd`, fullName: 'Delayed Copy Customer' });
+    await duePending(); await syncDue(pool);
+    assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'synced');
+    assert.equal(sheet.rows.filter((r) => r.source.includes(res.body.reference)).length, 1, 'not written a second time');
+  });
+
+  test('a repeated submission (same key) is not copied again', async () => {
+    const next = n;
+    n = 0; // replay the very first order
+    const again = await order();
+    n = next;
+    assert.equal(again.status, 200);
+    assert.equal(again.body.replayed, true);
+    await duePending(); await syncDue(pool);
+    assert.equal(sheet.rows.filter((r) => r.source.includes(again.body.reference)).length, 1);
   });
 
   test('when the sheet is down the order is safe, marked failed with the reason, and retried later', async () => {
     sheet.down = true;
     const res = await order('Sheet Down Customer');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     let o = await statusOf(res.body.reference);
     assert.equal(o.sheet_sync_status, 'failed');
     assert.equal(o.sheet_sync_attempts, 1);
@@ -107,11 +123,11 @@ describe('copying orders to the Google Sheet from the server', () => {
     const list = await owner.get(`/businesses/${businessId}/orders?sheet=failed`).expect(200);
     assert.match(list.text, new RegExp(res.body.reference));
 
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal((await statusOf(res.body.reference)).sheet_sync_attempts, 1, 'not retried before its time');
     sheet.down = false;
     await dueNow();
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     o = await statusOf(res.body.reference);
     assert.equal(o.sheet_sync_status, 'synced');
     assert.equal(sheet.rows.filter((r) => r.source.includes(res.body.reference)).length, 1);
@@ -120,11 +136,11 @@ describe('copying orders to the Google Sheet from the server', () => {
   test('if a write landed but the reply was lost, the retry finds the row and does not add a second one', async () => {
     sheet.acceptButFail = true;
     const res = await order('Lost Reply Customer');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'failed');
     sheet.acceptButFail = false;
     await dueNow();
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'synced');
     assert.equal(sheet.rows.filter((r) => r.source.includes(res.body.reference)).length, 1);
   });
@@ -132,25 +148,25 @@ describe('copying orders to the Google Sheet from the server', () => {
   test('"Retry now" on an order and "Retry all failed" queue it immediately', async () => {
     sheet.down = true;
     const res = await order('Retry Button Customer');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     sheet.down = false;
     const o = await statusOf(res.body.reference);
     const _csrf = await csrfToken(owner, `/businesses/${businessId}/orders/${o.id}`);
     await owner.post(`/businesses/${businessId}/orders/${o.id}/sheet-retry`).type('form').send({ _csrf }).expect(302);
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'synced');
   });
 
   test('test orders are copied and labelled as tests', async () => {
     const res = await order('TEST ORDER Skyfly E2E please ignore');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.match(sheet.rows.at(-1).source, new RegExp(`Skyfly ${res.body.reference} .*\\| TEST ORDER$`));
   });
 
   test('with no sheet set, orders are marked "not copied" instead of failing', async () => {
     await pool.query('UPDATE businesses SET sheet_backup_url = NULL WHERE id = $1', [businessId]);
     const res = await order('No Sheet Customer');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'skipped');
     await pool.query('UPDATE businesses SET sheet_backup_url = $1 WHERE id = $2', [SHEET, businessId]);
   });
@@ -189,7 +205,7 @@ describe('Google Sheet backup screen and recovery', () => {
     assert.deepEqual(o.items, [{ code: 'package-2', qty: 3 }]);
     assert.equal(o.phone, '+2348031234567');
     assert.equal(o.sheet_sync_status, 'synced');
-    await syncDue(pool);
+    await duePending(); await syncDue(pool);
     assert.equal(sheet.rows.length, before, 'no second sheet row');
 
     const _csrf2 = await csrfToken(owner, link);
