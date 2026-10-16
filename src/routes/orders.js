@@ -5,6 +5,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES, STATUS_LABELS, STATUS_VALUES, PAYMENT
 import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
 import { retryEvent } from '../services/pixels.js';
+import { requeue } from '../services/sheets.js';
 import { whatsappDigits } from '../lib/phone.js';
 
 const PAGE_SIZE = 50;
@@ -23,6 +24,7 @@ function orderFilters(businessId, query) {
     page: /^\d+$/.test(String(query.page ?? '')) ? String(query.page) : '',
     from: DATE_RE.test(String(query.from ?? '')) ? query.from : '',
     to: DATE_RE.test(String(query.to ?? '')) ? query.to : '',
+    sheet: ['pending', 'synced', 'failed', 'skipped'].includes(query.sheet) ? query.sheet : '',
   };
   if (filters.q) {
     params.push(`%${filters.q.replace(/[\\%_]/g, '\\$&')}%`);
@@ -39,13 +41,14 @@ function orderFilters(businessId, query) {
   if (filters.payment) { params.push(filters.payment); where.push(`o.payment_status = $${params.length}`); }
   if (filters.test) where.push(filters.test === 'only' ? 'o.is_test' : 'NOT o.is_test');
   if (filters.source) { params.push(filters.source); where.push(`o.source = $${params.length}`); }
+  if (filters.sheet) { params.push(filters.sheet); where.push(`o.sheet_sync_status = $${params.length}`); }
   if (filters.page) { params.push(filters.page); where.push(`o.landing_page_id = $${params.length}`); }
   if (filters.from) { params.push(filters.from); where.push(`o.created_at >= ($${params.length}::date)::timestamp AT TIME ZONE 'Africa/Lagos'`); }
   if (filters.to) { params.push(filters.to); where.push(`o.created_at < ($${params.length}::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos'`); }
   return { sql: where.join(' AND '), params, filters };
 }
 
-export function ordersRoutes({ pool, config, onPaid = null }) {
+export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () => {} }) {
   const router = Router({ mergeParams: true });
 
   router.get('/', asyncHandler(async (req, res) => {
@@ -89,17 +92,46 @@ export function ordersRoutes({ pool, config, onPaid = null }) {
     });
   }
 
-  router.get('/new', asyncHandler((req, res) => renderNew(req, res)));
+  // Values can be filled in from a Google Sheet backup row (see Sheet backup → Recover); the owner checks them before saving.
+  const PREFILL = ['name', 'phone', 'email', 'address', 'state', 'notes', 'product_0', 'quantity_0', 'landing_page_id', 'sheet_row_key'];
+  router.get('/new', asyncHandler((req, res) => renderNew(req, res, {
+    values: Object.fromEntries(PREFILL.filter((k) => typeof req.query[k] === 'string').map((k) => [k, req.query[k].slice(0, 1000)])),
+  })));
 
   router.post('/new', asyncHandler(async (req, res) => {
+    const rowKey = /^[0-9a-f]{32}$/.test(String(req.body.sheet_row_key ?? '')) ? req.body.sheet_row_key : null;
+    if (rowKey) {
+      // Claim the sheet row first, so the same row can never become two orders.
+      const { rows: [claim] } = await pool.query(
+        'INSERT INTO sheet_recoveries (business_id, row_key, recovered_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id',
+        [req.business.id, rowKey, req.session.userId]);
+      if (!claim) return renderNew(req, res, { error: 'This Google Sheet order was already added to Skyfly.', values: req.body }, 409);
+    }
     try {
       const order = await createManualOrder(pool, req.business, req.session.userId, req.body);
-      await audit(pool, req, { action: 'order.created_manually', businessId: req.business.id, entityType: 'order', entityId: order.reference });
+      if (rowKey) {
+        await pool.query('UPDATE sheet_recoveries SET order_id = $1 WHERE business_id = $2 AND row_key = $3', [order.id, req.business.id, rowKey]);
+        // It is already in the sheet: do not add a second row.
+        await pool.query("UPDATE orders SET sheet_sync_status = 'synced', sheet_synced_at = now() WHERE id = $1", [order.id]);
+        await pool.query("INSERT INTO order_status_history (order_id, from_status, to_status, note, changed_by) SELECT id, status, status, 'Recovered from the Google Sheet backup', $2 FROM orders WHERE id = $1", [order.id, req.session.userId]);
+      } else {
+        onOrderSaved(order.id);
+      }
+      await audit(pool, req, { action: rowKey ? 'order.recovered_from_sheet' : 'order.created_manually', businessId: req.business.id, entityType: 'order', entityId: order.reference });
       res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
     } catch (err) {
+      if (rowKey) await pool.query('DELETE FROM sheet_recoveries WHERE business_id = $1 AND row_key = $2 AND order_id IS NULL', [req.business.id, rowKey]);
       if (!(err instanceof OrderError)) throw err;
       return renderNew(req, res, { error: err.message, fields: err.details?.fields ?? {}, values: req.body }, 400);
     }
+  }));
+
+  router.post('/:orderId/sheet-retry', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.orderId)) return res.status(404).render('error', { message: 'Order not found.' });
+    const n = await requeue(pool, req.business.id, req.params.orderId);
+    if (n) onOrderSaved(Number(req.params.orderId));
+    await audit(pool, req, { action: 'order.sheet_retry', businessId: req.business.id, entityType: 'order', entityId: req.params.orderId });
+    res.redirect(`${res.locals.base}/orders/${req.params.orderId}?sheet=retrying`);
   }));
 
   router.get('/export.csv', asyncHandler(async (req, res) => {
@@ -162,6 +194,7 @@ export function ordersRoutes({ pool, config, onPaid = null }) {
       paymentStatuses: PAYMENT_STATUSES,
       waUrl: `https://wa.me/${whatsappDigits(order.phone)}?text=${encodeURIComponent(waText)}`,
       saved: req.query.saved === '1',
+      sheetNotice: req.query.sheet === 'retrying',
     });
   }));
 

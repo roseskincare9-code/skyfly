@@ -20,6 +20,10 @@
       <select id="source" name="source"><option value="">All sources</option>
         <% [['web','Website form'],['api','API'],['manual','Manual']].forEach(([v,l]) => { %><option value="<%= v %>" <%= filters.source === v ? 'selected' : '' %>><%= l %></option><% }) %>
       </select></div>
+    <div><label for="sheet">Google Sheet</label>
+      <select id="sheet" name="sheet"><option value="">Any</option>
+        <% [['failed','Copy failed'],['pending','Waiting'],['synced','Copied'],['skipped','Not copied']].forEach(([v,l]) => { %><option value="<%= v %>" <%= filters.sheet === v ? 'selected' : '' %>><%= l %></option><% }) %>
+      </select></div>
     <div><label for="test">Test orders</label>
       <select id="test" name="test"><option value="">Include</option>
         <option value="exclude" <%= filters.test === 'exclude' ? 'selected' : '' %>>Hide</option>

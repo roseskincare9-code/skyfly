@@ -1,0 +1,51 @@
+<%- include('partials/head', { title: 'Google Sheet backup' }) %>
+<%- include('partials/nav') %>
+<main style="max-width:880px">
+  <p><a href="<%= base %>/settings">← Settings</a></p>
+  <h1>Google Sheet backup</h1>
+  <p class="muted">Skyfly copies every new order to your Google Sheet (through SheetDB) from the server, retries automatically when the sheet can't be reached, and never adds the same order twice.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+  <div class="card">
+    <h2>Copy status</h2>
+    <dl class="kv">
+      <dt>Copied</dt><dd><a href="<%= base %>/orders?sheet=synced"><%= count.synced || 0 %></a></dd>
+      <dt>Waiting</dt><dd><a href="<%= base %>/orders?sheet=pending"><%= count.pending || 0 %></a></dd>
+      <dt>Failed</dt><dd><a href="<%= base %>/orders?sheet=failed"><strong><%= count.failed || 0 %></strong></a><% if (count.failed) { %> <span class="muted">— retried automatically</span><% } %></dd>
+      <dt>Not copied</dt><dd><a href="<%= base %>/orders?sheet=skipped"><%= count.skipped || 0 %></a> <span class="muted">(before automatic copying, or no sheet set)</span></dd>
+    </dl>
+    <% if (count.failed) { %><form method="post" action="<%= base %>/sheet-backup/retry-failed"><%- include('partials/csrf') %><button type="submit">Retry all failed now</button></form><% } %>
+  </div>
+
+  <div class="card">
+    <h2>Sheet connection</h2>
+    <form method="post" action="<%= base %>/sheet-backup">
+      <%- include('partials/csrf') %>
+      <label for="sheet_backup_url">SheetDB API URL</label>
+      <input id="sheet_backup_url" name="sheet_backup_url" value="<%= business.sheet_backup_url || '' %>" placeholder="https://sheetdb.io/api/v1/…" autocomplete="off">
+      <p class="muted" style="font-size:13px;margin:4px 0 0">The same URL your landing page used. Leave empty to stop copying. The URL is not a password, but keep it to yourself: anyone with it can add rows.</p>
+      <p><button type="submit">Save</button></p>
+    </form>
+  </div>
+
+  <div class="card" id="recover">
+    <h2>Orders only in the Google Sheet</h2>
+    <p class="muted" style="margin-top:0">When the landing page can't reach Skyfly, the order still goes to the Google Sheet, marked <code>NOT IN SKYFLY</code> (or <code>SKYFLY NOT CONNECTED</code> before Skyfly was connected). Add them here so nothing is missed. Each row can be added once.</p>
+    <% if (!business.sheet_backup_url) { %><p>Set the SheetDB API URL above first.</p>
+    <% } else if (!checked) { %><a class="btn secondary" href="<%= base %>/sheet-backup?check=1#recover">Check the Google Sheet now</a>
+    <% } else if (fetchError) { %><p class="error">Could not read the Google Sheet: <%= fetchError %></p>
+    <% } else if (!rows.length) { %><p>No orders are waiting: every order is in Skyfly.</p>
+    <% } else { %>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>Placed</th><th>Customer</th><th>Package</th><th>Marked</th><th></th></tr></thead><tbody>
+      <% rows.forEach(({ row, recovered, prefill }) => { %>
+        <tr><td class="muted"><%= row.timestamp %></td><td><%= row.fullName %><br><span class="muted"><%= row.phone %></span></td><td><%= row.package %></td>
+          <td class="muted"><%= String(row.source || '').split('|').slice(1).join('|').trim() %></td>
+          <td><% if (recovered) { %><span class="pill delivered">In Skyfly</span> <% if (recovered.id) { %><a href="<%= base %>/orders/<%= recovered.id %>"><%= recovered.reference %></a><% } %>
+              <% } else { %><a class="btn secondary" href="<%= base %>/orders/new?<%= prefill %>">Review and add</a><% } %></td></tr>
+      <% }) %>
+      </tbody></table></div>
+    <% } %>
+  </div>
+</main>
+</body></html>

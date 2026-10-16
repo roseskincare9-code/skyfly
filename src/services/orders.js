@@ -298,7 +298,7 @@ export async function createManualOrder(pool, business, userId, body) {
     const productId = String(body[`product_${i}`] ?? '');
     if (!productId) continue;
     const quantity = Number(body[`quantity_${i}`] || 1);
-    const priceText = String(body[`price_${i}`] ?? '').replace(/[,\s₦]/g, '');
+    const priceText = String(body[`price_${i}`] ?? '').replace(/[,\s₦£$€]/g, '');
     if (!/^\d+$/.test(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
       fields.items = 'Check the products and quantities.';
       continue;

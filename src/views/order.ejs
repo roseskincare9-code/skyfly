@@ -75,6 +75,18 @@
     <% } %>
   </form>
 
+  <div class="card" id="sheet">
+    <h2>Google Sheet backup</h2>
+    <% const sheetText = { synced: 'Copied to the Google Sheet', pending: 'Waiting to be copied', failed: 'Copy failed — will retry automatically', skipped: 'Not copied (no Google Sheet set for this business, or placed before automatic copying)' }; %>
+    <% if (sheetNotice) { %><div class="notice">Retrying now. Refresh in a few seconds.</div><% } %>
+    <p style="margin:0"><span class="pill <%= { synced: 'delivered', pending: 'pending', failed: 'cancelled', skipped: '' }[order.sheet_sync_status] %>"><%= sheetText[order.sheet_sync_status] %></span>
+      <% if (order.sheet_synced_at) { %><span class="muted"> on <%= formatDate(order.sheet_synced_at) %></span><% } %>
+      <% if (order.sheet_sync_status === 'failed') { %><br><span class="muted">Attempt <%= order.sheet_sync_attempts %>: <%= order.sheet_sync_error %>. Next try <%= formatDate(order.sheet_sync_next_at) %>.</span><% } %></p>
+    <% if (['failed', 'skipped'].includes(order.sheet_sync_status)) { %>
+      <form method="post" action="<%= base %>/orders/<%= order.id %>/sheet-retry" style="margin-top:8px"><%- include('partials/csrf') %><button class="secondary" type="submit"><%= order.sheet_sync_status === 'failed' ? 'Retry now' : 'Copy to the Google Sheet now' %></button></form>
+    <% } %>
+  </div>
+
   <div class="card">
     <h2>Source</h2>
     <dl class="kv">

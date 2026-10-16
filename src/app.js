@@ -35,7 +35,7 @@ function isDashboardRequest(req, config) {
   return !config.dashboardHost;
 }
 
-export function createApp({ pool, config, transformHtml, onPaid }) {
+export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {} }) {
   // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
   transformHtml ??= (html, ctx) => injectSkyfly(pool, config, html, ctx);
   // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
@@ -78,7 +78,7 @@ export function createApp({ pool, config, transformHtml, onPaid }) {
   });
 
   // Public order API and confirmation page: no admin session involved.
-  app.use(publicRoutes({ pool, config }));
+  app.use(publicRoutes({ pool, config, onOrderSaved }));
 
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(
@@ -108,7 +108,7 @@ export function createApp({ pool, config, transformHtml, onPaid }) {
 
   app.use(authRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
-  app.use(workspaceRoutes({ pool, config, onPaid }));
+  app.use(workspaceRoutes({ pool, config, onPaid, onOrderSaved }));
 
   app.use((req, res) => res.status(404).render('error', { message: 'Page not found.' }));
 

@@ -48,7 +48,7 @@ function baseUrl(req, config) {
   return config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
 }
 
-export function publicRoutes({ pool, config }) {
+export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
   const router = Router();
 
   const api = Router();
@@ -84,6 +84,7 @@ export function publicRoutes({ pool, config }) {
       const input = validateOrderInput(req.body);
       const client = { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 400) };
       const { order, replayed } = await createOrder(pool, input, { ...(key || { origin: req.headers.origin }), client }, config);
+      if (!replayed) onOrderSaved(order.id);
       res.status(replayed ? 200 : 201).json({
         ok: true,
         reference: order.reference,

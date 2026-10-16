@@ -102,6 +102,9 @@ try {
     await shop.selectOption('#st', 'Lagos');
     await shop.selectOption('#qty', '2');
     await shop.fill('#nt', 'Gate is blue');
+    const summary = await shop.textContent('#skySum');
+    assert.match(summary, /Package 3 – Power Glow × 2/);
+    assert.match(summary, /Total: ₦103,000 · pay on delivery/);
   };
 
   await step('empty form shows a helpful error without calling the API', async () => {
@@ -168,12 +171,10 @@ try {
     reference = new URL(shop.url()).pathname.split('/').pop();
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
-    // During the transition the Sheet still gets a copy, labelled with the Skyfly reference.
-    assert.equal(sheetRows.length, 1);
-    assert.match(sheetRows[0].source, new RegExp(`^Larose Nigeria Landing Page 2026 \\| Skyfly ${reference} \\| ID [0-9a-f-]{8}$`));
-    // The same submission ID is stored in Skyfly, so the row can be matched to the order.
-    const { rows: [o] } = await pool.query('SELECT idempotency_key FROM orders WHERE reference = $1', [reference]);
-    assert.equal(sheetRows[0].skyflyId, o.idempotency_key);
+    // Saved orders are copied to the Google Sheet by Skyfly's server (with retries), not by the page.
+    assert.equal(sheetRows.length, 0);
+    const { rows: [o] } = await pool.query('SELECT sheet_sync_status FROM orders WHERE reference = $1', [reference]);
+    assert.equal(o.sheet_sync_status, 'pending', 'queued for the server-side Google Sheet copy');
   });
 
   await step('the saved order has trusted product, quantity, price and attribution', async () => {
@@ -213,8 +214,7 @@ try {
     assert.equal(new URL(shop.url()).pathname.split('/').pop(), reference);
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
-    // The Sheet may get a second row, but it carries the same Skyfly reference, so it is recognisable.
-    assert.ok(sheetRows.every((r) => r.source.includes(`Skyfly ${reference} `)));
+    assert.equal(sheetRows.length, 0);
   });
 
   await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
@@ -235,10 +235,7 @@ try {
     assert.equal(calls, 2);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");
     assert.equal(rows[0].n, 1, 'exactly one order');
-    const newRows = sheetRows.slice(before);
-    assert.equal(newRows.length, 1);
-    assert.match(newRows[0].source, /\| Skyfly LR-/);
-    assert.doesNotMatch(newRows[0].source, /NOT IN SKYFLY/);
+    assert.equal(sheetRows.length, before, 'no fallback row: the order was saved in Skyfly');
     await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
     sheetRows.splice(before);
     await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);

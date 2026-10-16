@@ -2,10 +2,14 @@ import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { ensureLaroseForOwner } from './services/setup.js';
+import { startSheetWorker } from './services/sheets.js';
 
 const config = loadConfig();
 const pool = createPool(config.databaseUrl, config.databaseSsl);
-const app = createApp({ pool, config });
+// Copies orders to each business's Google Sheet. Only in production (or SHEET_SYNC=on), so local
+// test servers never write to a real sheet.
+const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startSheetWorker(pool) : { kick() {}, stop() {} };
+const app = createApp({ pool, config, onOrderSaved: sheets.kick });
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);
@@ -13,6 +17,7 @@ const server = app.listen(config.port, () => {
 });
 
 function shutdown() {
+  sheets.stop();
   server.close(() => pool.end().then(() => process.exit(0)));
 }
 process.on('SIGTERM', shutdown);

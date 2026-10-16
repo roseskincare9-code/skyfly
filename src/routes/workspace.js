@@ -7,10 +7,11 @@ import { landingPageRoutes } from './landingPages.js';
 import { settingsRoutes } from './settings.js';
 import { apiKeyRoutes } from './apiKeys.js';
 import { pixelRoutes } from './pixels.js';
+import { sheetBackupRoutes } from './sheetBackup.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
 // Everything under /businesses/:businessId is only visible to that business's owner.
-export function workspaceRoutes({ pool, config, onPaid = null }) {
+export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = () => {} }) {
   const router = Router();
   router.use(requireAuth);
 
@@ -66,7 +67,10 @@ export function workspaceRoutes({ pool, config, onPaid = null }) {
     for (const r of byStatus.rows) counts[r.status] = { count: r.count, total: r.total };
     const sum = (statuses, key) => statuses.reduce((acc, s) => acc + counts[s][key], 0);
 
+    const { rows: [sheet] } = await pool.query(
+      "SELECT count(*) FILTER (WHERE sheet_sync_status = 'failed')::int AS failed FROM orders WHERE business_id = $1", [businessId]);
     res.render('overview', {
+      sheetFailed: sheet.failed,
       counts,
       totalOrders: Object.values(counts).reduce((a, c) => a + c.count, 0),
       sales: {
@@ -90,7 +94,8 @@ export function workspaceRoutes({ pool, config, onPaid = null }) {
     res.render('activity', { entries: rows, active: 'activity' });
   }));
 
-  scoped.use('/orders', ordersRoutes({ pool, config, onPaid }));
+  scoped.use('/orders', ordersRoutes({ pool, config, onPaid, onOrderSaved }));
+  scoped.use('/sheet-backup', sheetBackupRoutes({ pool, config, onOrderSaved }));
   scoped.use('/products', productRoutes({ pool }));
   scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
   scoped.use('/settings', settingsRoutes({ pool }));

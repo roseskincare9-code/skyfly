@@ -5,6 +5,7 @@
     <h1><%= business.name %></h1>
     <a class="btn" href="<%= base %>/orders/new">+ Add order</a>
   </div>
+  <% if (sheetFailed) { %><div class="warn-box" role="status" style="margin-bottom:16px"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/sheet-backup">See Google Sheet backup</a></div><% } %>
 
   <div class="grid">
     <div class="stat"><div class="n"><%= formatMoney(sales.paid, business.currency) %></div><div class="l">Paid revenue</div><div class="s"><%= sales.paid_count %> paid orders</div></div>

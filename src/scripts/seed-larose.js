@@ -25,8 +25,8 @@ export async function seedLarose(pool, ownerEmail) {
   try {
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO businesses (owner_id, name, slug, currency, whatsapp_number, order_prefix)
-       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2349049206695', 'LR')
+      `INSERT INTO businesses (owner_id, name, slug, currency, whatsapp_number, order_prefix, sheet_backup_url)
+       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2349049206695', 'LR', 'https://sheetdb.io/api/v1/m111fq96ve953')
        ON CONFLICT (slug) DO NOTHING`,
       [ownerId],
     );

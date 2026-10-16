@@ -8,6 +8,8 @@
   <% const v = (k) => values[k] ?? ''; const fe = (k) => fields[k] ? `<div class="field-error">${fields[k]}</div>` : ''; %>
   <form class="card" method="post" action="<%= base %>/orders/new">
     <%- include('partials/csrf') %>
+    <% if (v('sheet_row_key')) { %><input type="hidden" name="sheet_row_key" value="<%= v('sheet_row_key') %>">
+      <div class="notice">Adding an order that reached only the Google Sheet backup. Check the details (especially the package and phone), then save. It will not be copied to the sheet again.</div><% } %>
     <h2>Customer</h2>
     <label for="name">Full name *</label><input id="name" name="name" value="<%= v('name') %>" required maxlength="120"><%- fe('name') %>
     <label for="phone">Phone *</label><input id="phone" name="phone" type="tel" value="<%= v('phone') %>" required placeholder="08012345678"><%- fe('phone') %>
