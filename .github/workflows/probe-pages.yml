@@ -1,0 +1,25 @@
+# Read-only: checks where the Larose landing page is actually published (GitHub Pages).
+name: Probe landing page addresses
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: HTTP status of candidate addresses
+        run: |
+          for u in https://roseskincare9-code.github.io/Larosenigeria/ https://roseskincare9-code.github.io/larosenigeria/ \
+                   https://roseskincare9-code.github.io/Larosenigeria/index.html https://roseskincare9-code.github.io/ \
+                   https://roseskincare9-code.github.io/Larose-Skincare-/ https://roseskincare9-code.github.io/Scaleforge-nigeria/ \
+                   https://roseskincare9-code.github.io/Scaleforgelondon/ https://roseskincare9-code.github.io/AI-ACADEMY/; do
+            echo "$(curl -s -o /tmp/body -w '%{http_code}' -L "$u") $u  title: $(grep -o '<title>[^<]*' /tmp/body | head -1 | cut -c8-90)  skyfly: $(grep -o 'skyfly-gybf[^"]*' /tmp/body | head -1)"
+          done
+      - name: GitHub Pages settings (public API)
+        run: |
+          for r in Larosenigeria Larose-Skincare- Scaleforge-nigeria Scaleforgelondon AI-ACADEMY; do
+            echo "== $r"; curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/roseskincare9-code/$r/pages | head -c 600; echo
+            curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/roseskincare9-code/$r/pages/builds/latest" | grep -E '"status"|"created_at"|"message"' | head -4
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
