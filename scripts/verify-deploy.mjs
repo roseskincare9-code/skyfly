@@ -104,6 +104,7 @@ if (!url) {
   const login = await get(`${url}/login`);
   const isSkyfly = sdk.status === 200 && sdk.text.includes('Skyfly page SDK') && login.text.includes('Log in to Skyfly');
   report(isSkyfly, 'This address runs Skyfly (SDK banner + login page)', `sdk HTTP ${sdk.status}, login HTTP ${login.status}`);
+  if (isSkyfly) report(null, 'Dashboard design', login.text.includes('class="auth-brand"') ? 'beauty redesign (sidebar layout) is live' : 'previous design');
 
   if (isSkyfly) {
     report(/max-age=\d+/.test(login.headers.get('strict-transport-security') || ''), 'Security header: HSTS');

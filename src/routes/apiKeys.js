@@ -12,7 +12,7 @@ export function apiKeyRoutes({ pool }) {
       [req.business.id],
     );
     res.set('Cache-Control', 'no-store');
-    res.status(status).render('api-keys', { keys: rows, newKey, active: 'settings' });
+    res.status(status).render('api-keys', { keys: rows, newKey, active: 'apikeys' });
   }
 
   router.get('/', asyncHandler((req, res) => render(req, res)));

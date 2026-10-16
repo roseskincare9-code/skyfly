@@ -1,14 +1,69 @@
-<header class="top">
-  <a class="brand" href="/">Skyfly</a>
-  <form method="post" action="/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link" type="submit">Log out</button></form>
+<%
+  const tab = typeof active === 'undefined' ? '' : active;
+  const hasBiz = typeof business !== 'undefined' && business;
+  const user = typeof currentUser !== 'undefined' ? currentUser : null;
+  const bizList = typeof userBusinesses !== 'undefined' ? userBusinesses : [];
+  const pend = typeof pendingCount !== 'undefined' ? pendingCount : 0;
+  const initials = (s) => String(s || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'S';
+  const item = (key, href, icon, label, extra = '') => ({ key, href, icon, label, extra });
+  const items = hasBiz ? [
+    item('overview', base, 'home', 'Dashboard'),
+    item('orders', base + '/orders', 'bag', 'Orders', pend ? `<span class="badge" title="${pend} pending">${pend}</span>` : ''),
+    item('products', base + '/products', 'box', 'Products'),
+    item('customers', base + '/customers', 'users', 'Customers'),
+    item('pages', base + '/landing-pages', 'layout', 'Landing Pages'),
+    item('analytics', base + '/analytics', 'chart', 'Analytics'),
+    item('pixels', base + '/pixels', 'target', 'Pixels & Tracking'),
+    item('sheet', base + '/sheet-backup', 'sheet', 'Google Sheet Backup'),
+    item('apikeys', base + '/api-keys', 'key', 'API Keys'),
+    item('activity', base + '/activity', 'clock', 'Activity Log'),
+    item('settings', base + '/settings', 'gear', 'Settings'),
+  ] : [];
+%>
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1">
+<label for="nav-toggle" class="nav-scrim" aria-hidden="true"></label>
+<aside class="sidebar" aria-label="Main navigation">
+  <a class="logo" href="/"><span class="logo-mark"><%- include('icon', { name: 'spark', size: 22 }) %></span>Skyfly</a>
+
+  <details class="biz-switch">
+    <summary>
+      <span class="biz-avatar"><%= initials(hasBiz ? business.name : 'Skyfly') %></span>
+      <span class="biz-name"><%= hasBiz ? business.name : 'Your businesses' %></span>
+      <%- include('icon', { name: 'chevron', size: 16 }) %>
+    </summary>
+    <div class="biz-menu">
+      <% bizList.forEach((b) => { %><a href="/businesses/<%= b.id %>" class="<%= hasBiz && Number(business.id) === Number(b.id) ? 'on' : '' %>"><span class="biz-avatar sm"><%= initials(b.name) %></span><%= b.name %></a><% }) %>
+      <a href="/" class="muted-link"><%- include('icon', { name: 'store', size: 16 }) %> All businesses</a>
+    </div>
+  </details>
+
+  <nav class="side-nav">
+    <% if (hasBiz) { items.forEach((it) => { %>
+      <a href="<%= it.href %>" class="<%= tab === it.key ? 'on' : '' %>" <%= tab === it.key ? 'aria-current=page' : '' %>><%- include('icon', { name: it.icon }) %><span><%= it.label %></span><%- it.extra %></a>
+    <% }) } else { %>
+      <a href="/" class="on" aria-current="page"><%- include('icon', { name: 'store' }) %><span>Businesses</span></a>
+      <% bizList.forEach((b) => { %><a href="/businesses/<%= b.id %>"><%- include('icon', { name: 'home' }) %><span><%= b.name %></span></a><% }) %>
+    <% } %>
+  </nav>
+
+  <div class="side-foot">
+    <div class="side-art" aria-hidden="true">
+      <svg viewBox="0 0 200 90" width="100%" height="70"><defs><linearGradient id="petal" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F7C6D6"/><stop offset="1" stop-color="#E8A0B8"/></linearGradient></defs>
+        <path d="M40 80c-6-22 4-46 26-56-2 22-10 42-26 56Z" fill="url(#petal)" opacity=".9"/><path d="M58 82c4-20 22-34 44-34-10 18-26 30-44 34Z" fill="#F3D9C4"/>
+        <circle cx="150" cy="40" r="22" fill="#FBE3EA"/><circle cx="150" cy="40" r="10" fill="#F2B8CB"/><path d="M120 84c10-14 30-20 50-14-12 10-30 16-50 14Z" fill="#E9D8B4"/></svg>
+      <p>Glow your business ✨</p>
+    </div>
+  </div>
+</aside>
+
+<header class="topbar">
+  <label for="nav-toggle" class="icon-btn menu-btn" aria-label="Open menu"><%- include('icon', { name: 'menu' }) %></label>
+  <% if (hasBiz) { %>
+    <form class="search" method="get" action="<%= base %>/orders" role="search">
+      <%- include('icon', { name: 'search', size: 18 }) %><input name="q" placeholder="Search orders, customers, phone…" aria-label="Search orders">
+    </form>
+    <a class="icon-btn bell" href="<%= base %>/orders?status=pending" title="<%= pend %> pending orders" aria-label="<%= pend %> pending orders"><%- include('icon', { name: 'bell' }) %><% if (pend) { %><span class="dot"><%= pend > 99 ? '99+' : pend %></span><% } %></a>
+  <% } else { %><span class="top-title">Skyfly</span><% } %>
+  <span class="avatar" title="<%= user ? user.name + ' · ' + user.email : '' %>"><%= initials(user ? user.name : '') %></span>
+  <form class="logout" method="post" action="/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link" type="submit"><%- include('icon', { name: 'logout', size: 16 }) %> Log out</button></form>
 </header>
-<% if (typeof business !== 'undefined' && business) { const tab = typeof active === 'undefined' ? '' : active; %>
-<nav class="sub" aria-label="<%= business.name %>">
-  <a href="<%= base %>" class="<%= tab === 'overview' ? 'on' : '' %>">Overview</a>
-  <a href="<%= base %>/orders" class="<%= tab === 'orders' ? 'on' : '' %>">Orders</a>
-  <a href="<%= base %>/landing-pages" class="<%= tab === 'pages' ? 'on' : '' %>">Pages</a>
-  <a href="<%= base %>/products" class="<%= tab === 'products' ? 'on' : '' %>">Products</a>
-  <a href="<%= base %>/pixels" class="<%= tab === 'pixels' ? 'on' : '' %>">Pixels</a>
-  <a href="<%= base %>/settings" class="<%= tab === 'settings' ? 'on' : '' %>">Settings</a>
-</nav>
-<% } %>

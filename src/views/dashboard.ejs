@@ -1,8 +1,9 @@
 <%- include('partials/head', { title: 'Businesses' }) %>
 <%- include('partials/nav') %>
-<main class="narrow">
+<main>
+  <div class="page-head"><div><h1>Your businesses</h1><p>Choose a business to manage its orders, products, landing pages and pixels.</p></div></div>
   <div class="card">
-    <h1>Your businesses</h1>
+    <h2>Businesses</h2>
     <% if (businesses.length === 0) { %>
       <p class="muted">No businesses yet. <%= offerLarose ? 'Click "Set up Larose" below' : 'Create one below' %> to get its Orders, Pixels and other settings.</p>
     <% } else { %>

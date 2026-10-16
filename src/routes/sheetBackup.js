@@ -37,7 +37,7 @@ export function sheetBackupRoutes({ pool, config, onOrderSaved = () => {} }) {
       }
     }
     res.set('Cache-Control', 'no-store');
-    res.status(status).render('sheet-backup', { active: 'settings', error, notice, count, rows, fetchError, checked: req.query.check === '1', markers: FALLBACK_MARKERS });
+    res.status(status).render('sheet-backup', { active: 'sheet', error, notice, count, rows, fetchError, checked: req.query.check === '1', markers: FALLBACK_MARKERS });
   }
 
   router.get('/', asyncHandler((req, res) => render(req, res, { notice: { saved: 'Saved.', retrying: 'Retrying failed copies now. Refresh in a few seconds.' }[req.query.done] ?? null })));

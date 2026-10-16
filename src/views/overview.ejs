@@ -1,67 +1,169 @@
 <%- include('partials/head', { title: business.name }) %>
 <%- include('partials/nav', { active: 'overview' }) %>
+<%
+  const cur = business.currency;
+  const first = (currentUser && currentUser.name || '').split(/\s+/)[0];
+  const initials = business.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const chg = (n) => n === null || n === undefined ? '' : `<span class="${n >= 0 ? 'up' : 'down'}">${n >= 0 ? '↑' : '↓'} ${Math.abs(n)}%</span> vs previous ${days} days`;
+  const fmtDay = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const chart = lineChart(series.map((p) => ({ label: fmtDay(p.day), value: p.value })), { width: 720, height: 250 });
+  const statusOrder = ['pending', 'confirmed', 'processing', 'dispatched', 'delivered', 'cancelled', 'returned'];
+  const ring = donut(statusOrder.map((s) => ({ key: s, value: statusCounts[s] || 0, color: STATUS_COLORS[s] })), { r: 78, thickness: 20 });
+  const periodLabel = { 7: 'Last 7 days', 30: 'Last 30 days', 90: 'Last 90 days' }[days];
+%>
 <main>
-  <div class="row" style="justify-content:space-between">
-    <h1><%= business.name %></h1>
-    <a class="btn" href="<%= base %>/orders/new">+ Add order</a>
+  <section class="hero">
+    <div class="hero-content brand-badge">
+      <span class="seal"><%= initials %></span>
+      <div>
+        <h1><%= greeting() %><%= first ? ', ' + first : '' %> <span aria-hidden="true">🌸</span></h1>
+        <p>Here's how <strong><%= business.name %></strong> is doing · <%= periodLabel %></p>
+      </div>
+    </div>
+    <div class="hero-content row">
+      <nav class="periods" aria-label="Period"><% PERIODS.forEach((d) => { %><a href="<%= base %>?days=<%= d %>" class="<%= d === days ? 'on' : '' %>"><%= d %> days</a><% }) %></nav>
+      <a class="btn" href="<%= base %>/orders/new"><%- include('partials/icon', { name: 'plus', size: 18 }) %> Add order</a>
+    </div>
+    <svg class="hero-art" viewBox="0 0 300 160" aria-hidden="true">
+      <defs><linearGradient id="hg1" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F9C9D8"/><stop offset="1" stop-color="#EDA0BB"/></linearGradient>
+        <linearGradient id="hg2" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F3DCC4"/></linearGradient></defs>
+      <path d="M196 160c-12-40 6-86 48-104-4 42-20 80-48 104Z" fill="url(#hg1)" opacity=".55"/>
+      <path d="M232 162c8-36 40-60 80-60-18 32-46 54-80 60Z" fill="#E9D8B4" opacity=".6"/>
+      <rect x="140" y="70" width="34" height="74" rx="10" fill="url(#hg2)" stroke="#EBCFD9"/><rect x="146" y="58" width="22" height="16" rx="5" fill="#D9578A" opacity=".8"/>
+      <rect x="184" y="96" width="44" height="48" rx="14" fill="#fff" stroke="#EBCFD9"/><rect x="184" y="88" width="44" height="14" rx="7" fill="#E9D8B4"/>
+      <circle cx="110" cy="128" r="16" fill="#FBE3EA"/><circle cx="110" cy="128" r="7" fill="#F2B8CB"/>
+    </svg>
+  </section>
+
+  <% if (sheetFailed) { %><div class="warn-box" role="status"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/sheet-backup">See Google Sheet backup</a></div><% } %>
+
+  <% if (totalOrders === 0) { %>
+  <div class="card empty">
+    <svg viewBox="0 0 220 120" aria-hidden="true"><ellipse cx="110" cy="108" rx="80" ry="8" fill="#FBE3EA"/><rect x="72" y="30" width="40" height="74" rx="12" fill="#fff" stroke="#EBCFD9"/><rect x="80" y="18" width="24" height="16" rx="6" fill="#D9578A" opacity=".8"/><rect x="118" y="56" width="44" height="48" rx="14" fill="#FFF4EE" stroke="#EBCFD9"/><rect x="118" y="48" width="44" height="14" rx="7" fill="#E9D8B4"/><path d="M40 104c-6-24 4-50 28-60-2 24-12 46-28 60Z" fill="#F7C6D6"/></svg>
+    <h2>Your first orders will bloom here</h2>
+    <p class="muted" style="max-width:520px;margin:0 auto 16px">There are no orders for this business yet. Connect a landing page, check your products and prices, then share your page. Orders appear here the moment customers submit them.</p>
+    <div class="quick" style="max-width:720px;margin:0 auto;text-align:left">
+      <a href="<%= base %>/landing-pages"><span class="qi"><%- include('partials/icon', { name: 'layout' }) %></span>Connect a landing page</a>
+      <a href="<%= base %>/products"><span class="qi"><%- include('partials/icon', { name: 'box' }) %></span>Check products & prices</a>
+      <a href="<%= base %>/pixels"><span class="qi"><%- include('partials/icon', { name: 'target' }) %></span>Set up Meta / TikTok pixels</a>
+    </div>
   </div>
-  <% if (sheetFailed) { %><div class="warn-box" role="status" style="margin-bottom:16px"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/sheet-backup">See Google Sheet backup</a></div><% } %>
+  <% } %>
 
   <div class="grid">
-    <div class="stat"><div class="n"><%= formatMoney(sales.paid, business.currency) %></div><div class="l">Paid revenue</div><div class="s"><%= sales.paid_count %> paid orders</div></div>
-    <div class="stat"><div class="n"><%= formatMoney(sales.to_collect, business.currency) %></div><div class="l">To collect</div><div class="s">Approved orders not yet paid</div></div>
-    <div class="stat"><div class="n"><%= formatMoney(sales.confirmed, business.currency) %></div><div class="l">Approved order value</div><div class="s"><%= sales.confirmedCount %> orders</div></div>
-    <div class="stat"><div class="n"><%= formatMoney(sales.pipeline, business.currency) %></div><div class="l">Pending value</div><div class="s">Not yet confirmed</div></div>
+    <a class="stat" href="<%= base %>/orders"><span class="ico"><%- include('partials/icon', { name: 'bag' }) %></span><div class="n"><%= totalOrders %></div><div class="l">Total orders</div><div class="s"><%= summary.orders %> in <%= periodLabel.toLowerCase() %> <%- chg(summary.ordersChange) %></div></a>
+    <a class="stat" href="<%= base %>/analytics?days=<%= days %>"><span class="ico"><%- include('partials/icon', { name: 'chart' }) %></span><div class="n"><%= formatMoney(summary.value, cur) %></div><div class="l">Order value · <%= periodLabel.toLowerCase() %></div><div class="s"><%- chg(summary.valueChange) || 'Excludes cancelled & returned' %></div></a>
+    <a class="stat" href="<%= base %>/customers"><span class="ico"><%- include('partials/icon', { name: 'users' }) %></span><div class="n"><%= summary.new_customers %></div><div class="l">New customers</div><div class="s"><%- chg(summary.customersChange) || 'First order in this period' %></div></a>
+    <a class="stat" href="<%= base %>/orders?status=pending"><span class="ico"><%- include('partials/icon', { name: 'bell' }) %></span><div class="n"><%= counts.pending.count %></div><div class="l">Pending orders</div><div class="s" style="color:var(--rose);font-weight:600">View orders →</div></a>
   </div>
 
   <div class="grid">
-    <a class="stat" href="<%= base %>/orders"><div class="n"><%= totalOrders %></div><div class="l">Total orders</div></a>
-    <div class="stat"><div class="n"><%= today.count %></div><div class="l">Orders today</div><div class="s"><%= formatMoney(today.total, business.currency) %></div></div>
-    <% ['pending','confirmed','processing','dispatched','delivered','cancelled','returned'].forEach((s) => { %>
-      <a class="stat" href="<%= base %>/orders?status=<%= s %>"><div class="n"><%= counts[s].count %></div><div class="l"><%= STATUS_LABELS[s] %></div></a>
-    <% }) %>
+    <div class="stat"><div class="n"><%= formatMoney(sales.paid, cur) %></div><div class="l">Paid revenue</div><div class="s"><%= sales.paid_count %> paid orders</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.to_collect, cur) %></div><div class="l">To collect</div><div class="s">Approved, not yet paid</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.confirmed, cur) %></div><div class="l">Approved order value</div><div class="s"><%= sales.confirmedCount %> orders</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(sales.pipeline, cur) %></div><div class="l">Pending value</div><div class="s">Not yet confirmed</div></div>
   </div>
-  <p class="muted" style="font-size:13px">
-    <strong>Paid revenue</strong> counts only orders marked Paid (refunds excluded: <%= formatMoney(sales.refunded, business.currency) %>).
-    <strong>Approved order value</strong> = Confirmed/Approved + Processing + Dispatched + Delivered, paid or not.
-    <strong>To collect</strong> = approved orders whose payment is Unpaid, Pending or Failed.
-    All figures leave out orders marked as <strong>test</strong>.
-  </p>
 
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><h2>Recent orders</h2><a href="<%= base %>/orders">All orders →</a></div>
-    <% if (recent.length === 0) { %>
-      <p class="muted">No orders yet. Orders from your landing pages will appear here.</p>
-    <% } else { %>
-      <div class="table-wrap"><table class="stack">
-        <thead><tr><th>Reference</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
-        <tbody>
-        <% recent.forEach((o) => { %>
-          <tr>
-            <td><a href="<%= base %>/orders/<%= o.id %>"><%= o.reference %></a></td>
-            <td><%= o.customer_name %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a></td>
-            <td><%= formatMoney(o.total_minor, o.currency) %></td>
-            <td><%- include('partials/pills', { o }) %></td>
-            <td class="muted"><%= formatDate(o.created_at) %></td>
-          </tr>
+  <div class="two">
+    <div class="card chart">
+      <div class="row" style="justify-content:space-between"><h2><%- include('partials/icon', { name: 'chart' }) %> Sales overview</h2><span class="muted" style="font-size:13px">Daily order value · <%= periodLabel.toLowerCase() %></span></div>
+      <% if (chart.peak) { %>
+      <svg viewBox="0 0 <%= chart.width %> <%= chart.height %>" role="img" aria-label="Daily order value, <%= periodLabel.toLowerCase() %>">
+        <defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#E56B98" stop-opacity=".28"/><stop offset="1" stop-color="#E56B98" stop-opacity="0"/></linearGradient></defs>
+        <% chart.ticks.forEach((t) => { %><line class="grid-line" x1="<%= chart.left %>" x2="<%= chart.right %>" y1="<%= t.y %>" y2="<%= t.y %>"/><text class="axis" x="<%= chart.left - 8 %>" y="<%= t.y + 4 %>" text-anchor="end"><%= shortMoney(t.value, cur) %></text><% }) %>
+        <path d="<%= chart.area %>" fill="url(#area)"/>
+        <path d="<%= chart.line %>" fill="none" stroke="#C2366B" stroke-width="2.6" stroke-linecap="round"/>
+        <% chart.labels.forEach((l) => { %><text class="axis" x="<%= l.x %>" y="<%= chart.height - 6 %>" text-anchor="middle"><%= l.text %></text><% }) %>
+        <circle cx="<%= chart.peak.x %>" cy="<%= chart.peak.y %>" r="5" fill="#fff" stroke="#C2366B" stroke-width="2.5"/>
+        <g transform="translate(<%= Math.min(chart.peak.x, chart.right - 60) %>,<%= Math.max(chart.peak.y - 30, 6) %>)"><rect x="-38" y="0" width="76" height="22" rx="11" fill="#2A1D25"/><text x="0" y="15" text-anchor="middle" fill="#fff" font-size="11.5" font-weight="700" font-family="DM Sans, sans-serif"><%= shortMoney(chart.peak.value, cur) %></text></g>
+      </svg>
+      <% } else { %><p class="muted" style="padding:40px 0;text-align:center">No orders in this period yet. The chart fills in as orders arrive.</p><% } %>
+    </div>
+
+    <div class="card">
+      <h2><%- include('partials/icon', { name: 'target' }) %> Order status</h2>
+      <% if (ring.total) { %>
+      <div style="display:grid;place-items:center;margin-bottom:12px">
+        <svg viewBox="0 0 <%= ring.size %> <%= ring.size %>" width="170" height="170" role="img" aria-label="Orders by status">
+          <% ring.arcs.forEach((a) => { %><path d="<%= a.d %>" fill="<%= a.color %>"><title><%= STATUS_LABELS[a.key] %>: <%= a.value %></title></path><% }) %>
+          <text x="<%= ring.size / 2 %>" y="<%= ring.size / 2 + 4 %>" text-anchor="middle" font-family="Playfair Display, serif" font-size="30" font-weight="700" fill="#2A1D25"><%= ring.total %></text>
+          <text x="<%= ring.size / 2 %>" y="<%= ring.size / 2 + 24 %>" text-anchor="middle" font-size="11" fill="#9A8790" font-family="DM Sans, sans-serif">orders</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <% statusOrder.filter((s) => statusCounts[s]).forEach((s) => { %><div><i style="background:<%= STATUS_COLORS[s] %>"></i><a href="<%= base %>/orders?status=<%= s %>" style="color:inherit;text-decoration:none"><%= STATUS_LABELS[s] %></a><b><%= statusCounts[s] %> <span class="muted" style="font-weight:400">(<%= Math.round(statusCounts[s] / ring.total * 100) %>%)</span></b></div><% }) %>
+      </div>
+      <% } else { %><p class="muted">No orders in this period yet.</p><% } %>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2><%- include('partials/icon', { name: 'bag' }) %> Recent orders</h2><a href="<%= base %>/orders">View all orders →</a></div>
+      <% if (recent.length === 0) { %>
+        <p class="muted">No orders yet. Orders from your landing pages will appear here.</p>
+      <% } else { %>
+        <div class="table-wrap"><table class="stack">
+          <thead><tr><th>Reference</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+          <tbody>
+          <% recent.forEach((o) => { %>
+            <tr>
+              <td><a href="<%= base %>/orders/<%= o.id %>"><strong><%= o.reference %></strong></a><% if (o.is_test) { %> <span class="pill">test</span><% } %></td>
+              <td><%= o.customer_name %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a></td>
+              <td><%= formatMoney(o.total_minor, o.currency) %></td>
+              <td><%- include('partials/pills', { o }) %></td>
+              <td class="muted"><%= formatDate(o.created_at) %></td>
+            </tr>
+          <% }) %>
+          </tbody>
+        </table></div>
+      <% } %>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2><%- include('partials/icon', { name: 'spark' }) %> Top products</h2>
+        <% if (!top.length) { %><p class="muted">Best sellers for <%= periodLabel.toLowerCase() %> will show here.</p><% } %>
+        <% top.forEach((p, i) => { %>
+          <div class="prod">
+            <span class="thumb <%= i % 2 ? 'alt' : '' %>"><%= (p.name.match(/Package\s*(\d+)/i) || [])[1] ? 'P' + p.name.match(/Package\s*(\d+)/i)[1] : p.name.slice(0, 2).toUpperCase() %></span>
+            <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><%= p.name %></div><div class="muted" style="font-size:12.5px"><%= p.quantity %> sold · <%= p.orders %> order<%= p.orders === 1 ? '' : 's' %></div></div>
+            <strong style="font-size:14px"><%= formatMoney(p.value, cur) %></strong>
+          </div>
         <% }) %>
-        </tbody>
-      </table></div>
-    <% } %>
+      </div>
+      <div class="card">
+        <h2>Quick actions</h2>
+        <div class="quick">
+          <a href="<%= base %>/orders/new"><span class="qi"><%- include('partials/icon', { name: 'plus' }) %></span>Add order</a>
+          <a href="<%= base %>/landing-pages"><span class="qi"><%- include('partials/icon', { name: 'upload' }) %></span>Landing pages</a>
+          <a href="<%= base %>/orders/export.csv"><span class="qi"><%- include('partials/icon', { name: 'download' }) %></span>Export orders</a>
+          <a href="<%= base %>/pixels"><span class="qi"><%- include('partials/icon', { name: 'target' }) %></span>Pixels</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <% if (byPage.length) { %>
   <div class="card">
-    <h2>Orders by landing page</h2>
+    <h2><%- include('partials/icon', { name: 'layout' }) %> Orders by landing page</h2>
     <div class="table-wrap"><table class="stack">
       <thead><tr><th>Landing page</th><th>Orders</th><th>Paid revenue</th></tr></thead>
       <tbody>
       <% byPage.forEach((p) => { %>
-        <tr><td><a href="<%= base %>/orders?page=<%= p.id %>"><%= p.name %></a></td><td><%= p.orders %></td><td><%= formatMoney(p.paid, business.currency) %></td></tr>
+        <tr><td><a href="<%= base %>/orders?page=<%= p.id %>"><%= p.name %></a></td><td><%= p.orders %></td><td><%= formatMoney(p.paid, cur) %></td></tr>
       <% }) %>
       </tbody>
     </table></div>
   </div>
   <% } %>
+
+  <p class="muted" style="font-size:12.5px">
+    <strong>Order value</strong> = orders placed in the period, excluding cancelled and returned.
+    <strong>Paid revenue</strong> counts only orders marked Paid (refunds excluded: <%= formatMoney(sales.refunded, cur) %>).
+    <strong>Approved order value</strong> = Confirmed/Approved + Processing + Dispatched + Delivered, paid or not.
+    <strong>To collect</strong> = approved orders whose payment is Unpaid, Pending or Failed.
+    All figures leave out orders marked as <strong>test</strong>.
+  </p>
 </main>
 </body></html>

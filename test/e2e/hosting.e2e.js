@@ -134,7 +134,7 @@ try {
 
   await step('preview shows the page with CSS, image and JS working, without tracking', async () => {
     await dash.goto(`${DASH}/businesses/1/landing-pages/${pageId}`);
-    const href = await dash.getAttribute('a:has-text("Preview")', 'href');
+    const href = await dash.getAttribute('a:has-text("Open on pages address")', 'href');
     assert.ok(href.startsWith(`${PAGES}/_preview/`), 'preview is on the pages host');
     const p = await context.newPage();
     await p.goto(href);

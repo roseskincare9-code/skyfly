@@ -1,0 +1,72 @@
+<%- include('partials/head', { title: 'Analytics' }) %>
+<%- include('partials/nav', { active: 'analytics' }) %>
+<%
+  const cur = business.currency;
+  const fmtDay = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const valueChart = lineChart(series.map((p) => ({ label: fmtDay(p.day), value: p.value })), { width: 760, height: 250 });
+  const maxOrders = Math.max(1, ...series.map((p) => p.orders));
+  const statusOrder = ['pending', 'confirmed', 'processing', 'dispatched', 'delivered', 'cancelled', 'returned'];
+  const ring = donut(statusOrder.map((s) => ({ key: s, value: statusCounts[s] || 0, color: STATUS_COLORS[s] })), { r: 78, thickness: 20 });
+  const chg = (n) => n === null || n === undefined ? '<span class="muted">nothing to compare yet</span>' : `<span class="${n >= 0 ? 'up' : 'down'}">${n >= 0 ? '↑' : '↓'} ${Math.abs(n)}%</span>`;
+  const table = (rows, title) => ({ rows, title, max: Math.max(1, ...rows.map((r) => r.orders)) });
+%>
+<main>
+  <div class="page-head">
+    <div><h1>Analytics</h1><p>Real figures from your orders. Test orders are left out; order value excludes cancelled and returned orders.</p></div>
+    <nav class="periods" aria-label="Period"><% PERIODS.forEach((d) => { %><a href="?days=<%= d %>" class="<%= d === days ? 'on' : '' %>"><%= d %> days</a><% }) %></nav>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><div class="n"><%= summary.orders %></div><div class="l">Orders</div><div class="s"><%- chg(summary.ordersChange) %> · previous <%= days %> days</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(summary.value, cur) %></div><div class="l">Order value</div><div class="s"><%- chg(summary.valueChange) %></div></div>
+    <div class="stat"><div class="n"><%= formatMoney(summary.paid, cur) %></div><div class="l">Paid</div><div class="s">Orders in this period marked Paid</div></div>
+    <div class="stat"><div class="n"><%= formatMoney(summary.averageOrder, cur) %></div><div class="l">Average order</div><div class="s">Excludes cancelled</div></div>
+    <div class="stat"><div class="n"><%= summary.new_customers %></div><div class="l">New customers</div><div class="s"><%- chg(summary.customersChange) %></div></div>
+    <div class="stat"><div class="n"><%= summary.orders ? Math.round(summary.cancelled / summary.orders * 100) : 0 %>%</div><div class="l">Cancelled or returned</div><div class="s"><%= summary.cancelled %> orders</div></div>
+  </div>
+
+  <div class="card chart">
+    <h2>Order value per day</h2>
+    <% if (valueChart.peak) { %>
+    <svg viewBox="0 0 <%= valueChart.width %> <%= valueChart.height %>" role="img" aria-label="Order value per day">
+      <defs><linearGradient id="a2" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#E56B98" stop-opacity=".28"/><stop offset="1" stop-color="#E56B98" stop-opacity="0"/></linearGradient></defs>
+      <% valueChart.ticks.forEach((t) => { %><line class="grid-line" x1="<%= valueChart.left %>" x2="<%= valueChart.right %>" y1="<%= t.y %>" y2="<%= t.y %>"/><text class="axis" x="<%= valueChart.left - 8 %>" y="<%= t.y + 4 %>" text-anchor="end"><%= shortMoney(t.value, cur) %></text><% }) %>
+      <path d="<%= valueChart.area %>" fill="url(#a2)"/><path d="<%= valueChart.line %>" fill="none" stroke="#C2366B" stroke-width="2.6"/>
+      <% valueChart.labels.forEach((l) => { %><text class="axis" x="<%= l.x %>" y="<%= valueChart.height - 6 %>" text-anchor="middle"><%= l.text %></text><% }) %>
+    </svg>
+    <% } else { %><p class="muted" style="padding:30px 0;text-align:center">No orders in this period yet.</p><% } %>
+    <h2 style="margin-top:18px">Orders per day</h2>
+    <div style="display:flex;align-items:flex-end;gap:2px;height:90px" role="img" aria-label="Orders per day">
+      <% series.forEach((p) => { %><div title="<%= fmtDay(p.day) %>: <%= p.orders %> orders" style="flex:1;min-width:2px;height:<%= Math.max(p.orders ? 6 : 2, Math.round(p.orders / maxOrders * 90)) %>px;border-radius:4px 4px 0 0;background:<%= p.orders ? 'linear-gradient(180deg,#E98AAE,#C2366B)' : '#F6E3EA' %>"></div><% }) %>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card"><h2>Top products</h2>
+      <% if (!top.length) { %><p class="muted">No products sold in this period yet.</p><% } else { %>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>Product</th><th>Sold</th><th>Orders</th><th>Value</th></tr></thead><tbody>
+        <% top.forEach((p) => { %><tr><td><strong><%= p.name %></strong><br><code><%= p.code %></code></td><td><%= p.quantity %></td><td><%= p.orders %></td><td><%= formatMoney(p.value, cur) %></td></tr><% }) %>
+      </tbody></table></div><% } %>
+    </div>
+    <div class="card"><h2>Order status</h2>
+      <% if (ring.total) { %>
+      <div style="display:grid;place-items:center;margin-bottom:12px"><svg viewBox="0 0 <%= ring.size %> <%= ring.size %>" width="160" height="160" role="img" aria-label="Orders by status">
+        <% ring.arcs.forEach((a) => { %><path d="<%= a.d %>" fill="<%= a.color %>"/><% }) %>
+        <text x="<%= ring.size / 2 %>" y="<%= ring.size / 2 + 8 %>" text-anchor="middle" font-family="Playfair Display, serif" font-size="28" font-weight="700" fill="#2A1D25"><%= ring.total %></text></svg></div>
+      <div class="legend"><% statusOrder.filter((s) => statusCounts[s]).forEach((s) => { %><div><i style="background:<%= STATUS_COLORS[s] %>"></i><%= STATUS_LABELS[s] %><b><%= statusCounts[s] %></b></div><% }) %></div>
+      <% } else { %><p class="muted">No orders in this period yet.</p><% } %>
+    </div>
+  </div>
+
+  <div class="two" style="grid-template-columns:repeat(auto-fit, minmax(280px, 1fr))">
+    <% [table(byPage, 'By landing page'), table(bySource, 'By traffic source (utm_source)'), table(byState, 'By state')].forEach((t) => { %>
+      <div class="card"><h2><%= t.title %></h2>
+        <% if (!t.rows.length) { %><p class="muted">No orders in this period yet.</p><% } %>
+        <% t.rows.forEach((r) => { %><div style="margin:10px 0">
+          <div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><%= r.label %></span><span class="muted" style="font-size:13px;white-space:nowrap"><%= r.orders %> · <%= formatMoney(r.value, cur) %></span></div>
+          <div class="bar"><i style="width:<%= Math.round(r.orders / t.max * 100) %>%"></i></div></div><% }) %>
+      </div>
+    <% }) %>
+  </div>
+</main>
+</body></html>

@@ -15,6 +15,7 @@ import { pageServer, sandboxPreview } from './hosting/server.js';
 import { injectSkyfly } from './hosting/inject.js';
 import { recordPurchase } from './services/pixels.js';
 import { formatMoney } from './lib/money.js';
+import { lineChart, donut, shortMoney } from './lib/charts.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from './lib/statuses.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +50,9 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   if (config.isProduction) app.set('trust proxy', 1);
 
   Object.assign(app.locals, {
+    lineChart, donut, shortMoney,
+    STATUS_COLORS: { pending: '#E9A23B', confirmed: '#8B7CF0', processing: '#5B8DEF', dispatched: '#3FB6C9', delivered: '#2FA77A', cancelled: '#E2667A', returned: '#B7A3AC' },
+    greeting: () => { const h = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Africa/Lagos' }).format(new Date())); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; },
     formatMoney,
     formatDate: (d) => (d ? dateFormat.format(new Date(d)) : ''),
     STATUS_LABELS,
@@ -100,6 +104,24 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     }),
   );
   app.use(csrf);
+
+  // Who is signed in, and their businesses, for the sidebar and top bar (dashboard pages only).
+  app.use(async (req, res, next) => {
+    res.locals.currentUser = null;
+    res.locals.userBusinesses = [];
+    if (!req.session.userId || req.method !== 'GET') return next();
+    try {
+      const [{ rows: [user] }, { rows: businesses }] = await Promise.all([
+        pool.query('SELECT id, name, email FROM users WHERE id = $1', [req.session.userId]),
+        pool.query('SELECT id, name FROM businesses WHERE owner_id = $1 ORDER BY created_at', [req.session.userId]),
+      ]);
+      res.locals.currentUser = user ?? null;
+      res.locals.userBusinesses = businesses;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
 
   // Slow down password guessing.
   app.use(['/login', '/signup'], rateLimit({

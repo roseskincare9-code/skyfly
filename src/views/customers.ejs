@@ -1,0 +1,41 @@
+<%- include('partials/head', { title: 'Customers' }) %>
+<%- include('partials/nav', { active: 'customers' }) %>
+<main>
+  <div class="page-head">
+    <div><h1>Customers</h1><p>Everyone who has ordered from <%= business.name %>, grouped by phone number. Test orders are left out.</p></div>
+  </div>
+  <div class="grid">
+    <div class="stat"><div class="n"><%= total %></div><div class="l">Customers<%= q ? ' found' : '' %></div></div>
+    <div class="stat"><div class="n"><%= repeat %></div><div class="l">Ordered more than once</div></div>
+  </div>
+  <form class="card" method="get" action="<%= base %>/customers" role="search">
+    <div class="row" style="flex-wrap:nowrap"><input name="q" value="<%= q %>" placeholder="Search by name, phone or email" aria-label="Search customers"><button type="submit">Search</button><% if (q) { %><a class="btn secondary" href="<%= base %>/customers">Clear</a><% } %></div>
+  </form>
+  <div class="card">
+    <% if (!customers.length) { %>
+      <div class="empty"><h2>No customers <%= q ? 'match your search' : 'yet' %></h2><p class="muted">Customers appear here automatically when they place an order.</p></div>
+    <% } else { %>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Customer</th><th>Contact</th><th>State</th><th>Orders</th><th>Order value</th><th>Last order</th><th></th></tr></thead>
+      <tbody>
+      <% customers.forEach((c) => { %>
+        <tr>
+          <td><div class="row" style="flex-wrap:nowrap"><span class="biz-avatar sm"><%= String(c.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() %></span><strong><%= c.name %></strong></div></td>
+          <td><a href="tel:<%= c.phone %>"><%= c.phone %></a><% if (c.email) { %><br><span class="muted"><%= c.email %></span><% } %></td>
+          <td><%= c.state || '—' %></td>
+          <td><%= c.orders %><% if (c.orders > 1) { %> <span class="pill active">repeat</span><% } %></td>
+          <td><%= formatMoney(c.spent, business.currency) %><% if (Number(c.paid)) { %><br><span class="muted"><%= formatMoney(c.paid, business.currency) %> paid</span><% } %></td>
+          <td class="muted"><%= formatDate(c.last_order) %></td>
+          <td><a class="btn secondary" href="<%= base %>/orders?q=<%= encodeURIComponent(c.phone.replace(/^\+234/, '0')) %>">Orders</a></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+    <% if (pages > 1) { %><div class="row" style="justify-content:center;margin-top:12px">
+      <% if (page > 1) { %><a class="btn secondary" href="?q=<%= encodeURIComponent(q) %>&page=<%= page - 1 %>">← Previous</a><% } %>
+      <span class="muted">Page <%= page %> of <%= pages %></span>
+      <% if (page < pages) { %><a class="btn secondary" href="?q=<%= encodeURIComponent(q) %>&page=<%= page + 1 %>">Next →</a><% } %></div><% } %>
+    <% } %>
+  </div>
+</main>
+</body></html>

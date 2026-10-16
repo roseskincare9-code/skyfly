@@ -7,7 +7,9 @@ import { landingPageRoutes } from './landingPages.js';
 import { settingsRoutes } from './settings.js';
 import { apiKeyRoutes } from './apiKeys.js';
 import { pixelRoutes } from './pixels.js';
+import { PERIODS, periodDays, periodSummary, dailySeries, statusBreakdown, topProducts } from '../services/analytics.js';
 import { pageEditorRoutes } from './pageEditor.js';
+import { insightRoutes } from './insights.js';
 import { sheetBackupRoutes } from './sheetBackup.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
@@ -27,6 +29,10 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
     req.business = rows[0];
     res.locals.business = rows[0];
     res.locals.base = `/businesses/${rows[0].id}`;
+    if (req.method === 'GET') {
+      const { rows: [p] } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE business_id = $1 AND status = 'pending' AND NOT is_test", [rows[0].id]);
+      res.locals.pendingCount = p.n;
+    }
     next();
   }));
 
@@ -68,9 +74,15 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
     for (const r of byStatus.rows) counts[r.status] = { count: r.count, total: r.total };
     const sum = (statuses, key) => statuses.reduce((acc, s) => acc + counts[s][key], 0);
 
+    const days = periodDays(req.query.days);
+    const [summary, series, statusCounts, top] = await Promise.all([
+      periodSummary(pool, businessId, days), dailySeries(pool, businessId, days),
+      statusBreakdown(pool, businessId, days), topProducts(pool, businessId, days),
+    ]);
     const { rows: [sheet] } = await pool.query(
       "SELECT count(*) FILTER (WHERE sheet_sync_status = 'failed')::int AS failed FROM orders WHERE business_id = $1", [businessId]);
     res.render('overview', {
+      days, summary, series, statusCounts, top, PERIODS,
       sheetFailed: sheet.failed,
       counts,
       totalOrders: Object.values(counts).reduce((a, c) => a + c.count, 0),
@@ -98,6 +110,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.use('/orders', ordersRoutes({ pool, config, onPaid, onOrderSaved }));
   scoped.use('/sheet-backup', sheetBackupRoutes({ pool, config, onOrderSaved }));
   scoped.use('/products', productRoutes({ pool }));
+  scoped.use(insightRoutes({ pool }));
   scoped.use('/landing-pages', pageEditorRoutes({ pool, config }));
   scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
   scoped.use('/settings', settingsRoutes({ pool }));

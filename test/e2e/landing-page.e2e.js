@@ -243,10 +243,11 @@ try {
 
   await step('the new order is visible and manageable in the dashboard (mobile)', async () => {
     await page.goto(`${SKYFLY}/`);
-    await page.click('text=Larose Natural Skincare Nigeria');
+    await page.click('main >> text=Larose Natural Skincare Nigeria');
     assert.match(await page.textContent('body'), /₦103,000\s*Pending value/);
     await page.screenshot({ path: path.join(shots, '4-dashboard-overview-mobile.png'), fullPage: true });
-    await page.click('nav.sub >> text=Orders');
+    await page.click('label.menu-btn');
+    await page.click('aside.sidebar >> text=Orders');
     assert.match(await page.textContent('body'), new RegExp(reference));
     await page.screenshot({ path: path.join(shots, '5-orders-mobile.png'), fullPage: true });
     await page.click(`text=${reference}`);

@@ -1,5 +1,6 @@
 <%- include('partials/head', { title: 'Create account' }) %>
-<main class="narrow">
+<main class="narrow auth">
+  <a class="auth-brand" href="/"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>Orders, landing pages &amp; pixels for beauty brands</small></span></a>
   <div class="card">
     <h1>Create your Skyfly account</h1>
     <% if (error) { %><p class="error"><%= error %></p><% } %>
