@@ -56,10 +56,16 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 // Count pixel calls without sending them (no test data reaches Meta or TikTok).
 const pixelEvents = [];
-await ctx.route(/https:\/\/(www\.)?facebook\.com\/tr|https:\/\/analytics\.tiktok\.com\/api\//, (route) => {
+const pixelSeen = [];
+await ctx.route(/https:\/\/([a-z0-9-]+\.)*(facebook\.com|tiktok\.com|tiktokw\.us)\//, (route) => {
   const r = route.request();
-  const params = new URLSearchParams(new URL(r.url()).search + '&' + (r.postData() || ''));
-  pixelEvents.push({ host: new URL(r.url()).host, id: params.get('id'), ev: params.get('ev') || params.get('event') || '?' });
+  const u = new URL(r.url());
+  pixelSeen.push(`${r.method()} ${u.host}${u.pathname}`);
+  if (!/\/tr\/?$|\/api\/v2\/pixel/.test(u.pathname)) return route.continue(); // pixel scripts and config load normally
+  // Event hits (query string, urlencoded or multipart body): counted, never sent.
+  const text = `${u.search} ${r.postData() || ''}`;
+  const field = (name) => text.match(new RegExp(`[?&\\s]${name}=([^&\\s]+)`))?.[1] ?? text.match(new RegExp(`name="${name}"\\r?\\n\\r?\\n([^\\r\\n]+)`))?.[1] ?? null;
+  pixelEvents.push({ host: u.host, id: field('id'), ev: field('ev') || field('event') || '?' });
   return route.fulfill({ status: 200, contentType: 'image/gif', body: '' });
 });
 const page = await ctx.newPage();
@@ -123,6 +129,13 @@ await step('F. Sending the same submission again returns the same order (no dupl
   return `HTTP 200, same reference ${data.reference}, replayed`;
 });
 
+await step('G. The Google Sheet (SheetDB) accepts rows: it has a header row', async () => {
+  const res = await fetch(`${SHEET}/keys`);
+  const body = await res.json().catch(() => ({}));
+  assert(res.ok && Array.isArray(body) && body.length, `SheetDB /keys HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
+  return `columns: ${body.join(', ')}`;
+});
+
 await step('G. The order is in the Google Sheet exactly once, even after Skyfly\'s own delayed copy has run', async () => {
   const rows = await waitForSheetRows(reference, 1, 300);
   assert(rows.length >= 1, `no sheet row for ${reference}`);
@@ -137,7 +150,7 @@ await step('I. Meta Pixel: PageView once, Lead once for the order, no browser Pu
   const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === '1357015185691765');
   const count = (ev) => meta.filter((e) => e.ev === ev).length;
   const summary = [...new Set(meta.map((e) => e.ev))].map((ev) => `${ev}×${count(ev)}`).join(', ');
-  assert(count('PageView') === 1, `PageView ${count('PageView')} (${summary})`);
+  assert(count('PageView') === 1, `PageView ${count('PageView')} (${summary}); requests seen: ${pixelSeen.slice(0, 8).join(', ') || 'none'}`);
   assert(count('Lead') === 1, `Lead ${count('Lead')} (${summary})`);
   assert(count('Purchase') === 0, `Purchase ${count('Purchase')} (${summary})`);
   return `${summary} (intercepted, not sent to Meta)`;
