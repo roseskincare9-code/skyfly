@@ -77,6 +77,7 @@
 
   <div class="card" id="sheet">
     <h2>Google Sheet backup</h2>
+    <p class="muted" style="margin-top:0">Spreadsheet: <% if (order.sheet_name) { %><a href="<%= base %>/google-sheets"><%= order.sheet_name %></a><% if (order.sheet_link) { %> · <a href="<%= order.sheet_link %>" target="_blank" rel="noopener noreferrer">Open ↗</a><% } %><% } else { %>none set (<a href="<%= base %>/google-sheets">connect one</a>)<% } %></p>
     <% const sheetText = { synced: 'Copied to the Google Sheet', pending: 'Waiting to be copied', failed: 'Copy failed — will retry automatically', skipped: 'Not copied (no Google Sheet set for this business, or placed before automatic copying)' }; %>
     <% if (sheetNotice) { %><div class="notice">Retrying now. Refresh in a few seconds.</div><% } %>
     <p style="margin:0"><span class="pill <%= { synced: 'delivered', pending: 'pending', failed: 'cancelled', skipped: '' }[order.sheet_sync_status] %>"><%= sheetText[order.sheet_sync_status] %></span>

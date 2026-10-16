@@ -1,22 +1,168 @@
-// Google Sheet backup of orders, sent by the server through the business's SheetDB
-// API URL (the same sheet the landing page used before). Every order has a sync
-// status; failures are retried with back-off and are visible in the dashboard.
-// Retries first look the order reference up in the sheet, so a row is never added twice.
+// Google Sheets for orders, managed centrally per business. Each business keeps its
+// spreadsheet connections (SheetDB API URLs, stored encrypted) in one place and picks a
+// default; landing pages use it automatically unless one is given its own sheet.
+// Orders are saved in Skyfly first; the server then copies each one to its sheet, with a
+// visible status, retries with back-off, and a search before every write so a row is
+// never added twice.
 import { createHash } from 'node:crypto';
+import { encrypt, decrypt } from '../lib/secrets.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
+export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
+// The tab Skyfly creates when a connected spreadsheet has no column row yet.
+export const SKYFLY_TAB = 'Skyfly Orders';
 const RETRY_MINUTES = [1, 5, 15, 60, 180, 360, 720];
 const MAX_ATTEMPTS = 20;
 const TIMEOUT_MS = 15000;
 
+// Column names, in the order the landing page has always written them.
+export const SHEET_COLUMNS = ['timestamp', 'fullName', 'address', 'phone', 'email', 'package', 'source', 'state', 'quantity', 'notes', 'skyflyId', 'total'];
+// Without these the copy is not useful (source also carries the reference used to avoid duplicates).
+export const REQUIRED_COLUMNS = ['fullName', 'phone', 'package', 'source'];
+
+export class SheetError extends Error {
+  constructor(message, status = null) { super(message); this.status = status; }
+}
+
 async function call(url, options = {}) {
-  const res = await fetch(url, { ...options, signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}) } });
+  let res;
+  try {
+    res = await fetch(url, { ...options, signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}) } });
+  } catch (err) {
+    throw new SheetError(`Google Sheet (SheetDB) could not be reached: ${err.name === 'TimeoutError' ? 'no answer in 15 seconds' : 'network error'}`);
+  }
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* not JSON */ }
-  if (!res.ok) throw new Error(`Google Sheet (SheetDB) answered HTTP ${res.status}${json?.error ? `: ${String(json.error).slice(0, 120)}` : ''}`);
+  if (!res.ok) throw new SheetError(`Google Sheet (SheetDB) answered HTTP ${res.status}${json?.error ? `: ${String(json.error).slice(0, 160)}` : ''}`, res.status);
   return json;
 }
+
+export const isEmptySheetError = (err) => /Spreadsheet is empty|Fill first row/i.test(String(err?.message || err));
+
+// ---- Stored connection URLs: encrypted with SKYFLY_ENCRYPTION_KEY (plain only where no key is configured, e.g. tests).
+export function sealUrl(key, url) { return key ? encrypt(key, url) : `plain:${url}`; }
+export function openUrl(key, stored) {
+  if (String(stored).startsWith('plain:')) return stored.slice(6);
+  if (!key) throw new SheetError('The saved SheetDB URL is encrypted but the server has no encryption key.');
+  try { return decrypt(key, stored); } catch { throw new SheetError('The saved SheetDB URL can no longer be read (the server key changed). Enter the URL again.'); }
+}
+export const urlHash = (url) => createHash('sha256').update(url).digest('hex');
+export const urlHint = (url) => url.slice(-4);
+
+function endpoint(conn, path = '', params = {}) {
+  const q = new URLSearchParams(params);
+  if (conn.sheet_tab) q.set('sheet', conn.sheet_tab);
+  const qs = q.toString();
+  return `${conn.url}${path}${qs ? `?${qs}` : ''}`;
+}
+
+// Loads one connection of this business (never another business's), with its URL decrypted.
+export async function loadConnection(pool, key, businessId, connectionId) {
+  if (!/^\d+$/.test(String(connectionId ?? ''))) return null;
+  const { rows: [conn] } = await pool.query('SELECT * FROM sheet_connections WHERE id = $1 AND business_id = $2', [connectionId, businessId]);
+  if (!conn) return null;
+  try { conn.url = openUrl(key, conn.api_url_enc); } catch (err) { conn.url = null; conn.urlError = err.message; }
+  return conn;
+}
+
+export async function addConnection(db, key, businessId, { name, apiUrl, tab = null, spreadsheetUrl = null, makeDefault = false }) {
+  const { rows: [conn] } = await db.query(
+    `INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint, sheet_tab, spreadsheet_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [businessId, name, sealUrl(key, apiUrl), urlHash(apiUrl), urlHint(apiUrl), tab || null, spreadsheetUrl || null]);
+  await db.query(
+    'UPDATE businesses SET default_sheet_connection_id = $1 WHERE id = $2 AND ($3 OR default_sheet_connection_id IS NULL)',
+    [conn.id, businessId, makeDefault]);
+  return conn.id;
+}
+
+// Moves the single per-business URL used before central Google Sheets into an encrypted
+// connection that becomes the business default. Runs on every sync pass; no-op once done.
+export async function adoptLegacyUrls(pool, key) {
+  const { rows } = await pool.query('SELECT id, sheet_backup_url FROM businesses WHERE sheet_backup_url IS NOT NULL');
+  for (const b of rows) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: [locked] } = await client.query('SELECT sheet_backup_url FROM businesses WHERE id = $1 FOR UPDATE', [b.id]);
+      if (locked?.sheet_backup_url) {
+        const url = locked.sheet_backup_url;
+        const { rows: [existing] } = await client.query(
+          'SELECT id FROM sheet_connections WHERE business_id = $1 AND api_url_hash = $2 ORDER BY id LIMIT 1', [b.id, urlHash(url)]);
+        if (existing) await client.query('UPDATE businesses SET default_sheet_connection_id = coalesce(default_sheet_connection_id, $1) WHERE id = $2', [existing.id, b.id]);
+        else await addConnection(client, key, b.id, { name: 'Orders sheet', apiUrl: url });
+        await client.query('UPDATE businesses SET sheet_backup_url = NULL WHERE id = $1', [b.id]);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  return rows.length;
+}
+
+// Reads the sheet's column row and compares it with what Skyfly writes. Saves the result.
+export async function checkConnection(pool, conn) {
+  let status; let detail; let columns = null;
+  if (!conn.url) {
+    status = 'error'; detail = conn.urlError;
+  } else {
+    try {
+      columns = await call(endpoint(conn, '/keys'));
+      if (!Array.isArray(columns)) throw new SheetError('SheetDB did not return the column names.');
+      const missingRequired = REQUIRED_COLUMNS.filter((c) => !columns.includes(c));
+      const missing = SHEET_COLUMNS.filter((c) => !columns.includes(c));
+      const extra = columns.filter((c) => c && !SHEET_COLUMNS.includes(c));
+      if (missingRequired.length) {
+        status = 'needs_columns';
+        detail = `Row 1 is missing the column${missingRequired.length > 1 ? 's' : ''} ${missingRequired.join(', ')}. Skyfly needs them to write orders and avoid duplicates.`;
+      } else {
+        status = 'ok';
+        detail = [
+          `All ${SHEET_COLUMNS.length - missing.length} of Skyfly's ${SHEET_COLUMNS.length} columns match.`,
+          missing.length ? `Not in the sheet (left out): ${missing.join(', ')}.` : '',
+          extra.length ? `Extra columns left empty: ${extra.join(', ')}.` : '',
+        ].filter(Boolean).join(' ');
+      }
+    } catch (err) {
+      if (isEmptySheetError(err)) { status = 'needs_columns'; detail = 'The sheet is empty: row 1 has no column names, so SheetDB refuses every new row.'; }
+      else { status = 'error'; detail = err.message; }
+    }
+  }
+  await pool.query(
+    'UPDATE sheet_connections SET check_status = $2, check_detail = $3, sheet_columns = $4, checked_at = now() WHERE id = $1',
+    [conn.id, status, detail, columns ? JSON.stringify(columns) : null]);
+  Object.assign(conn, { check_status: status, check_detail: detail, sheet_columns: columns });
+  return { status, detail, columns };
+}
+
+// For a spreadsheet with no column row: adds a "Skyfly Orders" tab whose first row holds
+// Skyfly's columns, and points the connection at it. Existing tabs are not touched.
+export async function setupColumns(pool, conn, { auto = false } = {}) {
+  if (auto) await pool.query('UPDATE sheet_connections SET auto_setup_at = now() WHERE id = $1', [conn.id]);
+  const tabConn = { ...conn, sheet_tab: SKYFLY_TAB };
+  try {
+    await call(`${conn.url}/sheet`, { method: 'POST', body: JSON.stringify({ name: SKYFLY_TAB, first_row: SHEET_COLUMNS }) });
+  } catch (err) {
+    // The tab may already exist (an earlier attempt): use it if it has the right columns.
+    let cols = null;
+    try { cols = await call(endpoint(tabConn, '/keys')); } catch { /* not there */ }
+    if (!Array.isArray(cols) || !REQUIRED_COLUMNS.every((c) => cols.includes(c))) {
+      throw new SheetError(`Skyfly could not add the "${SKYFLY_TAB}" tab: ${err.message}`, err.status);
+    }
+  }
+  await pool.query('UPDATE sheet_connections SET sheet_tab = $2, updated_at = now() WHERE id = $1', [conn.id, SKYFLY_TAB]);
+  conn.sheet_tab = SKYFLY_TAB;
+  return checkConnection(pool, conn);
+}
+
+// Values starting with = + - @ would run as formulas in Google Sheets; a leading
+// apostrophe keeps them as text. Phone numbers (+234…) stay as they are.
+const safe = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) && !/^\+\d[\d\s]{5,}$/.test(s) ? `'${s}` : s; };
 
 // Same columns the landing page has always written.
 export function sheetRow(order, items, pageName) {
@@ -24,63 +170,96 @@ export function sheetRow(order, items, pageName) {
   const origin = order.source === 'manual' ? 'Entered in Skyfly' : (pageName || 'Website');
   return {
     timestamp: new Date(order.created_at).toISOString(),
-    fullName: order.customer_name,
-    address: order.address + (order.state ? `, ${order.state}` : ''),
-    phone: order.phone,
-    email: order.email || '',
-    package: pkg,
-    source: `${origin} | Skyfly ${order.reference} | ID ${String(order.idempotency_key || '').slice(0, 8)}${order.is_test ? ' | TEST ORDER' : ''}`,
-    state: order.state || '',
+    fullName: safe(order.customer_name),
+    address: safe(order.address + (order.state ? `, ${order.state}` : '')),
+    phone: safe(order.phone),
+    email: safe(order.email || ''),
+    package: safe(pkg),
+    source: safe(`${origin} | Skyfly ${order.reference} | ID ${String(order.idempotency_key || '').slice(0, 8)}${order.is_test ? ' | TEST ORDER' : ''}`),
+    state: safe(order.state || ''),
     quantity: items.reduce((n, i) => n + i.quantity, 0),
-    notes: order.customer_notes || '',
+    notes: safe(order.customer_notes || ''),
     skyflyId: order.idempotency_key || '',
     total: Number(order.total_minor) / 100,
   };
 }
 
-async function alreadyInSheet(url, reference) {
-  const rows = await call(`${url}/search?source=${encodeURIComponent(`*${reference}*`)}`);
+async function alreadyInSheet(conn, reference) {
+  const rows = await call(endpoint(conn, '/search', { source: `*${reference}*` }));
   return Array.isArray(rows) && rows.length > 0;
 }
 
-// Sends one order to the sheet (or confirms it is already there) and records the result.
-export async function syncOrder(pool, orderId) {
+async function sheetIsEmpty(conn) {
+  try { await call(endpoint(conn, '/keys')); return false; } catch (err) { return isEmptySheetError(err); }
+}
+
+// The sheet an order goes to: its landing page's own sheet, else the business default.
+// Both references are constrained to the order's business in the database.
+async function targetFor(pool, key, o) {
+  const id = o.page_sheet_id ?? o.default_sheet_id;
+  return id ? loadConnection(pool, key, o.business_id, id) : null;
+}
+
+// Sends one order to its sheet (or confirms it is already there) and records the result.
+export async function syncOrder(pool, orderId, { key = null } = {}) {
   const { rows: [o] } = await pool.query(
-    `SELECT o.*, b.sheet_backup_url, lp.name AS page_name FROM orders o
-       JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+    `SELECT o.*, lp.name AS page_name, lp.sheet_connection_id AS page_sheet_id, b.default_sheet_connection_id AS default_sheet_id
+       FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
       WHERE o.id = $1`, [orderId]);
   if (!o) return null;
-  if (!o.sheet_backup_url) {
-    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = NULL WHERE id = $1", [orderId]);
+  const conn = await targetFor(pool, key, o);
+  if (!conn) {
+    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = NULL, sheet_connection_id = NULL WHERE id = $1", [orderId]);
     return 'skipped';
   }
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
-  try {
+  const attempt = async () => {
+    if (!conn.url) throw new SheetError(conn.urlError);
     // Always check first: the landing page (older versions) or a slow earlier attempt may already have written this order.
-    if (!(await alreadyInSheet(o.sheet_backup_url, o.reference))) {
-      await call(o.sheet_backup_url, { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
+    if (!(await alreadyInSheet(conn, o.reference))) {
+      await call(endpoint(conn), { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
+    }
+  };
+  try {
+    try {
+      await attempt();
+    } catch (err) {
+      // An empty spreadsheet (no column row) is fixed once, automatically, with a Skyfly tab.
+      if (!conn.url || conn.sheet_tab || conn.auto_setup_at || !(isEmptySheetError(err) || await sheetIsEmpty(conn))) throw err;
+      try {
+        await setupColumns(pool, conn, { auto: true });
+      } catch (setupErr) {
+        throw new SheetError(`The sheet is empty (no column names in row 1). ${setupErr.message}`);
+      }
+      await requeue(pool, o.business_id, null, conn.id);
+      await attempt();
     }
     await pool.query(
-      "UPDATE orders SET sheet_sync_status = 'synced', sheet_synced_at = now(), sheet_sync_error = NULL, sheet_sync_attempts = sheet_sync_attempts + 1 WHERE id = $1",
-      [orderId]);
+      `UPDATE orders SET sheet_sync_status = 'synced', sheet_synced_at = now(), sheet_sync_error = NULL,
+              sheet_sync_attempts = sheet_sync_attempts + 1, sheet_connection_id = $2 WHERE id = $1`,
+      [orderId, conn.id]);
+    await pool.query('UPDATE sheet_connections SET last_success_at = now() WHERE id = $1', [conn.id]);
     return 'synced';
   } catch (err) {
     const attempts = o.sheet_sync_attempts + 1;
     const wait = RETRY_MINUTES[Math.min(attempts - 1, RETRY_MINUTES.length - 1)];
+    const message = String(err.message || err).slice(0, 300);
     await pool.query(
       `UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_attempts = $2, sheet_sync_error = $3,
-              sheet_sync_next_at = now() + make_interval(mins => $4) WHERE id = $1`,
-      [orderId, attempts, String(err.message || err).slice(0, 300), wait]);
+              sheet_sync_next_at = now() + make_interval(mins => $4), sheet_connection_id = $5 WHERE id = $1`,
+      [orderId, attempts, message, wait, conn.id]);
+    await pool.query('UPDATE sheet_connections SET last_error = $2, last_error_at = now() WHERE id = $1', [conn.id, message]);
     return 'failed';
   }
 }
 
 // Orders due for a (re)try, oldest first. Returns how many were processed.
-export async function syncDue(pool, { limit = 10 } = {}) {
+export async function syncDue(pool, { limit = 10, key = null } = {}) {
+  await adoptLegacyUrls(pool, key);
   const { rows } = await pool.query(
     `SELECT id FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
         AND sheet_sync_attempts < $1 ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
-  for (const r of rows) await syncOrder(pool, r.id);
+  for (const r of rows) await syncOrder(pool, r.id, { key });
   return rows.length;
 }
 
@@ -89,14 +268,14 @@ export async function syncDue(pool, { limit = 10 } = {}) {
 export const FIRST_COPY_DELAY_MINUTES = 3;
 
 // Background loop in the web process: runs every minute, and right away when an order arrives.
-export function startSheetWorker(pool, { intervalMs = 60000, log = console } = {}) {
+export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = console } = {}) {
   let running = false;
   let again = false;
   const run = async () => {
     if (running) { again = true; return; }
     running = true;
     try {
-      do { again = false; while (await syncDue(pool) === 10) { /* drain */ } } while (again);
+      do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
     } catch (err) {
       log.error('Google Sheet sync error:', err.message);
     } finally {
@@ -109,13 +288,15 @@ export function startSheetWorker(pool, { intervalMs = 60000, log = console } = {
   return { kick: () => { setImmediate(run); }, stop: () => clearInterval(timer) };
 }
 
-// Makes a failed or skipped order eligible for an immediate retry.
-export async function requeue(pool, businessId, orderId = null) {
+// Makes failed (or, for one order, skipped) copies eligible for an immediate retry, with a
+// fresh set of attempts. Optionally only those for one sheet.
+export async function requeue(pool, businessId, orderId = null, connectionId = null) {
+  const params = [businessId];
+  let where = `business_id = $1 AND sheet_sync_status IN ('failed'${orderId ? ", 'skipped'" : ''})`;
+  if (orderId) { params.push(orderId); where += ` AND id = $${params.length}`; }
+  if (connectionId) { params.push(connectionId); where += ` AND sheet_connection_id = $${params.length}`; }
   const { rowCount } = await pool.query(
-    `UPDATE orders SET sheet_sync_status = 'pending', sheet_sync_next_at = now(),
-            sheet_sync_attempts = LEAST(sheet_sync_attempts, ${MAX_ATTEMPTS - 1})
-      WHERE business_id = $1 AND sheet_sync_status IN ('failed'${orderId ? ", 'skipped'" : ''}) ${orderId ? 'AND id = $2' : ''}`,
-    orderId ? [businessId, orderId] : [businessId]);
+    `UPDATE orders SET sheet_sync_status = 'pending', sheet_sync_next_at = now(), sheet_sync_attempts = 0 WHERE ${where}`, params);
   return rowCount;
 }
 
@@ -126,12 +307,24 @@ export function rowKey(row) {
   return createHash('sha256').update(JSON.stringify([row.timestamp, row.phone, row.package, row.fullName])).digest('hex').slice(0, 32);
 }
 
-export async function fallbackRows(url) {
+// Searches the connection's tab and, when that is Skyfly's own tab, the first tab too
+// (older landing pages write their fallback rows there).
+export async function fallbackRows(conn) {
+  const targets = [conn];
+  if (conn.sheet_tab === SKYFLY_TAB) targets.push({ ...conn, sheet_tab: null });
   const found = [];
-  for (const marker of FALLBACK_MARKERS) {
-    const rows = await call(`${url}/search?source=${encodeURIComponent(`*${marker}*`)}`);
-    if (Array.isArray(rows)) found.push(...rows);
+  let firstError = null;
+  for (const t of targets) {
+    for (const marker of FALLBACK_MARKERS) {
+      try {
+        const rows = await call(endpoint(t, '/search', { source: `*${marker}*` }));
+        if (Array.isArray(rows)) found.push(...rows);
+      } catch (err) {
+        if (t === conn && !isEmptySheetError(err)) firstError ??= err;
+      }
+    }
   }
+  if (firstError && !found.length) throw firstError;
   const seen = new Set();
   return found.filter((r) => { const k = rowKey(r); if (seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));

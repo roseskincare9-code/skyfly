@@ -120,8 +120,10 @@ export function landingPageRoutes({ pool, config }) {
               (SELECT count(*)::int FROM orders o WHERE o.landing_page_id = lp.id AND NOT o.is_test) AS order_count,
               coalesce((SELECT (v.report->>'connected')::boolean FROM page_versions v WHERE v.landing_page_id = lp.id ORDER BY v.id DESC LIMIT 1), false) AS code_detected,
               (SELECT string_agg(p.name, ', ' ORDER BY p.sort_order, p.id) FROM landing_page_products x
-                 JOIN products p ON p.id = x.product_id WHERE x.landing_page_id = lp.id) AS product_names
-         FROM landing_pages lp WHERE lp.business_id = $1 ORDER BY lp.status = 'archived', lp.created_at`,
+                 JOIN products p ON p.id = x.product_id WHERE x.landing_page_id = lp.id) AS product_names,
+              (SELECT name FROM sheet_connections sc WHERE sc.business_id = lp.business_id
+                  AND sc.id = coalesce(lp.sheet_connection_id, b.default_sheet_connection_id)) AS sheet_name
+         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.business_id = $1 ORDER BY lp.status = 'archived', lp.created_at`,
       [req.business.id],
     );
     res.render('landing-pages', { pages: rows, error: req.query.error ?? null });
@@ -187,9 +189,13 @@ export function landingPageRoutes({ pool, config }) {
       cnameTarget: config.renderHost || (config.publicBaseUrl ? new URL(config.publicBaseUrl).hostname : ''),
       apiBase: config.publicBaseUrl || '',
     };
+    const { rows: [sheet] } = await pool.query(
+      `SELECT sc.name, lp.sheet_connection_id IS NOT NULL AS own FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
+         JOIN sheet_connections sc ON sc.business_id = lp.business_id AND sc.id = coalesce(lp.sheet_connection_id, b.default_sheet_connection_id)
+        WHERE lp.id = $1`, [page.id]);
     res.set('Cache-Control', 'no-store');
     res.status(status).render('landing-page-form', {
-      page, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting,
+      page, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting, sheet: sheet ?? null,
     });
   }
 

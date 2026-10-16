@@ -5,6 +5,7 @@
   <h1><%= page.id ? 'Edit landing page' : 'Register a landing page' %></h1>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
   <% if (typeof notice !== 'undefined' && notice) { %><div class="notice"><%= notice %></div><% } %>
+  <% if (page.id) { %><p class="muted">Orders from this page are copied to <% if (typeof sheet !== 'undefined' && sheet) { %>the Google Sheet <strong><%= sheet.name %></strong> <%= sheet.own ? '(this page\'s own sheet)' : '(business default)' %><% } else { %>no Google Sheet yet<% } %>. <a href="<%= base %>/google-sheets#pages">Change</a></p><% } %>
   <% if (page.id && hosting) { %><%- include('partials/hosting') %><h2>Page settings</h2><% } %>
   <form class="card" method="post" action="<%= base %>/landing-pages<%= page.id ? '/' + page.id : '' %>">
     <%- include('partials/csrf') %>

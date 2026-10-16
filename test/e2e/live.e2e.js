@@ -25,10 +25,20 @@ async function step(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Skyfly writes to the first tab, or to the "Skyfly Orders" tab it adds when the first tab has no column row.
+const TABS = ['', 'Skyfly Orders'];
+const tabUrl = (path, tab, params = {}) => {
+  const q = new URLSearchParams(params);
+  if (tab) q.set('sheet', tab);
+  return `${SHEET}${path}?${q}`;
+};
 async function sheetSearch(text) {
-  const res = await fetch(`${SHEET}/search?source=${encodeURIComponent(`*${text}*`)}`);
-  assert(res.ok, `SheetDB search HTTP ${res.status}`);
-  return res.json();
+  const all = [];
+  for (const tab of TABS) {
+    const res = await fetch(tabUrl('/search', tab, { source: `*${text}*` }));
+    if (res.ok) all.push(...(await res.json()).map((r) => ({ ...r, tab: tab || 'first tab' })));
+  }
+  return all;
 }
 async function waitForSheetRows(text, want, seconds = 120) {
   let rows = [];
@@ -133,11 +143,20 @@ await step('F. Sending the same submission again returns the same order (no dupl
   return `HTTP 200, same reference ${data.reference}, replayed`;
 });
 
-await step('G. The Google Sheet (SheetDB) accepts rows: it has a header row', async () => {
-  const res = await fetch(`${SHEET}/keys`);
-  const body = await res.json().catch(() => ({}));
-  assert(res.ok && Array.isArray(body) && body.length, `SheetDB /keys HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
-  return `columns: ${body.join(', ')}`;
+await step('G. The Google Sheet (SheetDB) accepts rows: Skyfly\'s tab has the right column row', async () => {
+  // Skyfly copies the order ~3 minutes after it arrives; an empty sheet is repaired at that moment.
+  const found = [];
+  for (let i = 0; i < 30 && !found.length; i += 1) {
+    for (const tab of TABS) {
+      const res = await fetch(tabUrl('/keys', tab));
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(body) && ['fullName', 'phone', 'package', 'source'].every((c) => body.includes(c))) found.push(`${tab || 'first tab'}: ${body.join(', ')}`);
+      else if (i === 29) found.length || console.log(`  ${tab || 'first tab'}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 160)}`);
+    }
+    if (!found.length) await sleep(10000);
+  }
+  assert(found.length, 'no tab with Skyfly\'s columns (see above)');
+  return found.join(' | ');
 });
 
 await step('G. The order is in the Google Sheet exactly once, even after Skyfly\'s own delayed copy has run', async () => {
@@ -147,7 +166,7 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
   await sleep(sheetPosts.length ? 240000 : 30000);
   const again = await sheetSearch(reference);
   assert(again.length === 1, `${again.length} rows for ${reference} (duplicate)`);
-  return `1 row: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
+  return `1 row in ${again[0].tab}: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
 });
 
 await step('I. Meta Pixel: PageView once, Lead once for the order, no browser Purchase', async () => {

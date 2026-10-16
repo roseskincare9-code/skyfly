@@ -35,7 +35,7 @@
     </svg>
   </section>
 
-  <% if (sheetFailed) { %><div class="warn-box" role="status"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/sheet-backup">See Google Sheet backup</a></div><% } %>
+  <% if (sheetFailed) { %><div class="warn-box" role="status"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/google-sheets">See Google Sheets</a></div><% } %>
 
   <% if (totalOrders === 0) { %>
   <div class="card empty">

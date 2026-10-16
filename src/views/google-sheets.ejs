@@ -1,0 +1,132 @@
+<%- include('partials/head', { title: 'Google Sheets' }) %>
+<%- include('partials/nav', { active: 'sheet' }) %>
+<main style="max-width:980px">
+  <h1>Google Sheets</h1>
+  <p class="muted">Connect your spreadsheets once, here. Every order from every landing page is saved in Skyfly first, then copied by the server to the business's <strong>default spreadsheet</strong>, or to a page's own spreadsheet if you choose one below. New landing pages use the default automatically. Failed copies are retried, and an order is never added to a sheet twice.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% const statusPill = { ok: ['delivered', 'Connected'], needs_columns: ['cancelled', 'Needs column names'], error: ['cancelled', 'Not reachable'], unchecked: ['pending', 'Not checked yet'] }; %>
+  <% const defaultConn = connections.find((c) => String(c.id) === String(defaultId)); %>
+
+  <div class="card">
+    <h2>Copy status</h2>
+    <dl class="kv">
+      <dt>Default spreadsheet</dt><dd><% if (defaultConn) { %><a href="#sheet-<%= defaultConn.id %>"><%= defaultConn.name %></a><% } else { %><strong>None</strong> <span class="muted">— orders are kept in Skyfly only until you connect one</span><% } %></dd>
+      <dt>Last successful copy</dt><dd><%= lastSync ? formatDate(lastSync) : 'None yet' %></dd>
+      <dt>Copied</dt><dd><a href="<%= base %>/orders?sheet=synced"><%= count.synced || 0 %></a></dd>
+      <dt>Waiting</dt><dd><a href="<%= base %>/orders?sheet=pending"><%= count.pending || 0 %></a> <span class="muted">(new orders are copied about 3 minutes after they arrive)</span></dd>
+      <dt>Failed</dt><dd><a href="<%= base %>/orders?sheet=failed"><strong><%= count.failed || 0 %></strong></a><% if (count.failed) { %> <span class="muted">— retried automatically</span><% } %></dd>
+      <dt>Not copied</dt><dd><a href="<%= base %>/orders?sheet=skipped"><%= count.skipped || 0 %></a> <span class="muted">(placed before automatic copying, or no spreadsheet set)</span></dd>
+    </dl>
+    <div class="row" style="margin-top:12px">
+      <% if (count.failed) { %><form method="post" action="<%= base %>/google-sheets/retry-failed"><%- include('partials/csrf') %><button type="submit">Retry all failed now</button></form><% } %>
+      <a class="btn secondary" href="<%= base %>/orders/export.csv">Download all orders (CSV)</a>
+      <a class="btn secondary" href="<%= base %>/google-sheets/export.csv">Download in sheet columns (CSV)</a>
+    </div>
+  </div>
+
+  <h2 style="margin-top:28px">Connected spreadsheets</h2>
+  <% if (!connections.length) { %><div class="card empty"><p>No spreadsheet connected yet. Add one below.</p></div><% } %>
+  <% connections.forEach((c) => { const isDefault = String(c.id) === String(defaultId); const [pillClass, pillText] = statusPill[c.check_status]; %>
+  <div class="card" id="sheet-<%= c.id %>">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0"><%= c.name %> <% if (isDefault) { %><span class="pill confirmed">Default</span><% } %> <span class="pill <%= pillClass %>"><%= pillText %></span></h2>
+      <div class="row">
+        <% if (c.spreadsheet_url) { %><a class="btn secondary" href="<%= c.spreadsheet_url %>" target="_blank" rel="noopener noreferrer">Open spreadsheet ↗</a><% } %>
+        <a class="btn secondary" href="<%= base %>/google-sheets/export.csv?connection=<%= c.id %>">Download its rows (CSV)</a>
+      </div>
+    </div>
+    <dl class="kv" style="margin-top:10px">
+      <dt>SheetDB API</dt><dd><code>…<%= c.api_hint %></code> <span class="muted"><%= encrypted ? '(stored encrypted)' : '' %></span></dd>
+      <dt>Tab</dt><dd><%= c.sheet_tab || 'First tab' %></dd>
+      <dt>Columns</dt><dd><%= c.check_detail || 'Not checked yet.' %><% if (c.checked_at) { %> <span class="muted">Checked <%= formatDate(c.checked_at) %>.</span><% } %></dd>
+      <dt>Last successful copy</dt><dd><%= c.last_success_at ? formatDate(c.last_success_at) : 'None yet' %></dd>
+      <% if (c.last_error && (!c.last_success_at || c.last_error_at > c.last_success_at)) { %><dt>Last error</dt><dd class="error" style="margin:0"><%= c.last_error %> <span class="muted">(<%= formatDate(c.last_error_at) %>)</span></dd><% } %>
+      <dt>Orders</dt><dd><%= c.synced %> copied<% if (c.failed) { %>, <a href="<%= base %>/orders?sheet=failed"><strong><%= c.failed %> failed</strong></a><% } %></dd>
+    </dl>
+    <% if (c.check_status === 'needs_columns') { %>
+      <div class="warn-box" style="margin-top:12px">
+        <p style="margin-top:0"><strong>The sheet needs Skyfly's column names in row 1.</strong> Skyfly can add a new tab called “<%= skyflyTab %>” with the right columns to this spreadsheet (your other tabs are not changed), or you can type these names into row 1 yourself:</p>
+        <p><code><%= columns.join('  ') %></code></p>
+        <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/setup"><%- include('partials/csrf') %><button type="submit">Add the “<%= skyflyTab %>” tab</button></form>
+      </div>
+    <% } %>
+    <div class="row" style="margin-top:12px">
+      <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/check"><%- include('partials/csrf') %><button class="secondary" type="submit">Check connection</button></form>
+      <% if (!isDefault) { %><form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/default"><%- include('partials/csrf') %><button class="secondary" type="submit">Make default</button></form><% } %>
+      <% if (c.failed) { %><form method="post" action="<%= base %>/google-sheets/retry-failed"><%- include('partials/csrf') %><input type="hidden" name="connection_id" value="<%= c.id %>"><button class="secondary" type="submit">Retry its failed copies</button></form><% } %>
+    </div>
+    <details style="margin-top:12px">
+      <summary>Edit or remove</summary>
+      <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>">
+        <%- include('partials/csrf') %>
+        <label for="name-<%= c.id %>">Name</label>
+        <input id="name-<%= c.id %>" name="name" value="<%= c.name %>" maxlength="120">
+        <label for="tab-<%= c.id %>">Tab name (empty = first tab)</label>
+        <input id="tab-<%= c.id %>" name="sheet_tab" value="<%= c.sheet_tab || '' %>" maxlength="100">
+        <label for="link-<%= c.id %>">Google Sheets link (for “Open spreadsheet”)</label>
+        <input id="link-<%= c.id %>" name="spreadsheet_url" value="<%= c.spreadsheet_url || '' %>" placeholder="https://docs.google.com/spreadsheets/d/…">
+        <label for="url-<%= c.id %>">New SheetDB API URL (leave empty to keep the saved one)</label>
+        <input id="url-<%= c.id %>" name="api_url" value="" autocomplete="off" placeholder="https://sheetdb.io/api/v1/…">
+        <p><button type="submit">Save</button></p>
+      </form>
+      <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/delete"><%- include('partials/csrf') %><button class="secondary" type="submit">Remove this connection</button> <span class="muted">Pages using it switch to the default. The spreadsheet itself is not changed.</span></form>
+    </details>
+  </div>
+  <% }) %>
+
+  <div class="card" id="pages">
+    <h2>Landing pages</h2>
+    <p class="muted" style="margin-top:0">Each page uses the default spreadsheet unless you pick its own here (for separate reporting). Newly imported pages use the default automatically.</p>
+    <% if (!pages.length) { %><p>No landing pages yet.</p><% } else { %>
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Page</th><th>Spreadsheet</th></tr></thead><tbody>
+    <% pages.forEach((p) => { %>
+      <tr><td><a href="<%= base %>/landing-pages/<%= p.id %>"><%= p.name %></a> <span class="muted"><code><%= p.slug %></code></span></td>
+        <td><form method="post" action="<%= base %>/google-sheets/pages/<%= p.id %>" class="row">
+          <%- include('partials/csrf') %>
+          <select name="sheet_connection_id" aria-label="Spreadsheet for <%= p.name %>">
+            <option value="">Default<%= defaultConn ? ` (${defaultConn.name})` : ' (none set)' %></option>
+            <% connections.forEach((c) => { %><option value="<%= c.id %>" <%= String(p.sheet_connection_id) === String(c.id) ? 'selected' : '' %>>Own sheet: <%= c.name %></option><% }) %>
+          </select>
+          <button class="secondary" type="submit">Save</button>
+        </form></td></tr>
+    <% }) %>
+    </tbody></table></div><% } %>
+  </div>
+
+  <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add">
+    <%- include('partials/csrf') %>
+    <h2>Connect a spreadsheet</h2>
+    <p class="muted" style="margin-top:0">Use the SheetDB API URL of the Google Sheet (in SheetDB: your API → “API URL”). It is stored encrypted and never shown again; anyone with it can add rows, so keep it private.</p>
+    <label for="new-name">Name</label>
+    <input id="new-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.name || '' %>">
+    <label for="new-url">SheetDB API URL</label>
+    <input id="new-url" name="api_url" required autocomplete="off" placeholder="https://sheetdb.io/api/v1/…">
+    <label for="new-tab">Tab name (optional, empty = first tab)</label>
+    <input id="new-tab" name="sheet_tab" maxlength="100" value="<%= form.sheet_tab || '' %>">
+    <label for="new-link">Google Sheets link (optional, for “Open spreadsheet”)</label>
+    <input id="new-link" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/…" value="<%= form.spreadsheet_url || '' %>">
+    <label style="color:var(--text)"><input type="checkbox" name="make_default" <%= connections.length ? '' : 'checked' %>> Make it the default spreadsheet</label>
+    <p><button type="submit">Connect</button></p>
+  </form>
+
+  <div class="card" id="recover">
+    <h2>Orders only in the Google Sheet</h2>
+    <p class="muted" style="margin-top:0">When a landing page can't reach Skyfly, the order still goes to the Google Sheet, marked <code>NOT IN SKYFLY</code> (or <code>SKYFLY NOT CONNECTED</code> before Skyfly was connected). Add them here so nothing is missed. Each row can be added once.</p>
+    <% if (!defaultConn && !connections.length) { %><p>Connect a spreadsheet first.</p>
+    <% } else if (!checked) { %><a class="btn secondary" href="<%= base %>/google-sheets?check=1#recover">Check the Google Sheet now</a>
+    <% } else if (fetchError) { %><p class="error">Could not read the Google Sheet: <%= fetchError %></p>
+    <% } else if (!rows.length) { %><p>No orders are waiting: every order is in Skyfly.</p>
+    <% } else { %>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>Placed</th><th>Customer</th><th>Package</th><th>Marked</th><th></th></tr></thead><tbody>
+      <% rows.forEach(({ row, recovered, prefill }) => { %>
+        <tr><td class="muted"><%= row.timestamp %></td><td><%= row.fullName %><br><span class="muted"><%= row.phone %></span></td><td><%= row.package %></td>
+          <td class="muted"><%= String(row.source || '').split('|').slice(1).join('|').trim() %></td>
+          <td><% if (recovered) { %><span class="pill delivered">In Skyfly</span> <% if (recovered.id) { %><a href="<%= base %>/orders/<%= recovered.id %>"><%= recovered.reference %></a><% } %>
+              <% } else { %><a class="btn secondary" href="<%= base %>/orders/new?<%= prefill %>">Review and add</a><% } %></td></tr>
+      <% }) %>
+      </tbody></table></div>
+    <% } %>
+  </div>
+</main>
+</body></html>

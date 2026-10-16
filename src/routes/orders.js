@@ -165,7 +165,10 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
   async function loadOrder(req) {
     if (!/^\d+$/.test(req.params.orderId)) return null;
     const { rows } = await pool.query(
-      `SELECT o.*, lp.name AS landing_page_name FROM orders o LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+      `SELECT o.*, lp.name AS landing_page_name, sc.name AS sheet_name, sc.spreadsheet_url AS sheet_link
+         FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+         LEFT JOIN sheet_connections sc ON sc.business_id = o.business_id
+              AND sc.id = coalesce(o.sheet_connection_id, lp.sheet_connection_id, b.default_sheet_connection_id)
         WHERE o.id = $1 AND o.business_id = $2`,
       [req.params.orderId, req.business.id],
     );

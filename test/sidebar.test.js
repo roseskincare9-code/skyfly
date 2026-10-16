@@ -28,7 +28,7 @@ after(() => pool.end());
 test('every sidebar item opens a working page and is highlighted there', async () => {
   const home = await owner.get(`/businesses/${id}`).expect(200);
   const links = [...home.text.matchAll(/<nav class="side-nav">([\s\S]*?)<\/nav>/g)][0][1].match(/href="([^"]+)"/g).map((h) => h.slice(6, -1));
-  assert.deepEqual(links.map((l) => l.replace(`/businesses/${id}`, '') || '/'), ['/', '/orders', '/products', '/customers', '/landing-pages', '/analytics', '/pixels', '/sheet-backup', '/api-keys', '/activity', '/settings']);
+  assert.deepEqual(links.map((l) => l.replace(`/businesses/${id}`, '') || '/'), ['/', '/orders', '/products', '/customers', '/landing-pages', '/analytics', '/pixels', '/google-sheets', '/api-keys', '/activity', '/settings']);
   for (const link of links) {
     const res = await owner.get(link).expect(200);
     assert.match(res.text, /<a href="[^"]+" class="on" aria-current=page>/, `${link} highlights its item`);

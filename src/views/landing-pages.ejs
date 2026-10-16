@@ -30,6 +30,7 @@
       <dt>External URL</dt><dd><% if (p.url) { %><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.url %></a><% } else { %>—<% } %></dd>
       <dt>Form key</dt><dd><code><%= p.slug %></code></dd>
       <dt>Products</dt><dd><%= p.product_names || 'None connected' %></dd>
+      <dt>Google Sheet</dt><dd><a href="<%= base %>/google-sheets#pages"><%= p.sheet_name ? p.sheet_name + (p.sheet_connection_id ? ' (own sheet)' : ' (default)') : 'None set' %></a></dd>
       <dt>Orders</dt><dd><%- include('partials/connection', { p, detected: p.code_detected }) %></dd>
     </dl>
     <div class="row" style="margin-top:12px">

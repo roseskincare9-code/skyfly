@@ -10,7 +10,7 @@ import { pixelRoutes } from './pixels.js';
 import { PERIODS, periodDays, periodSummary, dailySeries, statusBreakdown, topProducts } from '../services/analytics.js';
 import { pageEditorRoutes } from './pageEditor.js';
 import { insightRoutes } from './insights.js';
-import { sheetBackupRoutes } from './sheetBackup.js';
+import { googleSheetsRoutes } from './googleSheets.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
 // Everything under /businesses/:businessId is only visible to that business's owner.
@@ -108,7 +108,12 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   }));
 
   scoped.use('/orders', ordersRoutes({ pool, config, onPaid, onOrderSaved }));
-  scoped.use('/sheet-backup', sheetBackupRoutes({ pool, config, onOrderSaved }));
+  scoped.use('/google-sheets', googleSheetsRoutes({ pool, config, onOrderSaved }));
+  // Old address of the Google Sheets screen.
+  scoped.get(['/sheet-backup', '/sheet-backup/*'], (req, res) => {
+    const q = req.originalUrl.indexOf('?');
+    res.redirect(301, `${res.locals.base}/google-sheets${q >= 0 ? req.originalUrl.slice(q) : ''}`);
+  });
   scoped.use('/products', productRoutes({ pool }));
   scoped.use(insightRoutes({ pool }));
   scoped.use('/landing-pages', pageEditorRoutes({ pool, config }));

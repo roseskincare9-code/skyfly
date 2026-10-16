@@ -11,7 +11,8 @@ jobs:
       - name: SheetDB status, columns and test rows
         run: |
           S=https://sheetdb.io/api/v1/m111fq96ve953
-          for p in /keys /count; do echo "GET $p -> $(curl -s -o /tmp/b -w '%{http_code}' "$S$p") $(head -c 400 /tmp/b)"; echo; done
+          for p in /keys /count "/keys?sheet=Skyfly%20Orders" "/count?sheet=Skyfly%20Orders"; do echo "GET $p -> $(curl -s -o /tmp/b -w '%{http_code}' "$S$p") $(head -c 400 /tmp/b)"; echo; done
+          echo "Skyfly Orders tab, TEST ORDER rows -> $(curl -s "$S/search?fullName=TEST%20ORDER*&sheet=Skyfly%20Orders" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const r=JSON.parse(d);console.log(Array.isArray(r)?r.length+' rows: '+r.map(x=>x.source).join(' || '):JSON.stringify(r).slice(0,300))})")"
           echo "search by fullName=TEST ORDER* -> $(curl -s -o /tmp/t -w '%{http_code}' "$S/search?fullName=TEST%20ORDER*")"
           node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/t','utf8'));if(!Array.isArray(r)){console.log(JSON.stringify(r).slice(0,300));process.exit(0)}console.log(r.length,'test rows');for(const x of r)console.log(' ',x.timestamp,'|',x.source)"
           echo "search by source=*LR-XKH22K7* -> $(curl -s -o /tmp/s -w '%{http_code}' "$S/search?source=*LR-XKH22K7*") $(node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/s','utf8'));console.log(Array.isArray(r)?r.length+' rows: '+r.map(x=>x.source).join(' || '):JSON.stringify(r).slice(0,300))")"
