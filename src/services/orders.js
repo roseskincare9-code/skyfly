@@ -157,6 +157,12 @@ async function findByIdempotencyKey(client, businessId, key) {
   return rows[0];
 }
 
+// Checks placed as "TEST ORDER …" are test orders from the start: left out of sales
+// totals and never sent to ad platforms as purchases.
+export function isTestName(name) {
+  return /^\s*test order\b/i.test(String(name ?? ''));
+}
+
 // Inserts an order with its items and first history row inside an open transaction.
 async function insertOrder(client, o) {
   const inserted = await client.query(
@@ -164,8 +170,8 @@ async function insertOrder(client, o) {
        business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
        customer_name, phone, email, address, state, customer_notes, currency, total_minor,
        source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
      RETURNING id, reference, access_token, total_minor, currency`,
     [
@@ -176,6 +182,7 @@ async function insertOrder(client, o) {
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
       o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
       o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
+      isTestName(o.customer.name),
     ],
   );
   const order = inserted.rows[0];

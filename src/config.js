@@ -46,6 +46,8 @@ export function loadConfig() {
     // "true": anyone may sign up. "first": only while no account exists (creating the owner).
     allowSignup: ['true', 'first'].includes(process.env.ALLOW_SIGNUP),
     signupFirstOnly: process.env.ALLOW_SIGNUP === 'first',
+    // Owner-only deployments set up the Larose business automatically (AUTO_SETUP_LAROSE=false turns it off).
+    autoSetupLarose: process.env.ALLOW_SIGNUP === 'first' && process.env.AUTO_SETUP_LAROSE !== 'false',
     // Websites allowed to submit orders from the browser, e.g. https://roseskincare9-code.github.io
     allowedOrigins: list('ALLOWED_ORIGINS'),
     publicBaseUrl,

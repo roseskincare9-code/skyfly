@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
+import { ensureLaroseForOwner } from '../services/setup.js';
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -88,6 +89,7 @@ export function authRoutes({ pool, config }) {
       if (!rows[0]) {
         return res.status(409).render('signup', { error: 'An account with that email already exists.' });
       }
+      await ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
       req.session.regenerate((err) => {
         if (err) return next(err);
         req.session.userId = rows[0].id;
