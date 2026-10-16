@@ -53,7 +53,11 @@ const ready = await step('A. Larose Natural Skincare Nigeria is set up on the li
 if (!ready) process.exit(1);
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+// A normal phone browser identity: Meta's pixel script sends nothing for "HeadlessChrome".
+const ctx = await browser.newContext({
+  viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+});
 // Count pixel calls without sending them (no test data reaches Meta or TikTok).
 const pixelEvents = [];
 const pixelSeen = [];
