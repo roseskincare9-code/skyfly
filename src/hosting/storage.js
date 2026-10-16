@@ -22,6 +22,7 @@ export async function saveVersion(pool, { pageId, userId, upload }) {
   try {
     await client.query('BEGIN');
     for (const f of upload.files) {
+      if (!f.data) continue; // unchanged file from an earlier version: its content is already stored
       await client.query(
         'INSERT INTO page_blobs (sha256, size, data) VALUES ($1, $2, $3) ON CONFLICT (sha256) DO NOTHING',
         [f.sha256, f.size, f.data],

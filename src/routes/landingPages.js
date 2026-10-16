@@ -196,7 +196,7 @@ export function landingPageRoutes({ pool, config }) {
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const notice = { uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.' }[req.query.done] ?? null;
+    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.' }[req.query.done] ?? null;
     await renderPage(req, res, page, { notice });
   }));
 

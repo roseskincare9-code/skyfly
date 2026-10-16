@@ -2,7 +2,7 @@
 <div class="card">
   <h2>Hosting</h2>
   <% if (!hosting.enabled) { %>
-    <div class="warn-box">Hosting is not set up yet: <code>PAGES_BASE_URL</code> is missing. Pages need their own address, separate from the dashboard, so their scripts can never read your dashboard. See docs/SETUP.md.</div>
+    <div class="warn-box">You can upload, edit and preview pages here. <strong>Publishing</strong> on Skyfly needs a pages address (<code>PAGES_BASE_URL</code>, e.g. pages.yourbrand.com), separate from the dashboard so page scripts can never read your dashboard. Until then, keep the page live where it is now (e.g. GitHub Pages). See docs/SETUP.md.</div>
   <% } %>
   <% if (hosting.versions.length === 0) { %>
     <p class="muted">No files uploaded. This page is hosted elsewhere<%= page.url ? ' (' + page.url + ')' : '' %>. Upload a .zip or .html to host it on Skyfly.</p>
@@ -28,7 +28,9 @@
           <td><%= v.source_name %> <span class="muted">(<%= v.file_count %> files)</span></td>
           <td class="muted"><%= (v.total_bytes / 1024).toFixed(0) %> KB</td>
           <td><div class="row">
-            <% if (v.previewUrl) { %><a class="btn secondary" href="<%= v.previewUrl %>" target="_blank" rel="noopener">Preview</a><% } %>
+            <a class="btn secondary" href="<%= base %>/landing-pages/<%= page.id %>/versions/<%= v.id %>/preview">Preview</a>
+            <a class="btn secondary" href="<%= base %>/landing-pages/<%= page.id %>/versions/<%= v.id %>/edit">Edit</a>
+            <% if (v.previewUrl) { %><a class="btn secondary" href="<%= v.previewUrl %>" target="_blank" rel="noopener">Open on pages address</a><% } %>
             <% if (!isLive && hosting.enabled) { %>
               <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/publish"><%- include('csrf') %><input type="hidden" name="version_id" value="<%= v.id %>"><button type="submit">Publish this version</button></form>
             <% } %>

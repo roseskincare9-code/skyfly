@@ -7,6 +7,7 @@ import { landingPageRoutes } from './landingPages.js';
 import { settingsRoutes } from './settings.js';
 import { apiKeyRoutes } from './apiKeys.js';
 import { pixelRoutes } from './pixels.js';
+import { pageEditorRoutes } from './pageEditor.js';
 import { sheetBackupRoutes } from './sheetBackup.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 
@@ -97,6 +98,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.use('/orders', ordersRoutes({ pool, config, onPaid, onOrderSaved }));
   scoped.use('/sheet-backup', sheetBackupRoutes({ pool, config, onOrderSaved }));
   scoped.use('/products', productRoutes({ pool }));
+  scoped.use('/landing-pages', pageEditorRoutes({ pool, config }));
   scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
   scoped.use('/settings', settingsRoutes({ pool }));
   scoped.use('/api-keys', apiKeyRoutes({ pool }));

@@ -24,17 +24,28 @@ function notFound(res, message = 'Page not found') {
   res.status(404).type('text/plain').set('Cache-Control', 'no-store').send(message);
 }
 
-export function pageServer({ pool, config, transformHtml = null }) {
+// Preview of any version on the dashboard's own address, isolated by the browser sandbox
+// (no same-origin access: the page's scripts can't read the dashboard or its cookies).
+// Works without a separate pages domain. Ordering and tracking are off in previews.
+export function sandboxPreview({ pool, config, transformHtml = null }) {
   const router = Router();
-  // Looked up on every request (one indexed query) so unpublishing takes effect immediately.
-  async function pageByDomain(host) {
+  const send = makeSender(pool, transformHtml);
+  router.get(/^\/_sandbox\/(\d+)\/([^/]+)(\/.*)?$/, asyncHandler(async (req, res) => {
+    const versionId = Number(req.params[0]);
+    if (!verifyPreviewToken(config.sessionSecret, versionId, req.params[1])) return notFound(res, 'This preview link has expired. Open a new preview from the dashboard.');
+    if (req.params[2] === undefined) return res.redirect(301, `${req.path}/`);
     const { rows: [page] } = await pool.query(
-      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE custom_domain = $1', [host],
-    );
-    return page ?? null;
-  }
+      'SELECT lp.id, lp.slug, lp.business_id FROM page_versions v JOIN landing_pages lp ON lp.id = v.landing_page_id WHERE v.id = $1', [versionId]);
+    if (!page) return notFound(res);
+    res.set('Content-Security-Policy', "sandbox allow-scripts allow-forms allow-popups allow-modals; frame-ancestors 'self'");
+    res.set('Cross-Origin-Resource-Policy', 'same-origin');
+    await send(req, res, { page, versionId, rest: req.params[2], preview: true });
+  }));
+  return router;
+}
 
-  async function send(req, res, { page, versionId, rest, preview }) {
+function makeSender(pool, transformHtml) {
+  return async function send(req, res, { page, versionId, rest, preview }) {
     const { rows: [version] } = await pool.query('SELECT entry_path FROM page_versions WHERE id = $1', [versionId]);
     if (!version) return notFound(res);
     let filePath = decodePath(rest);
@@ -65,7 +76,20 @@ export function pageServer({ pool, config, transformHtml = null }) {
     res.set('ETag', etag);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.type(file.contentType).send(body);
+  };
+}
+
+export function pageServer({ pool, config, transformHtml = null }) {
+  const router = Router();
+  const send = makeSender(pool, transformHtml);
+  // Looked up on every request (one indexed query) so unpublishing takes effect immediately.
+  async function pageByDomain(host) {
+    const { rows: [page] } = await pool.query(
+      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE custom_domain = $1', [host],
+    );
+    return page ?? null;
   }
+
 
   // Signed preview of any version: /_preview/<versionId>/<token>/...
   router.get(/^\/_preview\/(\d+)\/([^/]+)(\/.*)?$/, asyncHandler(async (req, res) => {

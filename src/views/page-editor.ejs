@@ -1,0 +1,58 @@
+<%- include('partials/head', { title: 'Edit · ' + v.page_name }) %>
+<%- include('partials/nav') %>
+<main style="max-width:920px">
+  <p><a href="<%= base %>/landing-pages/<%= v.page_id %>">← <%= v.page_name %></a></p>
+  <h1>Edit page</h1>
+  <p class="muted">Editing the version from <%= formatDate(v.created_at) %>. Saving creates a <strong>new version</strong>; this one stays as it is. Only what you change is changed; everything else (design, scripts, tracking, order form code) stays exactly the same. <a href="<%= base %>/landing-pages/<%= v.page_id %>/versions/<%= v.id %>/preview">Preview this version</a></p>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form method="post" action="<%= base %>/landing-pages/<%= v.page_id %>/versions/<%= v.id %>/edit" enctype="multipart/form-data">
+    <%- include('partials/csrf') %>
+    <p><button type="submit">Save as new version</button></p>
+
+    <div class="card"><h2>Page title and description</h2>
+      <% if (a.title) { %><label for="title">Title (browser tab and Google)</label><input id="title" name="title" value="<%= a.title.value %>" maxlength="200"><% } %>
+      <% if (a.description) { %><label for="description">Description (Google and link previews)</label><textarea id="description" name="description" maxlength="400"><%= a.description.value %></textarea>
+      <% } else { %><p class="muted" style="font-size:13px">This page has no description tag.</p><% } %>
+    </div>
+
+    <% if (prices.length) { %><div class="card"><h2>Package prices</h2>
+      <p class="muted" style="font-size:13px;margin-top:0">The price the order form sends. Skyfly always charges its own product price; if the two differ, the order is refused as "price changed" and goes to the Google Sheet backup. Change the shown price text in the text section below too.</p>
+      <% prices.forEach((p) => { %>
+        <label for="price_<%= p.id %>"><%= p.label %> <span class="muted">(<code><%= p.product || 'no product code' %></code><% if (p.skyfly !== null) { %>, Skyfly price <%= p.skyfly.toLocaleString('en-NG') %><% if (String(p.skyfly) !== p.value) { %> <strong style="color:#B91C1C">— differs</strong><% } %><% } %>)</span></label>
+        <input id="price_<%= p.id %>" name="price_<%= p.id %>" value="<%= p.value %>" inputmode="decimal">
+      <% }) %>
+      <label style="color:var(--text)"><input type="checkbox" name="update_product_prices" checked> Also update these prices in Skyfly's Products</label>
+    </div><% } %>
+
+    <% if (a.colors.length) { %><div class="card"><h2>Colours</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+      <% a.colors.forEach((c) => { %><div><label for="color_<%= c.id %>"><code><%= c.name %></code></label>
+        <div class="row" style="flex-wrap:nowrap"><input type="color" value="<%= c.value.length === 4 ? '#' + c.value.slice(1).split('').map((x) => x + x).join('') : c.value.slice(0, 7) %>" aria-hidden="true" tabindex="-1" disabled style="width:44px;padding:0"><input id="color_<%= c.id %>" name="color_<%= c.id %>" value="<%= c.value %>" pattern="#[0-9a-fA-F]{3,8}"></div></div><% }) %>
+      </div></div><% } %>
+
+    <% if (a.images.length) { %><div class="card"><h2>Images</h2>
+      <p class="muted" style="font-size:13px;margin-top:0">Choose a new picture to replace one (JPG, PNG, GIF or WebP, up to 15 MB).</p>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+      <% a.images.forEach((img) => { %><div><img src="<%= imageBase %><%= (entryDir === '.' ? '' : entryDir + '/') + img.src %>" alt="<%= img.alt %>" style="width:100%;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
+        <label for="image_<%= img.id %>" class="muted" style="font-size:12px"><%= img.src %></label><input id="image_<%= img.id %>" name="image_<%= img.id %>" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></div><% }) %>
+      </div></div><% } %>
+
+    <% if (a.sections.length) { %><div class="card"><h2>Sections</h2>
+      <p class="muted" style="font-size:13px;margin-top:0">Change the numbers to reorder sections, or tick Remove.</p>
+      <input type="hidden" name="section_order_input" value="1">
+      <% a.sections.forEach((s, i) => { %><div class="row" style="flex-wrap:nowrap;margin:6px 0">
+        <input name="position_<%= s.id %>" value="<%= i + 1 %>" inputmode="numeric" style="width:64px" aria-label="Position of <%= s.label %>">
+        <span style="flex:1"><%= s.label %></span>
+        <label style="color:var(--text);margin:0"><input type="checkbox" name="remove_section_<%= s.id %>"> Remove</label></div><% }) %>
+    </div><% } %>
+
+    <div class="card"><h2>Text</h2>
+      <% groups.forEach((g) => { %><details><summary><strong><%= g.label %></strong> <span class="muted">(<%= g.texts.length %>)</span></summary>
+        <% g.texts.forEach((t) => { %><label for="text_<%= t.id %>" class="muted" style="font-size:12px"><%= t.tag %></label>
+          <% if (t.value.length > 70) { %><textarea id="text_<%= t.id %>" name="text_<%= t.id %>" rows="2"><%= t.value %></textarea><% } else { %><input id="text_<%= t.id %>" name="text_<%= t.id %>" value="<%= t.value %>"><% } %>
+        <% }) %></details><% }) %>
+    </div>
+    <p><button type="submit">Save as new version</button></p>
+  </form>
+</main>
+</body></html>
