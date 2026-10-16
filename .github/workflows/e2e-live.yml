@@ -1,5 +1,5 @@
-# Places ONE clearly labelled test order through the live Larose page and checks it
-# reached Skyfly once and the Google Sheet backup once. Run manually only.
+# Places ONE clearly labelled test order through the live Larose page (plus one labelled
+# fallback row) and checks Skyfly, the Google Sheet backup, pixel events and a restart. Manual only.
 name: Live end-to-end test (Larose -> Skyfly)
 on:
   workflow_dispatch:
@@ -23,3 +23,4 @@ jobs:
       - run: node test/e2e/live.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
