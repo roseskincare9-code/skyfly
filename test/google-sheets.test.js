@@ -181,7 +181,7 @@ describe('an empty spreadsheet (no column row)', () => {
 
     // The owner types the column row in Google Sheets. Nothing else: Skyfly notices and sends the waiting order.
     mock.tabs.get('emptysheet2|').columns = [...SHEET_COLUMNS];
-    await pool.query("UPDATE sheet_connections SET checked_at = now() - interval '11 minutes' WHERE name = 'Locked sheet'");
+    await pool.query("UPDATE sheet_connections SET checked_at = now() - interval '7 hours' WHERE name = 'Locked sheet'");
     assert.equal(await recheckConnections(pool, key), 1);
     assert.equal((await conn('Locked sheet')).check_status, 'ok');
     assert.equal((await orderRow(res.body.reference)).sheet_sync_status, 'pending', 'queued again right away');
@@ -191,6 +191,57 @@ describe('an empty spreadsheet (no column row)', () => {
     assert.equal(mock.rows('emptysheet2').length, 1);
     mock.state.allowCreateTab = true;
     await post(owner, `/google-sheets/connections/${(await conn('Main orders')).id}/default`);
+    // These test orders stay out of the following tests' sheet counts.
+    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped' WHERE customer_name LIKE 'Empty %'");
+  });
+});
+
+describe('saving SheetDB requests (free plans have a small monthly quota)', () => {
+  const callsTo = (id) => mock.state.requests.filter((r) => r.includes(`/api/v1/${id}`)).length;
+
+  test('after "request limit exceeded" (429), waiting orders make no more requests until the pause ends', async () => {
+    mock.makeEmpty('quotasheet1');
+    mock.tabs.get('quotasheet1|').columns = [...SHEET_COLUMNS];
+    await post(owner, '/google-sheets/connections', { name: 'Quota sheet', api_url: mock.url('quotasheet1'), make_default: 'on' });
+    mock.state.quota = true;
+    const a = await order('larosenigeria', 'Quota One');
+    await sync();
+    let o = await orderRow(a.body.reference);
+    assert.equal(o.sheet_sync_status, 'failed');
+    assert.match(o.sheet_sync_error, /HTTP 429/);
+    assert.ok((await conn('Quota sheet')).quota_until, 'sheet paused');
+    const before = callsTo('quotasheet1');
+    const b = await order('larosenigeria', 'Quota Two');
+    await sync();
+    assert.equal(callsTo('quotasheet1'), before, 'no request spent while paused');
+    assert.match((await orderRow(b.body.reference)).sheet_sync_error, /monthly request limit is used up/);
+    // Pause over and quota back: both go out, once each.
+    mock.state.quota = false;
+    await pool.query("UPDATE sheet_connections SET quota_until = now() - interval '1 minute' WHERE name = 'Quota sheet'");
+    await sync();
+    for (const ref of [a.body.reference, b.body.reference]) {
+      assert.equal((await orderRow(ref)).sheet_sync_status, 'synced');
+      assert.equal(mock.rows('quotasheet1').filter((r) => r.source.includes(ref)).length, 1);
+    }
+  });
+
+  test('a sheet known to lack its column row is not called for each waiting order', async () => {
+    const before = callsTo('emptysheet2');
+    mock.makeEmpty('emptysheet3');
+    mock.state.allowCreateTab = false;
+    await post(owner, '/google-sheets/connections', { name: 'Still empty', api_url: mock.url('emptysheet3'), make_default: 'on' });
+    const first = await order('larosenigeria', 'Empty One');
+    await sync(); // tries once (and the automatic tab once)
+    const after1 = callsTo('emptysheet3');
+    for (const name of ['Empty Two', 'Empty Three']) await order('larosenigeria', name);
+    await sync();
+    assert.equal(callsTo('emptysheet3'), after1, 'no requests for the other waiting orders');
+    assert.match((await orderRow(first.body.reference)).sheet_sync_error, /column names in row 1|could not add/);
+    assert.equal(callsTo('emptysheet2'), before);
+    mock.state.allowCreateTab = true;
+    await post(owner, `/google-sheets/connections/${(await conn('Main orders')).id}/default`);
+    // These test orders stay out of the following tests' sheet counts.
+    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped' WHERE customer_name LIKE 'Empty %'");
   });
 });
 

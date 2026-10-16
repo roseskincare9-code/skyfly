@@ -48,7 +48,7 @@
       <div class="warn-box" style="margin-top:12px">
         <p style="margin-top:0"><strong>The sheet needs Skyfly's column names in row 1.</strong> Open the spreadsheet and type these 12 names into row 1, one per cell from A1 to L1:</p>
         <p><code><%= columns.join('  ') %></code></p>
-        <p class="muted">Skyfly checks again every 10 minutes and then sends every waiting order by itself, with no duplicates. Nothing else to do.</p>
+        <p class="muted">Then click "Check connection": every waiting order is sent at once, with no duplicates. (Skyfly also checks by itself every 6 hours.)</p>
         <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/setup"><%- include('partials/csrf') %><button class="secondary" type="submit">Or let Skyfly add a “<%= skyflyTab %>” tab</button> <span class="muted">(paid SheetDB plans only; your other tabs are not changed)</span></form>
       </div>
     <% } %>

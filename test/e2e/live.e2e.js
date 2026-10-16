@@ -42,10 +42,10 @@ async function sheetSearch(text) {
 }
 async function waitForSheetRows(text, want, seconds = 120) {
   let rows = [];
-  for (let i = 0; i < seconds / 10; i += 1) {
+  for (let i = 0; i < seconds / 30; i += 1) {
     rows = await sheetSearch(text);
     if (rows.length >= want) break;
-    await sleep(10000);
+    await sleep(30000);
   }
   return rows;
 }
@@ -143,23 +143,26 @@ await step('F. Sending the same submission again returns the same order (no dupl
   return `HTTP 200, same reference ${data.reference}, replayed`;
 });
 
-await step('G. The Google Sheet (SheetDB) accepts rows: Skyfly\'s tab has the right column row', async () => {
-  // Skyfly copies the order ~3 minutes after it arrives; an empty sheet is repaired at that moment.
+// SheetDB's free plan has a small monthly request quota: check the column row once, and skip
+// the row checks when the sheet cannot take rows anyway.
+let sheetReady = false;
+await step('G. The Google Sheet (SheetDB) accepts rows: a tab has Skyfly\'s column row', async () => {
   const found = [];
-  for (let i = 0; i < 30 && !found.length; i += 1) {
-    for (const tab of TABS) {
-      const res = await fetch(tabUrl('/keys', tab));
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(body) && ['fullName', 'phone', 'package', 'source'].every((c) => body.includes(c))) found.push(`${tab || 'first tab'}: ${body.join(', ')}`);
-      else if (i === 29) found.length || console.log(`  ${tab || 'first tab'}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 160)}`);
-    }
-    if (!found.length) await sleep(10000);
+  const problems = [];
+  for (const tab of TABS) {
+    const res = await fetch(tabUrl('/keys', tab));
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(body) && ['fullName', 'phone', 'package', 'source'].every((c) => body.includes(c))) found.push(`${tab || 'first tab'}: ${body.join(', ')}`);
+    else problems.push(`${tab || 'first tab'}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 120)}`);
+    if (found.length) break;
   }
-  assert(found.length, 'no tab with Skyfly\'s columns (see above)');
+  assert(found.length, problems.join(' | '));
+  sheetReady = true;
   return found.join(' | ');
 });
 
 await step('G. The order is in the Google Sheet exactly once, even after Skyfly\'s own delayed copy has run', async () => {
+  assert(sheetReady, 'skipped: the sheet cannot take rows (see the check above)');
   const rows = await waitForSheetRows(reference, 1, 300);
   assert(rows.length >= 1, `no sheet row for ${reference}`);
   // Skyfly's server copy runs ~3 minutes after the order and must find the page's row instead of adding one.
@@ -199,6 +202,7 @@ if (process.env.RENDER_API_KEY) {
 }
 
 await step('G. Fallback: with Skyfly unreachable the order still reaches the Google Sheet, marked NOT IN SKYFLY', async () => {
+  assert(sheetReady, 'skipped: the sheet cannot take rows (see the check above)');
   const p2 = await ctx.newPage();
   let blocked = 0;
   await p2.route(`${SKYFLY}/api/public/orders`, (route) => { blocked += 1; return route.abort(); });

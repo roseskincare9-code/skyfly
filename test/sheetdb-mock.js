@@ -20,6 +20,7 @@ export async function startSheetDbMock() {
     req.on('end', () => {
       state.requests.push(`${req.method} ${req.url}`);
       if (state.down) return send(res, 503, { error: 'unavailable' });
+      if (state.quota) return send(res, 429, { error: 'Request limit exceeded. Upgrade your plan.' });
       const u = new URL(req.url, 'http://x');
       const [, id, action = ''] = u.pathname.match(/^\/api\/v1\/([A-Za-z0-9]+)(?:\/(keys|search|sheet))?$/) || [];
       if (!id) return send(res, 404, { error: 'not found' });

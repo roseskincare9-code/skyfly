@@ -12,6 +12,8 @@ export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/
 // The tab Skyfly creates when a connected spreadsheet has no column row yet.
 export const SKYFLY_TAB = 'Skyfly Orders';
 const RETRY_MINUTES = [1, 5, 15, 60, 180, 360, 720];
+// How long copies wait while a sheet can't take rows (free SheetDB plans have a small monthly request quota).
+const HOLD_MINUTES = 360;
 const MAX_ATTEMPTS = 20;
 const TIMEOUT_MS = 15000;
 
@@ -153,7 +155,7 @@ export async function setupColumns(pool, conn, { auto = false } = {}) {
     try { cols = await call(endpoint(tabConn, '/keys')); } catch { /* not there */ }
     if (!Array.isArray(cols) || !REQUIRED_COLUMNS.every((c) => cols.includes(c))) {
       throw new SheetError(err.status === 402
-        ? `Skyfly could not add a "${SKYFLY_TAB}" tab: the SheetDB plan does not allow adding tabs. Type the column names into row 1 of the sheet instead; Skyfly notices within 10 minutes and sends the waiting orders.`
+        ? `Skyfly could not add a "${SKYFLY_TAB}" tab: the SheetDB plan does not allow adding tabs. Type the column names into row 1 of the sheet instead, then click "Check connection" (Skyfly also checks every 6 hours) and the waiting orders are sent.`
         : `Skyfly could not add the "${SKYFLY_TAB}" tab: ${err.message}`, err.status);
     }
   }
@@ -214,6 +216,19 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = NULL, sheet_connection_id = NULL WHERE id = $1", [orderId]);
     return 'skipped';
   }
+  // The sheet is known not to accept rows (no column row, automatic fix already tried), or SheetDB's
+  // request quota is used up: wait for the periodic check instead of spending requests on every order.
+  const blocked = (conn.check_status === 'needs_columns' && (conn.auto_setup_at || conn.sheet_tab))
+    || (conn.quota_until && new Date(conn.quota_until) > new Date());
+  if (blocked) {
+    await pool.query(
+      `UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_error = $2, sheet_connection_id = $3,
+              sheet_sync_next_at = now() + make_interval(mins => $4) WHERE id = $1`,
+      [orderId, conn.check_status === 'needs_columns'
+        ? 'Waiting: the Google Sheet has no column names in row 1. Skyfly checks again every 6 hours and then sends this order.'
+        : 'Waiting: SheetDB\'s monthly request limit is used up. Skyfly tries again later.', conn.id, HOLD_MINUTES]);
+    return 'failed';
+  }
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
   const attempt = async () => {
     if (!conn.url) throw new SheetError(conn.urlError);
@@ -244,8 +259,11 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     await pool.query('UPDATE sheet_connections SET last_success_at = now() WHERE id = $1', [conn.id]);
     return 'synced';
   } catch (err) {
+    // Remember sheet-wide problems so the other waiting orders don't each spend requests on them.
+    if (err.status === 429) await pool.query("UPDATE sheet_connections SET quota_until = now() + make_interval(mins => $2) WHERE id = $1", [conn.id, HOLD_MINUTES]);
+    else if (isEmptySheetError(err)) await pool.query("UPDATE sheet_connections SET check_status = 'needs_columns', checked_at = now(), check_detail = 'The sheet is empty: row 1 has no column names, so SheetDB refuses every new row.' WHERE id = $1", [conn.id]);
     const attempts = o.sheet_sync_attempts + 1;
-    const wait = RETRY_MINUTES[Math.min(attempts - 1, RETRY_MINUTES.length - 1)];
+    const wait = err.status === 429 ? HOLD_MINUTES : RETRY_MINUTES[Math.min(attempts - 1, RETRY_MINUTES.length - 1)];
     const message = String(err.message || err).slice(0, 300);
     await pool.query(
       `UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_attempts = $2, sheet_sync_error = $3,
@@ -267,11 +285,13 @@ export async function syncDue(pool, { limit = 10, key = null } = {}) {
 }
 
 // Re-checks spreadsheets that are not working (e.g. an empty sheet waiting for its column
-// row) every 10 minutes. When one starts working, its business's failed copies go out at once.
-export async function recheckConnections(pool, key, { minutes = 10 } = {}) {
+// row) every 6 hours while copies are waiting. When one starts working, its business's failed copies go out at once.
+export async function recheckConnections(pool, key, { minutes = HOLD_MINUTES } = {}) {
   const { rows } = await pool.query(
-    `SELECT id, business_id FROM sheet_connections
-      WHERE check_status <> 'ok' AND (checked_at IS NULL OR checked_at < now() - make_interval(mins => $1))`, [minutes]);
+    `SELECT c.id, c.business_id FROM sheet_connections c
+      WHERE c.check_status <> 'ok' AND (c.checked_at IS NULL OR c.checked_at < now() - make_interval(mins => $1))
+        AND (c.quota_until IS NULL OR c.quota_until < now())
+        AND EXISTS (SELECT 1 FROM orders o WHERE o.business_id = c.business_id AND o.sheet_sync_status = 'failed')`, [minutes]);
   let fixed = 0;
   for (const r of rows) {
     const conn = await loadConnection(pool, key, r.business_id, r.id);
