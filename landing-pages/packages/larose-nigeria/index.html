@@ -533,6 +533,7 @@ footer strong{color:var(--pink2);}
       <div class="fg"><label>Quantity</label><select id="qty"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
       <div class="fg"><label>Notes (optional)</label><input type="text" id="nt" maxlength="500" placeholder="Landmark, best time to call, etc."></div>
       <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" id="skyfly_hp" tabindex="-1" autocomplete="off"></div>
+      <div id="skySum" aria-live="polite" style="display:none;background:#FFF8EC;border:1px solid #E8C989;color:#3D2A10;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.6;margin-bottom:12px"></div>
       <div id="skyErr" role="alert" style="display:none;background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.6;margin-bottom:12px"></div>
       <button class="subbtn" id="sb" onclick="doSub()">📲 Place My Order — Call/WhatsApp Me →</button>
       <p class="ffoot">🔒 Your details are 100% private. We never spam or sell your info.</p>
@@ -601,6 +602,21 @@ function skyShowError(msg,fields){
   box.style.display='block';
   box.scrollIntoView({behavior:'smooth',block:'center'});
 }
+// Order summary: package × quantity and the total, shown before the customer submits.
+function skyUpdateSummary(){
+  const sel=document.getElementById('pr'),q=document.getElementById('qty'),box=document.getElementById('skySum');
+  if(!sel||!q||!box)return;
+  const opt=sel.options[sel.selectedIndex],qty=parseInt(q.value,10)||1;
+  if(!sel.value||!opt||!opt.dataset.price){box.style.display='none';return;}
+  const name=opt.value.replace(/\s+–\s+₦[\d,]+$/,''),total=Number(opt.dataset.price)*qty;
+  box.textContent='';
+  const t=document.createElement('div');t.style.fontWeight='700';t.textContent='Your order';box.appendChild(t);
+  const l=document.createElement('div');l.textContent=name+' × '+qty;box.appendChild(l);
+  const s=document.createElement('div');s.style.fontWeight='700';s.textContent='Total: ₦'+total.toLocaleString('en-NG')+' · pay on delivery';box.appendChild(s);
+  box.style.display='block';
+}
+document.addEventListener('change',function(e){if(e.target&&(e.target.id==='pr'||e.target.id==='qty'))skyUpdateSummary();});
+if(typeof selectPkg==='function'){const skyPick=selectPkg;selectPkg=function(v){skyPick(v);skyUpdateSummary();};}
 let skyBusy=false;
 async function doSub(){
   if(skyBusy)return;
@@ -658,9 +674,7 @@ async function doSub(){
     btn.textContent='Order saved ✓';
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
     try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
-    // Transition period: keep the Google Sheet copy. Its "source" names the Skyfly
-    // reference, so a row marked "Skyfly LR-..." is the same order, not a duplicate.
-    await skySheet(order,'Skyfly '+data.reference,1500);
+    // Skyfly copies saved orders to the Google Sheet itself (with retries), so the page doesn't.
     location.href=data.confirmationUrl;
     return;
   }

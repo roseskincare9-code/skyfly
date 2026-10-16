@@ -125,7 +125,7 @@ def bubble_is_contact_only(text, what):
 
 def larose_nigeria(text):
     # Already submits to Skyfly with the Google Sheet as backup (live since commit 44d8337).
-    for needle in [f'const SKYFLY_API="{SKYFLY_API}"', 'const SKYFLY_PAGE="larosenigeria"', 'const SKYFLY_SHEET_FALLBACK=true', 'skySheet(order,\'Skyfly \'+data.reference']:
+    for needle in [f'const SKYFLY_API="{SKYFLY_API}"', 'const SKYFLY_PAGE="larosenigeria"', 'const SKYFLY_SHEET_FALLBACK=true', 'Skyfly copies saved orders to the Google Sheet itself', 'id="skySum"']:
         if needle not in text:
             sys.exit(f'[larose-nigeria] expected the Skyfly order code ({needle!r}); re-check the source')
     text, bubble = bubble_is_contact_only(text, 'larose-nigeria')
@@ -152,6 +152,7 @@ def larose_uk(text, nigeria_source):
     text = replace_once(text, '      <button class="subbtn" id="sb" onclick="doSub()">', '''      <div class="fg"><label>Quantity</label><select id="qty"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
       <div class="fg"><label>Notes (optional)</label><input type="text" id="nt" maxlength="500" placeholder="Postcode, best time to call, etc."></div>
       <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" id="skyfly_hp" tabindex="-1" autocomplete="off"></div>
+      <div id="skySum" aria-live="polite" style="display:none;background:#FFF8EC;border:1px solid #E8C989;color:#3D2A10;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.6;margin-bottom:12px"></div>
       <div id="skyErr" role="alert" style="display:none;background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.6;margin-bottom:12px"></div>
       <button class="subbtn" id="sb" onclick="doSub()">''', what)
     text = replace_once(text, '📲 Place My Order — Contact Me on WhatsApp →', '📲 Place My Order →', what)
@@ -167,6 +168,8 @@ def larose_uk(text, nigeria_source):
         ("  if(!st)missing.state='Select your state.';\n", ''),
         ('customer:{name:fn,phone:ph,', 'customer:{name:fn,phone:skyUkPhone(ph),'),
         ("source:'Larose Nigeria Landing Page 2026 | '", "source:'Larose Landing Page 2026 | '"),
+        ("const name=opt.value.replace(/\\s+–\\s+₦[\\d,]+$/,'')", "const name=opt.value.replace(/\\s+–\\s+£[\\d,]+$/,'')"),
+        ("'Total: ₦'+total.toLocaleString('en-NG')+' · pay on delivery'", "'Total: £'+total.toLocaleString('en-GB')+' · our team confirms and takes payment'"),
     ]:
         sub = replace_once(sub, old, new, what + ' order code')
     sub = sub.replace('// --- Skyfly order submission --------------------------------------------', '''// --- Skyfly order submission --------------------------------------------
@@ -175,7 +178,8 @@ function skyUkPhone(p){const d=String(p).replace(/[^\\d+]/g,'');if(/^07[1-9]\\d{
     old_start = text.index('async function doSub(){')
     old_end = text.index('</script>', old_start)
     text = text[:old_start] + sub + text[old_end:]
-    changes.append({'change': 'doSub(): saves the order in Skyfly first (one retry with the same submission ID), then copies it to the Google Sheet marked "Skyfly <reference>" and opens the Skyfly confirmation page. If Skyfly cannot save it, the order goes to the Google Sheet marked "NOT IN SKYFLY" and the original success box is shown. Validation errors are shown on the form.'})
+    changes.append({'change': 'Order summary (package × quantity, total in £, "our team confirms and takes payment" as the page already says) shown before submitting'})
+    changes.append({'change': 'doSub(): saves the order in Skyfly first (one retry with the same submission ID) and opens the Skyfly confirmation page; Skyfly copies it to the Google Sheet (marked "Skyfly <reference>"). If Skyfly cannot save it, the order goes to the Google Sheet marked "NOT IN SKYFLY" and the original success box is shown. Validation errors are shown on the form.'})
 
     # 4. Skyfly SDK (pixels configured in Skyfly) + InitiateCheckout, invisible.
     text = replace_once(text, '</body>', f'''<script src="{SKYFLY_API}/sdk/skyfly.js" data-page="larose-uk" async></script>

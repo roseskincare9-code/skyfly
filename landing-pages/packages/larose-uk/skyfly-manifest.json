@@ -15,7 +15,7 @@
   "assets": [
     {
       "file": "index.html",
-      "bytes": 50209
+      "bytes": 51473
     },
     {
       "file": "assets/images/image-01.jpg",
@@ -130,7 +130,10 @@
       "change": "Added Quantity and optional Notes fields, a hidden spam trap and an error box; submit button no longer mentions WhatsApp"
     },
     {
-      "change": "doSub(): saves the order in Skyfly first (one retry with the same submission ID), then copies it to the Google Sheet marked \"Skyfly <reference>\" and opens the Skyfly confirmation page. If Skyfly cannot save it, the order goes to the Google Sheet marked \"NOT IN SKYFLY\" and the original success box is shown. Validation errors are shown on the form."
+      "change": "Order summary (package × quantity, total in £, \"our team confirms and takes payment\" as the page already says) shown before submitting"
+    },
+    {
+      "change": "doSub(): saves the order in Skyfly first (one retry with the same submission ID) and opens the Skyfly confirmation page; Skyfly copies it to the Google Sheet (marked \"Skyfly <reference>\"). If Skyfly cannot save it, the order goes to the Google Sheet marked \"NOT IN SKYFLY\" and the original success box is shown. Validation errors are shown on the form."
     },
     {
       "change": "Added the Skyfly page script (loads pixels configured in Skyfly; the page's own Meta Pixel is not loaded twice)"
@@ -427,6 +430,11 @@
       {
         "tag": "div",
         "id": "formContent",
+        "class": null
+      },
+      {
+        "tag": "div",
+        "id": "skySum",
         "class": null
       },
       {

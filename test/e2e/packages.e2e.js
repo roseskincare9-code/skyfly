@@ -167,10 +167,13 @@ try {
     await shop.fill('#em', 'amara@example.co.uk');
     await shop.selectOption('#qty', '2');
     await shop.fill('#nt', 'NW1 6XE, after 5pm');
+    const summary = await shop.textContent('#skySum');
+    assert.match(summary, /Package 2 – The Power Glow \(2kg Soap \+ Free Glow Oil\) × 2/);
+    assert.match(summary, /Total: £240 · our team confirms and takes payment/);
   };
 
   let ukRef;
-  await step('UK: a double-tapped order is saved once in Skyfly (GBP, +44 phone), copied once to the Sheet, then confirmed', async () => {
+  await step('UK: a double-tapped order is saved once in Skyfly (GBP, +44 phone), queued for Skyfly's Google Sheet copy, then confirmed', async () => {
     await fillUk('Amara Okafor');
     // Two taps in the same instant, before the button can disable itself.
     await Promise.all([shop.waitForURL(/\/o\/LU-/, { timeout: 30000 }), shop.evaluate(() => { doSub(); doSub(); })]);
@@ -184,8 +187,8 @@ try {
     assert.deepEqual(o.items, [{ code: 'uk-package-2', qty: 2 }]);
     assert.equal(o.utm_source, 'tiktok');
     assert.equal(o.utm_campaign, 'uk-e2e');
-    assert.equal(sheetRows.length, 1, 'one Google Sheet row');
-    assert.match(sheetRows[0].source, new RegExp(`Skyfly ${ukRef}`));
+    assert.equal(sheetRows.length, 0, 'the page does not write the sheet for a saved order');
+    assert.equal(o.sheet_sync_status, 'pending', 'queued for Skyfly\'s own Google Sheet copy');
     assert.match(await shop.textContent('body'), new RegExp(ukRef));
     assert.match(await shop.textContent('body'), /£240/);
   });
@@ -195,8 +198,8 @@ try {
     await fillUk('Fallback Customer');
     await shop.click('#sb');
     await shop.waitForSelector('#sb2', { state: 'visible', timeout: 20000 });
-    assert.equal(sheetRows.length, 2);
-    assert.match(sheetRows[1].source, /NOT IN SKYFLY/);
+    assert.equal(sheetRows.length, 1, "only the fallback row");
+    assert.match(sheetRows[0].source, /NOT IN SKYFLY/);
     assert.equal((await orders('larose-uk')).length, 1, 'no extra Skyfly order');
   });
 
@@ -211,7 +214,7 @@ try {
     await shop.unroute(`${SKYFLY}/api/public/orders`);
   });
 
-  await step('Nigeria: order buttons lead to the form; an order is saved once in Skyfly and once in the Sheet', async () => {
+  await step('Nigeria: order buttons lead to the form; an order is saved once in Skyfly (Skyfly copies it to the Sheet)', async () => {
     const before = sheetRows.length;
     await shop.goto(`${ORIGIN}/pkg/larose-nigeria/`);
     assert.equal(await shop.getAttribute('a:has-text("Order Now") >> nth=0', 'href'), '#order');
@@ -224,8 +227,7 @@ try {
     const rows = await orders('larosenigeria');
     assert.equal(rows.length, 1);
     assert.equal(Number(rows[0].total_minor), 51500 * 100);
-    assert.equal(sheetRows.length, before + 1);
-    assert.match(sheetRows.at(-1).source, new RegExp(`Skyfly ${rows[0].reference}`));
+    assert.equal(sheetRows.length, before, 'saved in Skyfly: no browser sheet row');
   });
 
   await step('no step opened WhatsApp', async () => assert.deepEqual(whatsappOpened, []));
