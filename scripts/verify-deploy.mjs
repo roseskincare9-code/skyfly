@@ -125,6 +125,18 @@ if (!url) {
     report(bad.status === 403, 'CORS: other websites refused', `HTTP ${bad.status}`);
     const anon = await get(`${url}/api/public/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     report(anon.status === 401, 'Order API refuses requests with no website or API key', `HTTP ${anon.status}`);
+
+    // Client workspaces release (read-only checks; nothing is created).
+    const unsub = await get(`${url}/u/${'0'.repeat(64)}`);
+    const workspacesLive = unsub.status === 404 && unsub.text.includes('unsubscribe link is not valid');
+    report(null, 'Client workspaces / email automations release', workspacesLive ? 'live' : 'not deployed yet');
+    if (workspacesLive) {
+      const admin = await get(`${url}/admin`);
+      report(admin.status === 302 && /\/login$/.test(admin.headers.get('location') || ''), 'Platform admin requires sign-in', `HTTP ${admin.status} → ${admin.headers.get('location')}`);
+      report(signup.status === 404, 'Client sign-up closed (invitation only)', `HTTP ${signup.status}`);
+      const badKey = await get(`${url}/api/public/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer sky_${'x'.repeat(32)}` }, body: '{}' });
+      report(badKey.status === 401, 'Business API refuses unknown API keys', `HTTP ${badKey.status}`);
+    }
   }
 }
 
