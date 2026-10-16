@@ -9,7 +9,7 @@ import { startSheetDbMock } from './sheetdb-mock.js';
 import { createPool } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
-import { syncDue, SKYFLY_TAB, SHEET_COLUMNS } from '../src/services/sheets.js';
+import { syncDue, recheckConnections, SKYFLY_TAB, SHEET_COLUMNS } from '../src/services/sheets.js';
 
 const mock = await startSheetDbMock();
 const key = randomBytes(32);
@@ -169,19 +169,21 @@ describe('an empty spreadsheet (no column row)', () => {
     await sync();
     let o = await orderRow(res.body.reference);
     assert.equal(o.sheet_sync_status, 'failed');
-    assert.match(o.sheet_sync_error, /The sheet is empty \(no column names in row 1\)\. Skyfly could not add the "Skyfly Orders" tab/);
+    assert.match(o.sheet_sync_error, /The sheet is empty \(no column names in row 1\)\. Skyfly could not add a "Skyfly Orders" tab/);
     const tries = mock.state.requests.filter((r) => r.startsWith('POST /api/v1/emptysheet2/sheet')).length;
     await pool.query("UPDATE orders SET sheet_sync_next_at = now() WHERE id = $1", [o.id]);
     await sync();
     assert.equal(mock.state.requests.filter((r) => r.startsWith('POST /api/v1/emptysheet2/sheet')).length, tries, 'the automatic fix is tried once only');
 
-    // The owner adds the column row in Google Sheets, checks, and retries.
+    assert.match(o.sheet_sync_error, /plan does not allow adding tabs\. Type the column names into row 1/);
+
+    // The owner types the column row in Google Sheets. Nothing else: Skyfly notices and sends the waiting order.
     mock.tabs.get('emptysheet2|').columns = [...SHEET_COLUMNS];
-    const c = await conn('Locked sheet');
-    await post(owner, `/google-sheets/connections/${c.id}/check`);
+    await pool.query("UPDATE sheet_connections SET checked_at = now() - interval '11 minutes' WHERE name = 'Locked sheet'");
+    assert.equal(await recheckConnections(pool, key), 1);
     assert.equal((await conn('Locked sheet')).check_status, 'ok');
-    await post(owner, '/google-sheets/retry-failed', { connection_id: String(c.id) });
-    await sync();
+    assert.equal((await orderRow(res.body.reference)).sheet_sync_status, 'pending', 'queued again right away');
+    await syncDue(pool, { key });
     o = await orderRow(res.body.reference);
     assert.equal(o.sheet_sync_status, 'synced');
     assert.equal(mock.rows('emptysheet2').length, 1);

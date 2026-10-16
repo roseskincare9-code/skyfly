@@ -152,7 +152,9 @@ export async function setupColumns(pool, conn, { auto = false } = {}) {
     let cols = null;
     try { cols = await call(endpoint(tabConn, '/keys')); } catch { /* not there */ }
     if (!Array.isArray(cols) || !REQUIRED_COLUMNS.every((c) => cols.includes(c))) {
-      throw new SheetError(`Skyfly could not add the "${SKYFLY_TAB}" tab: ${err.message}`, err.status);
+      throw new SheetError(err.status === 402
+        ? `Skyfly could not add a "${SKYFLY_TAB}" tab: the SheetDB plan does not allow adding tabs. Type the column names into row 1 of the sheet instead; Skyfly notices within 10 minutes and sends the waiting orders.`
+        : `Skyfly could not add the "${SKYFLY_TAB}" tab: ${err.message}`, err.status);
     }
   }
   await pool.query('UPDATE sheet_connections SET sheet_tab = $2, updated_at = now() WHERE id = $1', [conn.id, SKYFLY_TAB]);
@@ -217,7 +219,8 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     if (!conn.url) throw new SheetError(conn.urlError);
     // Always check first: the landing page (older versions) or a slow earlier attempt may already have written this order.
     if (!(await alreadyInSheet(conn, o.reference))) {
-      await call(endpoint(conn), { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
+      const r = await call(endpoint(conn), { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
+      if (typeof r?.created === 'number' && r.created < 1) throw new SheetError('SheetDB answered but added no row.');
     }
   };
   try {
@@ -231,7 +234,7 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
       } catch (setupErr) {
         throw new SheetError(`The sheet is empty (no column names in row 1). ${setupErr.message}`);
       }
-      await requeue(pool, o.business_id, null, conn.id);
+      await requeue(pool, o.business_id); // every failed copy of this business goes out again now
       await attempt();
     }
     await pool.query(
@@ -263,6 +266,21 @@ export async function syncDue(pool, { limit = 10, key = null } = {}) {
   return rows.length;
 }
 
+// Re-checks spreadsheets that are not working (e.g. an empty sheet waiting for its column
+// row) every 10 minutes. When one starts working, its business's failed copies go out at once.
+export async function recheckConnections(pool, key, { minutes = 10 } = {}) {
+  const { rows } = await pool.query(
+    `SELECT id, business_id FROM sheet_connections
+      WHERE check_status <> 'ok' AND (checked_at IS NULL OR checked_at < now() - make_interval(mins => $1))`, [minutes]);
+  let fixed = 0;
+  for (const r of rows) {
+    const conn = await loadConnection(pool, key, r.business_id, r.id);
+    const { status } = await checkConnection(pool, conn);
+    if (status === 'ok') { fixed += 1; await requeue(pool, r.business_id); }
+  }
+  return fixed;
+}
+
 // New orders wait a few minutes before their first copy, so a row the landing page
 // writes itself (older page versions) is in the sheet before Skyfly checks for it.
 export const FIRST_COPY_DELAY_MINUTES = 3;
@@ -275,6 +293,7 @@ export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = c
     if (running) { again = true; return; }
     running = true;
     try {
+      await recheckConnections(pool, key);
       do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
     } catch (err) {
       log.error('Google Sheet sync error:', err.message);

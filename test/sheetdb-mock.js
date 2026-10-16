@@ -24,7 +24,7 @@ export async function startSheetDbMock() {
       const [, id, action = ''] = u.pathname.match(/^\/api\/v1\/([A-Za-z0-9]+)(?:\/(keys|search|sheet))?$/) || [];
       if (!id) return send(res, 404, { error: 'not found' });
       if (action === 'sheet' && req.method === 'POST') {
-        if (!state.allowCreateTab) return send(res, 402, { error: 'Creating sheets is not available in your plan' });
+        if (!state.allowCreateTab) return send(res, 402, { error: "You don't have an access for that method, upgrade your plan to use sheets (tabs) endpoints." });
         const { name, first_row: firstRow } = JSON.parse(body);
         if (tabs.has(`${id}|${name}`)) return send(res, 400, { error: 'Sheet already exists' });
         tabs.set(`${id}|${name}`, { columns: firstRow, rows: [] });

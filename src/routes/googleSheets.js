@@ -143,7 +143,10 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
   router.post('/connections/:id/check', asyncHandler(async (req, res) => {
     const conn = await loadConnection(pool, key, req.business.id, req.params.id);
     if (!conn) return notFound(res);
-    await checkConnection(pool, conn);
+    const wasOk = conn.check_status === 'ok';
+    const { status } = await checkConnection(pool, conn);
+    // Just fixed (e.g. the column row was added): send the waiting copies now.
+    if (status === 'ok' && !wasOk && await requeue(pool, req.business.id)) onOrderSaved();
     done(res, 'checked', `#sheet-${conn.id}`);
   }));
 
@@ -157,7 +160,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
       return render(req, res, { error: `${err.message} Add the column names to row 1 of the sheet yourself instead (listed below), then click "Check connection".`, status: 502 });
     }
     // Copies that failed because the sheet had no columns go out again, to the new tab.
-    if (await requeue(pool, req.business.id, null, conn.id)) onOrderSaved();
+    if (await requeue(pool, req.business.id)) onOrderSaved();
     await audit(pool, req, { action: 'google_sheets.columns_added', businessId: req.business.id, entityType: 'sheet_connection', entityId: conn.id, details: { tab: SKYFLY_TAB } });
     done(res, 'setup', `#sheet-${conn.id}`);
   }));
