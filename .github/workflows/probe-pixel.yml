@@ -1,0 +1,16 @@
+# Read-only: what the Meta Pixel on the live Larose page actually does (events intercepted, not sent).
+name: Probe Larose pixel
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: node scripts/probe-pixel.mjs
