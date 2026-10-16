@@ -3,7 +3,7 @@ import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
+import { setup, resetDatabase, csrfToken, signUp, ORIGIN, openClientSignup } from './helpers.js';
 import { seedLarose, LAROSE_META_PIXEL_ID } from '../src/scripts/seed-larose.js';
 import { parsePixelCode } from '../src/services/pixelCode.js';
 
@@ -78,6 +78,7 @@ before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
   businessId = await seedLarose(pool, 'owner@larose.test');
+  await openClientSignup(pool);
 });
 after(() => pool.end());
 
@@ -171,7 +172,7 @@ describe('installing pixels by ID or by pasted code', () => {
     await other.post('/businesses').type('form').send({ _csrf, name: 'Other Shop' }).expect(302);
     const { rows: [{ id: otherId }] } = await pool.query("SELECT id FROM businesses WHERE name = 'Other Shop'");
     await other.get(`/businesses/${businessId}/pixels`).expect(404);
-    const _csrf2 = await csrfToken(other, '/');
+    const _csrf2 = await csrfToken(other, '/?all=1');
     await other.post(`/businesses/${businessId}/pixels`).type('form')
       .send({ _csrf: _csrf2, provider: 'meta', install_method: 'code', pixel_code: META_CODE('222222222222222'), enabled: 'on' }).expect(404);
     assert.equal((await save({ provider: 'meta', install_method: 'code', pixel_code: META_CODE('222222222222222'), enabled: 'on', events: ['PageView'] }, other, otherId)).status, 302);

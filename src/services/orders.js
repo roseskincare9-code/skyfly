@@ -93,7 +93,9 @@ export function validateOrderInput(body) {
     ttclid: optional(a.ttclid, 300),
   };
 
-  return { landingPage, idempotencyKey, customer: { name, phone, email, address, state, notes }, items, attribution };
+  // Only true when the page asked and the customer ticked it; never assumed.
+  const marketingConsent = customer.marketingConsent === true && Boolean(email);
+  return { landingPage, idempotencyKey, customer: { name, phone, email, address, state, notes, marketingConsent }, items, attribution };
 }
 
 function fingerprint(input) {
@@ -105,7 +107,7 @@ function fingerprint(input) {
 async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
     `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain,
-            (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix
+            (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
     [slug],
@@ -170,8 +172,8 @@ async function insertOrder(client, o) {
        business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
        customer_name, phone, email, address, state, customer_notes, currency, total_minor,
        source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
      RETURNING id, reference, access_token, total_minor, currency`,
     [
@@ -182,7 +184,7 @@ async function insertOrder(client, o) {
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
       o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
       o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
-      isTestName(o.customer.name),
+      isTestName(o.customer.name), o.customer.marketingConsent === true,
     ],
   );
   const order = inserted.rows[0];

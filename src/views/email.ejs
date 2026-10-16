@@ -1,0 +1,88 @@
+<%- include('partials/head', { title: 'Email Automations' }) %>
+<%- include('partials/nav', { active: 'email' }) %>
+<main style="max-width:1000px">
+  <div class="page-head"><div><h1>Email Automations</h1><p>Your messages, when they go out, and what was sent. Emails are sent by your own email provider account.</p></div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (!ready) { %><div class="warn-box" role="status"><strong>Email sending is not set up yet.</strong> Nothing will be sent until you add your provider's API key and sender address in <a href="?tab=setup#setup">Sending setup</a>.</div><% } %>
+  <nav class="periods" aria-label="Sections" style="margin-bottom:16px">
+    <% [['automations', 'Automations'], ['templates', 'Message templates'], ['history', 'Sending history'], ['setup', 'Sending setup']].forEach(([k, l]) => { %>
+      <a href="?tab=<%= k %>" class="<%= tab === k ? 'on' : '' %>"><%= l %></a><% }) %>
+  </nav>
+
+  <% if (tab === 'automations') { %>
+    <% const statusPill = { draft: '', active: 'delivered', paused: 'pending', stopped: 'cancelled' }; %>
+    <% if (!automations.length) { %><div class="card empty"><p>No automations yet. Start from one below; you write or edit every message.</p></div><% } %>
+    <% automations.forEach((a) => { %>
+      <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/email/automations/<%= a.id %>">
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0"><%= a.name %></h2><span class="pill <%= statusPill[a.status] %>"><%= a.status[0].toUpperCase() + a.status.slice(1) %></span></div>
+        <p class="muted" style="margin:6px 0 0"><%= a.kind === 'processing' ? 'While an order stays in Processing' : 'After purchase' %> · <%= ANCHORS[a.anchor] %>:
+          <%= (a.steps || []).map((s) => `day ${s.delay}${s.purpose === 'marketing' ? ' (marketing)' : ''}`).join(', ') || 'no steps' %> · <%= a.sent %> sent · <%= a.queued %> queued</p>
+      </a>
+    <% }) %>
+    <form class="card" method="post" action="<%= base %>/email/automations">
+      <%- include('partials/csrf') %>
+      <h2>New automation</h2>
+      <label style="color:var(--text)"><input type="radio" name="preset" value="processing" checked> <strong>Order still processing</strong> — follow-ups on day 1, 2 and 3 while an order stays in Processing. They stop as soon as the order is Delivered, Cancelled or changes status.</label>
+      <label style="color:var(--text)"><input type="radio" name="preset" value="post_purchase"> <strong>Post-purchase follow-up</strong> — 7, 10 and 30 days after delivery: product tips, a check-in, and an optional offer (sent only to contacts who agreed to marketing).</label>
+      <p><button type="submit">Create as draft</button></p>
+    </form>
+  <% } %>
+
+  <% if (tab === 'templates') { %>
+    <div class="row" style="justify-content:flex-end;margin-bottom:12px"><a class="btn" href="<%= base %>/email/templates/new">New template</a></div>
+    <div class="card"><div class="table-wrap"><table class="stack"><thead><tr><th>Template</th><th>Subject</th><th>Used in</th></tr></thead><tbody>
+      <% templates.forEach((t) => { %><tr><td><a href="<%= base %>/email/templates/<%= t.id %>"><%= t.name %></a></td><td><%= t.subject %></td><td><%= t.used %> step<%= t.used === 1 ? '' : 's' %></td></tr><% }) %>
+      <% if (!templates.length) { %><tr><td colspan="3" class="muted">No templates yet.</td></tr><% } %>
+    </tbody></table></div></div>
+  <% } %>
+
+  <% if (tab === 'history') { %>
+    <div class="row" style="margin-bottom:12px">
+      <% [['', 'All'], ['queued', 'Queued'], ['sent', 'Sent'], ['failed', 'Failed'], ['skipped', 'Skipped'], ['cancelled', 'Cancelled']].forEach(([k, l]) => { %>
+        <a class="btn <%= filter === k ? '' : 'secondary' %>" href="?tab=history<%= k ? '&status=' + k : '' %>"><%= l %><%= k ? ` (${counts[k] || 0})` : '' %></a><% }) %>
+    </div>
+    <% if (counts.failed) { %><form class="card" method="post" action="<%= base %>/email/messages/retry"><%- include('partials/csrf') %>
+      <p style="margin-top:0"><strong><%= counts.failed %> failed.</strong> Retrying sends each one again only if the order and contact are still eligible. Emails whose outcome is unknown (the server stopped while sending) are left out unless you tick the box, so nobody gets two copies by accident.</p>
+      <label style="color:var(--text)"><input type="checkbox" name="confirm_unknown"> Also retry "outcome unknown" emails (I checked the provider's log: they were not delivered)</label>
+      <button type="submit">Retry failed emails</button></form><% } %>
+    <div class="card"><div class="table-wrap"><table class="stack"><thead><tr><th>When</th><th>To</th><th>Message</th><th>Status</th></tr></thead><tbody>
+      <% messages.forEach((m) => { %><tr>
+        <td class="muted"><%= formatDate(m.sent_at || m.scheduled_for) %></td>
+        <td><%= m.to_email %><% if (m.reference) { %><br><span class="muted"><%= m.reference %></span><% } %></td>
+        <td><%= m.subject || '—' %><br><span class="muted"><%= m.kind === 'test' ? 'Test email' : (m.automation_name || '') %><%= m.purpose === 'marketing' ? ' · marketing' : '' %></span></td>
+        <td><span class="pill <%= { sent: 'delivered', failed: 'cancelled', queued: 'pending', sending: 'pending' }[m.status] || '' %>"><%= m.status %></span>
+          <% if (m.reason) { %><br><span class="muted" style="font-size:12.5px"><%= m.reason %></span><% } %>
+          <% if (m.provider_message_id) { %><br><span class="muted" style="font-size:12px">Provider id <%= m.provider_message_id %></span><% } %></td></tr><% }) %>
+      <% if (!messages.length) { %><tr><td colspan="4" class="muted">Nothing here yet.</td></tr><% } %>
+    </tbody></table></div></div>
+  <% } %>
+
+  <% if (tab === 'setup') { %>
+    <form class="card" id="setup" method="post" action="<%= base %>/email/settings">
+      <%- include('partials/csrf') %>
+      <h2>Sending setup</h2>
+      <p class="muted" style="margin-top:0">Use your own account with one of these providers and a sender address on a domain you have verified with them. <%= settings && settings.verified_at ? 'Last test accepted ' + formatDate(settings.verified_at) + '.' : 'Not tested yet.' %></p>
+      <% if (!encryptionReady) { %><p class="error">The server has no encryption key, so API keys cannot be stored.</p><% } %>
+      <label for="provider">Provider</label>
+      <select id="provider" name="provider"><% Object.entries(PROVIDERS).forEach(([k, p]) => { %><option value="<%= k %>" <%= settings && settings.provider === k ? 'selected' : '' %>><%= p.label %></option><% }) %></select>
+      <label for="api_key">API key <%= settings && settings.api_key_hint ? `(saved: ${settings.api_key_hint}; leave empty to keep it)` : '' %></label>
+      <input id="api_key" name="api_key" type="password" autocomplete="off" placeholder="<%= Object.values(PROVIDERS).map((p) => p.keyHelp).join(' · ') %>">
+      <div class="two">
+        <div><label for="from_email">Sender email</label><input id="from_email" name="from_email" type="email" required value="<%= settings ? settings.from_email : '' %>" placeholder="orders@yourbrand.com"></div>
+        <div><label for="from_name">Sender name</label><input id="from_name" name="from_name" value="<%= settings ? settings.from_name || '' : business.name %>"></div>
+      </div>
+      <label for="reply_to">Reply-to email (optional)</label><input id="reply_to" name="reply_to" type="email" value="<%= settings ? settings.reply_to || '' : '' %>">
+      <label for="postal_address">Business postal address (shown in marketing emails)</label><input id="postal_address" name="postal_address" value="<%= settings ? settings.postal_address || '' : '' %>">
+      <p><button type="submit">Save</button></p>
+      <% if (settings && settings.last_error) { %><p class="error" style="margin:0">Last error: <%= settings.last_error %></p><% } %>
+    </form>
+    <% if (ready) { %><form class="card" method="post" action="<%= base %>/email/settings/test">
+      <%- include('partials/csrf') %>
+      <h2>Send a test email</h2>
+      <label for="to">To (your own address)</label><input id="to" name="to" type="email" required>
+      <p><button type="submit">Send test</button></p>
+    </form><% } %>
+  <% } %>
+</main>
+</body></html>

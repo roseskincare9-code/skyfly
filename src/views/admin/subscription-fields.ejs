@@ -1,0 +1,13 @@
+<div class="two">
+  <div><label for="subscription_status">Status</label><select id="subscription_status" name="subscription_status">
+    <% Object.entries(SUBSCRIPTION_LABELS).forEach(([k, l]) => { %><option value="<%= k %>" <%= (v.subscription_status || 'active') === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
+  <div><label for="price">Monthly price</label><div class="row" style="flex-wrap:nowrap">
+    <select name="subscription_currency" aria-label="Currency" style="width:auto"><% CURRENCIES.forEach((c) => { %><option <%= (v.subscription_currency || 'NGN') === c ? 'selected' : '' %>><%= c %></option><% }) %></select>
+    <input id="price" name="price" inputmode="decimal" value="<%= v.price ?? '' %>" placeholder="e.g. 15,000"></div></div>
+</div>
+<div class="two">
+  <div><label for="started_on">Start date</label><input id="started_on" name="started_on" type="date" value="<%= v.started_on || '' %>"></div>
+  <div><label for="expires_on">Paid until (expiry date)</label><input id="expires_on" name="expires_on" type="date" value="<%= v.expires_on || '' %>"></div>
+</div>
+<p class="muted" style="font-size:13px;margin:4px 0 0">The client keeps access through the whole expiry day in the business's time zone. Afterwards their workspace shows the renewal screen; nothing is deleted.</p>
+<label for="notes">Notes / payment reference (internal)</label><textarea id="notes" name="notes" maxlength="1000"><%= v.notes || '' %></textarea>

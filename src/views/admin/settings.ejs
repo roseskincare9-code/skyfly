@@ -1,0 +1,22 @@
+<%- include('../partials/head', { title: 'Platform settings' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main class="narrow">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Platform settings</h1>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form class="card" method="post" action="/admin/settings">
+    <%- include('../partials/csrf') %>
+    <label for="client_signup">New clients</label>
+    <select id="client_signup" name="client_signup">
+      <option value="invite_only" <%= settings.clientSignup === 'invite_only' ? 'selected' : '' %>>By invitation only (you create their business)</option>
+      <option value="open" <%= settings.clientSignup === 'open' ? 'selected' : '' %>>Anyone may sign up and create a business (starts as a trial)</option>
+    </select>
+    <label for="trial_days">Trial length for self sign-ups (days; 0 = locked until you activate it)</label>
+    <input id="trial_days" name="trial_days" type="number" min="0" max="90" value="<%= settings.trialDays %>">
+    <label for="renewal_instructions">Renewal instructions shown to expired clients</label>
+    <textarea id="renewal_instructions" name="renewal_instructions" maxlength="2000"><%= settings.renewalInstructions %></textarea>
+    <p><button type="submit">Save</button></p>
+  </form>
+</main>
+</body></html>

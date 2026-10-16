@@ -53,6 +53,8 @@ test('POST without a CSRF token is rejected', async () => {
 
 test('one-click Larose setup creates the business, packages and landing page once', async () => {
   const agent = await signUp(app, { name: 'Larose Owner', email: 'larose-owner@example.com' });
+  // The Larose setup is offered to the platform owner.
+  await pool.query("UPDATE users SET is_platform_admin = true WHERE email = 'larose-owner@example.com'");
   let home = await agent.get('/').expect(200);
   assert.match(home.text, /Set up Larose Natural Skincare Nigeria/);
   const _csrf = home.text.match(/name="_csrf" value="([^"]+)"/)[1];
@@ -70,5 +72,5 @@ test('one-click Larose setup creates the business, packages and landing page onc
   // Another account cannot take it over.
   const other = await signUp(app, { name: 'Other', email: 'not-larose@example.com' });
   const otherCsrf = await csrfToken(other, '/');
-  await other.post('/setup/larose').type('form').send({ _csrf: otherCsrf }).expect(409);
+  await other.post('/setup/larose').type('form').send({ _csrf: otherCsrf }).expect(404);
 });

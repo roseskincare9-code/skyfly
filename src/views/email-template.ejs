@@ -1,0 +1,43 @@
+<%- include('partials/head', { title: template.id ? template.name : 'New template' }) %>
+<%- include('partials/nav', { active: 'email' }) %>
+<main style="max-width:1000px">
+  <p><a href="<%= base %>/email?tab=templates">← Message templates</a></p>
+  <h1><%= template.id ? 'Edit template' : 'New template' %></h1>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="two">
+    <form class="card" method="post" action="<%= base %>/email/templates<%= template.id ? '/' + template.id : '' %>">
+      <%- include('partials/csrf') %>
+      <label for="name">Name (only you see it)</label><input id="name" name="name" required maxlength="120" value="<%= template.name %>">
+      <label for="subject">Subject</label><input id="subject" name="subject" required maxlength="200" value="<%= template.subject %>">
+      <label for="body">Message</label><textarea id="body" name="body" required rows="14"><%= template.body %></textarea>
+      <p class="muted" style="font-size:13px">Placeholders: <% Object.entries(PLACEHOLDERS).forEach(([k, d]) => { %><code title="<%= d %>">{{<%= k %>}}</code> <% }) %><br>
+        Keep order updates factual: only say an order was dispatched or delivered when that is true. An unsubscribe link is added to every email automatically.</p>
+      <p><button type="submit">Save</button></p>
+    </form>
+    <div>
+      <div class="card">
+        <h2>Preview</h2>
+        <% if (template.id) { %><form method="get" class="row" style="margin-bottom:10px">
+          <select name="order" aria-label="Preview with order"><option value="">Sample customer</option><% recent.forEach((o) => { %><option value="<%= o.id %>" <%= String(previewOrder) === String(o.id) ? 'selected' : '' %>><%= o.reference %> · <%= o.customer_name %></option><% }) %></select>
+          <button class="secondary" type="submit">Show</button></form><% } %>
+        <% if (preview) { %><p><strong><%= preview.subject %></strong></p><pre style="white-space:pre-wrap;font-family:inherit;margin:0"><%= preview.text %></pre><% } else { %><p class="muted">Save to see a preview.</p><% } %>
+      </div>
+      <% if (template.id) { %>
+      <form class="card" method="post" action="<%= base %>/email/templates/<%= template.id %>/test">
+        <%- include('partials/csrf') %>
+        <h2>Send a test</h2>
+        <% if (!ready) { %><p class="muted">Set up email sending first.</p><% } %>
+        <input type="hidden" name="order" value="<%= previewOrder || '' %>">
+        <label for="to">To (your own address, never a customer's)</label><input id="to" name="to" type="email" required>
+        <p><button type="submit" <%= ready ? '' : 'disabled' %>>Send test</button></p>
+      </form>
+      <div class="row">
+        <form method="post" action="<%= base %>/email/templates/<%= template.id %>/duplicate"><%- include('partials/csrf') %><button class="secondary" type="submit">Duplicate</button></form>
+        <form method="post" action="<%= base %>/email/templates/<%= template.id %>/delete"><%- include('partials/csrf') %><button class="secondary" type="submit">Delete</button></form>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</main>
+</body></html>

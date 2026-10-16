@@ -25,14 +25,15 @@ export async function seedLarose(pool, ownerEmail) {
   try {
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO businesses (owner_id, name, slug, currency, whatsapp_number, order_prefix, sheet_backup_url)
-       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2349049206695', 'LR', 'https://sheetdb.io/api/v1/m111fq96ve953')
+      `INSERT INTO businesses (owner_id, name, slug, currency, whatsapp_number, order_prefix, sheet_backup_url, subscription_status)
+       VALUES ($1, 'Larose Natural Skincare Nigeria', 'larose-nigeria', 'NGN', '+2349049206695', 'LR', 'https://sheetdb.io/api/v1/m111fq96ve953', 'internal')
        ON CONFLICT (slug) DO NOTHING`,
       [ownerId],
     );
     const biz = await client.query("SELECT id, owner_id FROM businesses WHERE slug = 'larose-nigeria'");
     if (biz.rows[0].owner_id !== ownerId) throw new Error('The larose-nigeria business belongs to a different user.');
     const businessId = biz.rows[0].id;
+    await client.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING", [businessId, ownerId]);
 
     for (const [i, p] of LAROSE_PACKAGES.entries()) {
       await client.query(

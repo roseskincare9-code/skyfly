@@ -173,7 +173,7 @@ try {
   };
 
   let ukRef;
-  await step('UK: a double-tapped order is saved once in Skyfly (GBP, +44 phone), queued for Skyfly's Google Sheet copy, then confirmed', async () => {
+  await step("UK: a double-tapped order is saved once in Skyfly (GBP, +44 phone), queued for Skyfly's Google Sheet copy, then confirmed", async () => {
     await fillUk('Amara Okafor');
     // Two taps in the same instant, before the button can disable itself.
     await Promise.all([shop.waitForURL(/\/o\/LU-/, { timeout: 30000 }), shop.evaluate(() => { doSub(); doSub(); })]);

@@ -1,0 +1,18 @@
+<%- include('partials/head', { title: 'Subscription' }) %>
+<%- include('partials/nav', { active: 'subscription' }) %>
+<main class="narrow">
+  <div class="page-head"><div><h1>Subscription</h1><p>Your Skyfly account for <%= business.name %>.</p></div></div>
+  <% const labels = { internal: 'Internal account', trial: 'Trial', active: 'Active', expired: 'Expired', locked: 'Locked' }; %>
+  <div class="card">
+    <dl class="kv">
+      <dt>Status</dt><dd><span class="pill <%= subscription.open ? 'delivered' : 'cancelled' %>"><%= labels[subscription.status] %></span></dd>
+      <% if (business.subscription_status !== 'internal') { %>
+      <dt>Monthly price</dt><dd><%= business.subscription_price_minor == null ? '—' : formatMoney(business.subscription_price_minor, business.subscription_currency) %></dd>
+      <dt>Started</dt><dd><%= business.subscription_started_on || '—' %></dd>
+      <dt>Paid until</dt><dd><%= business.subscription_expires_on ? business.subscription_expires_on + ' (end of day, ' + business.timezone + ')' : 'No end date' %></dd>
+      <% } %>
+    </dl>
+    <% if (business.subscription_status !== 'internal') { %><p class="muted" style="margin-bottom:0">Payments are confirmed by the Skyfly team, who then extend your date. Your orders and settings are always kept, even if the account expires.</p><% } %>
+  </div>
+</main>
+</body></html>

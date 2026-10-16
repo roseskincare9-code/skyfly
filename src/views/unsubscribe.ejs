@@ -1,0 +1,14 @@
+<%- include('partials/head', { title: 'Unsubscribe' }) %>
+<main class="auth">
+  <div class="card">
+    <% if (done) { %>
+      <h1 style="margin-top:0">You are unsubscribed</h1>
+      <p>You will not receive automated emails from <%= c.business_name %> any more.</p>
+    <% } else { %>
+      <h1 style="margin-top:0">Unsubscribe</h1>
+      <p>Stop automated emails from <strong><%= c.business_name %></strong>?</p>
+      <form method="post" action="/u/<%= token %>"><button type="submit">Unsubscribe</button></form>
+    <% } %>
+  </div>
+</main>
+</body></html>

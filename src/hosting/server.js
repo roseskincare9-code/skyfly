@@ -8,6 +8,7 @@ import { asyncHandler } from '../lib/http.js';
 import { readFile } from './storage.js';
 import { verifyPreviewToken } from './preview.js';
 import { isHtml } from './files.js';
+import { subdomainOf } from '../services/subdomains.js';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
 
@@ -105,6 +106,27 @@ export function pageServer({ pool, config, transformHtml = null }) {
 
   router.get('*', asyncHandler(async (req, res) => {
     const host = req.hostname.toLowerCase();
+
+    // Business subdomain: <sub>.<PLATFORM_DOMAIN>/<page-slug>/ serves only that business's pages.
+    const sub = host === config.pagesHost ? null : subdomainOf(host, config);
+    if (sub) {
+      const { rows: [b] } = await pool.query('SELECT id FROM businesses WHERE subdomain = $1', [sub]);
+      if (!b) return notFound(res, 'Site not found');
+      const m = req.path.match(/^\/([^/]+)(\/.*)?$/);
+      if (!m) {
+        // The root opens the business's only (or first) published page.
+        const { rows: [first] } = await pool.query(
+          "SELECT slug FROM landing_pages WHERE business_id = $1 AND status = 'active' AND published_version_id IS NOT NULL ORDER BY id LIMIT 1", [b.id]);
+        return first ? res.redirect(302, `/${first.slug}/`) : notFound(res);
+      }
+      if (!SLUG_RE.test(m[1])) return notFound(res);
+      if (m[2] === undefined) return res.redirect(301, `/${m[1]}/`);
+      const { rows: [page] } = await pool.query(
+        'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE slug = $1 AND business_id = $2', [m[1], b.id]);
+      if (!page || page.status !== 'active' || !page.published_version_id) return notFound(res);
+      return send(req, res, { page, versionId: page.published_version_id, rest: m[2], preview: false });
+    }
+
     const custom = host === config.pagesHost ? null : await pageByDomain(host);
 
     if (custom) {

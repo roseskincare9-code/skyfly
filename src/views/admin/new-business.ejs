@@ -1,0 +1,25 @@
+<%- include('../partials/head', { title: 'New client business' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main class="narrow">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>New client business</h1>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (link) { %>
+    <div class="notice" role="status"><strong><%= created.name %></strong> was created. <%= created.email %> has no Skyfly account yet: send them this invitation link (valid 14 days, shown once):<br><code style="word-break:break-all"><%= link %></code></div>
+    <p><a class="btn" href="/admin/businesses/<%= created.id %>">Manage <%= created.name %></a> <a class="btn secondary" href="/admin">Back to all businesses</a></p>
+  <% } else { %>
+  <form class="card" method="post" action="/admin/businesses">
+    <%- include('../partials/csrf') %>
+    <label for="name">Business name</label><input id="name" name="name" required maxlength="100" value="<%= values.name || '' %>">
+    <label for="owner_email">Client's email (becomes the owner)</label><input id="owner_email" name="owner_email" type="email" required value="<%= values.owner_email || '' %>">
+    <div class="two">
+      <div><label for="currency">Currency</label><select id="currency" name="currency"><% CURRENCIES.forEach((c) => { %><option <%= values.currency === c ? 'selected' : '' %>><%= c %></option><% }) %></select></div>
+      <div><label for="timezone">Time zone</label><input id="timezone" name="timezone" value="<%= values.timezone || 'Africa/Lagos' %>" required></div>
+    </div>
+    <h2>Subscription</h2>
+    <%- include('subscription-fields', { v: values }) %>
+    <p><button type="submit">Create business</button></p>
+  </form>
+  <% } %>
+</main>
+</body></html>

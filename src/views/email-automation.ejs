@@ -1,0 +1,68 @@
+<%- include('partials/head', { title: a.name }) %>
+<%- include('partials/nav', { active: 'email' }) %>
+<main style="max-width:1000px">
+  <p><a href="<%= base %>/email">← Email Automations</a></p>
+  <% const statusPill = { draft: '', active: 'delivered', paused: 'pending', stopped: 'cancelled' }; %>
+  <div class="page-head"><div><h1><%= a.name %> <span class="pill <%= statusPill[a.status] %>"><%= a.status %></span></h1>
+    <p><%= a.kind === 'processing' ? 'Trigger: the order is in Processing. Each email is sent only if the order is still in Processing at that moment.' : 'Trigger: after purchase. Each email checks the order again (not cancelled or returned) right before sending.' %>
+    <%= a.activated_at ? 'Only orders that reach the trigger after ' + formatDate(a.activated_at) + ' get these emails.' : 'Only orders that reach the trigger after you activate it get these emails.' %></p></div>
+    <div class="row">
+      <% const acts = { draft: [['activate', 'Activate']], active: [['pause', 'Pause'], ['stop', 'Stop']], paused: [['resume', 'Resume'], ['stop', 'Stop']], stopped: [] }[a.status]; %>
+      <% acts.forEach(([k, l]) => { %><form method="post" action="<%= base %>/email/automations/<%= a.id %>/status"><%- include('partials/csrf') %><input type="hidden" name="action" value="<%= k %>"><button class="<%= k === 'stop' ? 'secondary' : '' %>" type="submit"><%= l %></button></form><% }) %>
+      <form method="post" action="<%= base %>/email/automations/<%= a.id %>/duplicate"><%- include('partials/csrf') %><button class="secondary" type="submit">Duplicate</button></form>
+    </div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (!ready) { %><div class="warn-box">Email sending is not set up yet, so this automation can't be activated. <a href="<%= base %>/email?tab=setup">Sending setup</a></div><% } %>
+
+  <form class="card" method="post" action="<%= base %>/email/automations/<%= a.id %>">
+    <%- include('partials/csrf') %>
+    <div class="two">
+      <div><label for="name">Name</label><input id="name" name="name" value="<%= a.name %>" maxlength="120" required></div>
+      <div><label for="anchor">Count days from</label>
+        <% if (a.kind === 'processing') { %><input id="anchor" value="<%= ANCHORS.processing_since %>" disabled>
+        <% } else { %><select id="anchor" name="anchor"><% ['delivered_date', 'order_date'].forEach((k) => { %><option value="<%= k %>" <%= a.anchor === k ? 'selected' : '' %>><%= ANCHORS[k] %></option><% }) %></select><% } %></div>
+    </div>
+    <p><button class="secondary" type="submit">Save</button></p>
+  </form>
+
+  <h2>Schedule</h2>
+  <% steps.forEach((s) => { %>
+    <form class="card" method="post" action="<%= base %>/email/automations/<%= a.id %>/steps/<%= s.id %>">
+      <%- include('partials/csrf') %>
+      <div class="row" style="justify-content:space-between"><strong>Day <%= s.delay_days %> at <%= String(s.send_hour).padStart(2, '0') %>:00 (<%= business.timezone %>)</strong>
+        <span class="muted"><%= s.sent %> sent · <%= s.queued %> queued</span></div>
+      <p style="margin:6px 0"><a href="<%= base %>/email/templates/<%= s.template_id %>"><%= s.template_name %></a> — <span class="muted"><%= s.subject %></span></p>
+      <div class="row">
+        <label>Day <input name="delay_days" type="number" min="0" max="365" value="<%= s.delay_days %>" style="width:90px"></label>
+        <label>Hour <input name="send_hour" type="number" min="0" max="23" value="<%= s.send_hour %>" style="width:80px"></label>
+        <select name="template_id" aria-label="Template"><% templates.forEach((t) => { %><option value="<%= t.id %>" <%= t.id === s.template_id ? 'selected' : '' %>><%= t.name %></option><% }) %></select>
+        <% if (a.kind === 'post_purchase') { %><select name="purpose" aria-label="Type"><option value="operational" <%= s.purpose === 'operational' ? 'selected' : '' %>>Service (tips, check-in)</option><option value="marketing" <%= s.purpose === 'marketing' ? 'selected' : '' %>>Marketing (needs consent)</option></select><% } %>
+        <button class="secondary" type="submit">Save</button>
+        <button class="secondary" type="submit" name="remove" value="1">Remove</button>
+      </div>
+    </form>
+  <% }) %>
+  <% if (a.status !== 'stopped') { %>
+  <form class="card" method="post" action="<%= base %>/email/automations/<%= a.id %>/steps">
+    <%- include('partials/csrf') %>
+    <h2 style="margin-top:0">Add a step</h2>
+    <div class="row">
+      <label>Day <input name="delay_days" type="number" min="0" max="365" value="<%= a.kind === 'processing' ? 4 : 14 %>" style="width:90px"></label>
+      <label>Hour <input name="send_hour" type="number" min="0" max="23" value="10" style="width:80px"></label>
+      <select name="template_id" aria-label="Template" required><% templates.forEach((t) => { %><option value="<%= t.id %>"><%= t.name %></option><% }) %></select>
+      <% if (a.kind === 'post_purchase') { %><select name="purpose" aria-label="Type"><option value="operational">Service</option><option value="marketing">Marketing (needs consent)</option></select><% } %>
+      <button type="submit">Add</button>
+    </div>
+    <p class="muted" style="font-size:13px;margin-bottom:0"><a href="<%= base %>/email/templates/new">Write a new template</a> first if you need one.</p>
+  </form>
+  <% } %>
+
+  <h2>Sending history</h2>
+  <div class="card"><div class="table-wrap"><table class="stack"><thead><tr><th>When</th><th>Order</th><th>To</th><th>Status</th></tr></thead><tbody>
+    <% history.forEach((m) => { %><tr><td class="muted"><%= formatDate(m.sent_at || m.scheduled_for) %></td><td><%= m.reference || '—' %></td><td><%= m.to_email %></td>
+      <td><span class="pill <%= { sent: 'delivered', failed: 'cancelled', queued: 'pending' }[m.status] || '' %>"><%= m.status %></span><% if (m.reason) { %><br><span class="muted" style="font-size:12.5px"><%= m.reason %></span><% } %></td></tr><% }) %>
+    <% if (!history.length) { %><tr><td colspan="4" class="muted">Nothing sent or queued yet.</td></tr><% } %>
+  </tbody></table></div></div>
+</main>
+</body></html>

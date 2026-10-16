@@ -6,6 +6,7 @@ import { createOrder, OrderError, validateOrderInput } from '../services/orders.
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
 import { allKnownOrigins } from '../lib/origins.js';
 import { hashApiKey } from '../lib/apiKeys.js';
+import { subscriptionState } from '../services/tenancy.js';
 import { browserConfig } from '../services/pixels.js';
 
 // Used when a business has no WhatsApp number in Settings.
@@ -78,6 +79,12 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     try {
       const key = await apiKeyAuth(pool, req);
       if (key === false) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Invalid or revoked API key.' });
+      if (key) {
+        // The business API (API keys) is part of the client's subscription.
+        const { rows: [b] } = await pool.query(
+          'SELECT subscription_status, subscription_expires_on, (now() AT TIME ZONE timezone)::date::text AS local_today FROM businesses WHERE id = $1', [key.businessId]);
+        if (!subscriptionState(b).open) return res.status(402).json({ ok: false, error: 'SUBSCRIPTION_INACTIVE', message: 'This Skyfly account is not active. Contact the Skyfly team to renew.' });
+      }
       if (!key && !req.headers.origin) {
         return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Browser requests must come from a registered website; server requests need an API key.' });
       }
@@ -154,6 +161,35 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.render('confirmation', {
       order, items: items.rows, firstName, waUrl, maskedPhone: maskPhone(order.phone),
     });
+  }));
+
+  // Unsubscribe from a business's emails. The link's token identifies the contact. Opening the
+  // link shows a confirm button (so mail scanners don't unsubscribe people); mail apps use the
+  // one-click POST (List-Unsubscribe-Post).
+  const unsubscribe = async (token) => {
+    if (!/^[0-9a-f]{64}$/.test(String(token))) return null;
+    const { rows: [c] } = await pool.query(
+      `SELECT c.id, c.business_id, c.unsubscribed_at, b.name AS business_name FROM email_contacts c JOIN businesses b ON b.id = c.business_id
+        WHERE c.unsubscribe_token = $1`, [token]);
+    return c ?? null;
+  };
+  router.get('/u/:token', asyncHandler(async (req, res) => {
+    const c = await unsubscribe(req.params.token);
+    if (!c) return res.status(404).render('error', { message: 'This unsubscribe link is not valid.' });
+    res.set('Cache-Control', 'no-store');
+    res.render('unsubscribe', { c, token: req.params.token, done: Boolean(c.unsubscribed_at) });
+  }));
+  router.post('/u/:token', express.urlencoded({ extended: false, limit: '2kb' }), asyncHandler(async (req, res) => {
+    const c = await unsubscribe(req.params.token);
+    if (!c) return res.status(404).render('error', { message: 'This unsubscribe link is not valid.' });
+    if (!c.unsubscribed_at) {
+      await pool.query('UPDATE email_contacts SET unsubscribed_at = now(), marketing_consent = false, updated_at = now() WHERE id = $1', [c.id]);
+      // Anything still queued for this person is skipped.
+      await pool.query("UPDATE email_messages SET status = 'skipped', reason = 'Contact unsubscribed', updated_at = now() WHERE contact_id = $1 AND status = 'queued'", [c.id]);
+      await pool.query("INSERT INTO audit_log (business_id, action, entity_type, entity_id) VALUES ($1, 'contact.unsubscribed', 'contact', $2)", [c.business_id, String(c.id)]);
+    }
+    if (req.body?.['List-Unsubscribe'] === 'One-Click') return res.status(200).send('Unsubscribed');
+    res.render('unsubscribe', { c, token: req.params.token, done: true });
   }));
 
   return router;

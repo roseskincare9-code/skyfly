@@ -1,0 +1,28 @@
+<%- include('../partials/head', { title: 'Platform admin' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main>
+  <div class="page-head"><div><h1>Client businesses</h1><p>Every workspace on this Skyfly platform, its subscription and setup.</p></div>
+    <div class="row"><a class="btn secondary" href="/admin/settings">Platform settings</a><a class="btn" href="/admin/businesses/new">New client business</a></div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <div class="grid">
+    <% [['active', 'Active'], ['trial', 'Trial'], ['expired', 'Expired'], ['locked', 'Locked'], ['internal', 'Internal']].forEach(([k, l]) => { %>
+      <div class="stat"><div class="n"><%= counts[k] || 0 %></div><div class="l"><%= l %></div></div>
+    <% }) %>
+  </div>
+  <% if (soon.length) { %><div class="warn-box" role="status"><strong>Expiring within 7 days:</strong> <%= soon.map((b) => `${b.name} (${b.subscription_expires_on})`).join(', ') %></div><% } %>
+  <div class="card">
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Business</th><th>Owner</th><th>Subscription</th><th>Paid until</th><th>Setup</th><th></th></tr></thead><tbody>
+    <% businesses.forEach((b) => { %>
+      <tr>
+        <td><strong><%= b.name %></strong><br><span class="muted"><%= b.order_count %> orders<%= b.last_order_at ? ' · last ' + formatDate(b.last_order_at) : '' %></span></td>
+        <td><%= b.owners || '—' %><% if (b.open_invites) { %><br><span class="muted"><%= b.open_invites %> invitation pending</span><% } %></td>
+        <td><span class="pill <%= b.sub.open ? 'delivered' : 'cancelled' %>"><%= SUBSCRIPTION_LABELS[b.sub.status] %></span><br><span class="muted"><%= b.subscription_price_minor == null ? '' : formatMoney(b.subscription_price_minor, b.subscription_currency) + '/month' %></span></td>
+        <td><%= b.subscription_status === 'internal' ? '—' : (b.subscription_expires_on || 'No date') %></td>
+        <td><%= b.setup.done %>/<%= b.setup.total %><% if (b.setup.missing.length) { %><br><span class="muted">To do: <%= b.setup.missing.join(', ') %></span><% } %></td>
+        <td><div class="row"><a class="btn secondary" href="/admin/businesses/<%= b.id %>">Manage</a><a class="btn secondary" href="/businesses/<%= b.id %>">Open</a></div></td>
+      </tr>
+    <% }) %>
+    </tbody></table></div>
+  </div>
+</main>
+</body></html>

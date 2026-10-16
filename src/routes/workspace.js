@@ -12,8 +12,14 @@ import { pageEditorRoutes } from './pageEditor.js';
 import { insightRoutes } from './insights.js';
 import { googleSheetsRoutes } from './googleSheets.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
+import { audit } from '../lib/audit.js';
+import { workspaceAccess, subscriptionState, expireSubscriptions, platformSettings, can } from '../services/tenancy.js';
+import { teamRoutes } from './team.js';
+import { emailRoutes, emailContactRoutes } from './email.js';
 
-// Everything under /businesses/:businessId is only visible to that business's owner.
+// Everything under /businesses/:businessId is only visible to that business's members
+// (and to the platform owner, for setup and support). Checked on every request, together
+// with the subscription: an expired or locked client sees the renewal screen instead.
 export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = () => {} }) {
   const router = Router();
   router.use(requireAuth);
@@ -21,20 +27,39 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   const scoped = Router({ mergeParams: true });
   scoped.use(asyncHandler(async (req, res, next) => {
     if (!/^\d+$/.test(req.params.businessId)) return res.status(404).render('error', { message: 'Business not found.' });
-    const { rows } = await pool.query(
-      'SELECT * FROM businesses WHERE id = $1 AND owner_id = $2',
-      [req.params.businessId, req.session.userId],
-    );
-    if (!rows[0]) return res.status(404).render('error', { message: 'Business not found.' });
-    req.business = rows[0];
-    res.locals.business = rows[0];
-    res.locals.base = `/businesses/${rows[0].id}`;
+    const access = await workspaceAccess(pool, req.session.userId, req.params.businessId);
+    if (!access) return res.status(404).render('error', { message: 'Business not found.' });
+    const b = access.business;
+    req.business = b;
+    req.role = access.role;
+    res.locals.business = b;
+    res.locals.role = access.role;
+    res.locals.can = (permission) => can(access.role, permission);
+    res.locals.viaAdmin = access.viaAdmin;
+    res.locals.base = `/businesses/${b.id}`;
+    const sub = subscriptionState(b);
+    res.locals.subscription = sub;
+    if (sub.becameExpired) await expireSubscriptions(pool);
+    if (access.viaAdmin) {
+      // Support access is logged once per sign-in and business.
+      req.session.adminVisits ??= [];
+      if (!req.session.adminVisits.includes(b.id)) {
+        req.session.adminVisits.push(b.id);
+        await audit(pool, req, { action: 'admin.workspace_opened', businessId: b.id });
+      }
+    }
+    if (!sub.open && !access.isPlatformAdmin) {
+      const settings = await platformSettings(pool);
+      return res.status(402).render('account-locked', { sub, renewalInstructions: settings.renewalInstructions, active: 'subscription' });
+    }
     if (req.method === 'GET') {
-      const { rows: [p] } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE business_id = $1 AND status = 'pending' AND NOT is_test", [rows[0].id]);
+      const { rows: [p] } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE business_id = $1 AND status = 'pending' AND NOT is_test", [b.id]);
       res.locals.pendingCount = p.n;
     }
     next();
   }));
+  const need = (permission) => (req, res, next) => (can(req.role, permission)
+    ? next() : res.status(403).render('error', { message: 'Your role in this business does not include this section. Ask the business owner.' }));
 
   scoped.get('/', asyncHandler(async (req, res) => {
     const businessId = req.business.id;
@@ -98,29 +123,36 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
     });
   }));
 
-  scoped.get('/activity', asyncHandler(async (req, res) => {
+  scoped.get('/activity', need('settings'), asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
         WHERE a.business_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT 200`,
       [req.business.id],
     );
-    res.render('activity', { entries: rows, active: 'activity' });
+    res.render('activity', { entries: rows, active: 'settings' });
   }));
 
-  scoped.use('/orders', ordersRoutes({ pool, config, onPaid, onOrderSaved }));
-  scoped.use('/google-sheets', googleSheetsRoutes({ pool, config, onOrderSaved }));
+  scoped.use('/orders', need('orders'), ordersRoutes({ pool, config, onPaid, onOrderSaved }));
+  scoped.use('/google-sheets', need('integrations'), googleSheetsRoutes({ pool, config, onOrderSaved }));
   // Old address of the Google Sheets screen.
   scoped.get(['/sheet-backup', '/sheet-backup/*'], (req, res) => {
     const q = req.originalUrl.indexOf('?');
     res.redirect(301, `${res.locals.base}/google-sheets${q >= 0 ? req.originalUrl.slice(q) : ''}`);
   });
-  scoped.use('/products', productRoutes({ pool }));
+  scoped.use('/products', need('catalog'), productRoutes({ pool }));
+  scoped.use('/customers', need('orders'));
+  scoped.use('/analytics', need('catalog'));
   scoped.use(insightRoutes({ pool }));
-  scoped.use('/landing-pages', pageEditorRoutes({ pool, config }));
-  scoped.use('/landing-pages', landingPageRoutes({ pool, config }));
-  scoped.use('/settings', settingsRoutes({ pool }));
-  scoped.use('/api-keys', apiKeyRoutes({ pool }));
-  scoped.use('/pixels', pixelRoutes({ pool, config }));
+  scoped.use('/landing-pages', need('catalog'), pageEditorRoutes({ pool, config }));
+  scoped.use('/landing-pages', need('catalog'), landingPageRoutes({ pool, config }));
+  scoped.use('/settings', need('settings'), settingsRoutes({ pool }));
+  scoped.use('/api-keys', need('integrations'), apiKeyRoutes({ pool }));
+  scoped.use('/pixels', need('integrations'), pixelRoutes({ pool, config }));
+  scoped.use('/team', need('team'), teamRoutes({ pool, config }));
+  scoped.use('/email', need('marketing'), emailRoutes({ pool, config }));
+  scoped.use('/email-contacts', need('marketing'), emailContactRoutes({ pool }));
+  scoped.get('/subscription', (req, res) => res.render('subscription', { active: 'subscription' }));
+  scoped.get('/integrations', need('integrations'), (req, res) => res.render('integrations', { active: 'integrations' }));
 
   router.use('/businesses/:businessId', scoped);
   return router;

@@ -30,6 +30,9 @@ export function loadConfig() {
   }
 
   const pagesBaseUrl = (process.env.PAGES_BASE_URL || '').replace(/\/+$/, '');
+  // The platform's own domain once bought (e.g. skyfly.ng). Business subdomains live under it.
+  const platformDomain = (process.env.PLATFORM_DOMAIN || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '') || null;
+  if (platformDomain && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(platformDomain)) throw new Error('PLATFORM_DOMAIN must be a domain name like skyfly.ng');
   const hostOf = (u) => (u ? new URL(u).hostname : null);
   if (pagesBaseUrl && hostOf(pagesBaseUrl) === hostOf(publicBaseUrl)) {
     // Same host would let page scripts read dashboard data. Refuse to start.
@@ -53,6 +56,7 @@ export function loadConfig() {
     publicBaseUrl,
     // Where Skyfly-hosted landing pages are served, on a different host from the dashboard.
     pagesBaseUrl,
+    platformDomain,
     pagesHost: hostOf(pagesBaseUrl),
     dashboardHost: hostOf(publicBaseUrl),
     // Set automatically by Render; the CNAME target for custom domains.
@@ -63,5 +67,7 @@ export function loadConfig() {
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
     tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'Purchase',
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
+    // Local development only: send emails to a stand-in provider instead of the real one.
+    emailApiBase: isProduction ? null : (process.env.EMAIL_API_BASE || null),
   };
 }

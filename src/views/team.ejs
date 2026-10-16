@@ -1,0 +1,34 @@
+<%- include('partials/head', { title: 'Team' }) %>
+<%- include('partials/nav', { active: 'settings' }) %>
+<main class="narrow">
+  <p><a href="<%= base %>/settings">← Settings</a></p>
+  <h1>Team</h1>
+  <p class="muted">Owners can do everything, including managing the team. Managers can do everything except the team. Staff see the overview, orders and customers.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %><% if (link) { %><br><code style="word-break:break-all"><%= link %></code><% } %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="card">
+    <h2>Members</h2>
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Name</th><th>Role</th><th></th></tr></thead><tbody>
+    <% members.forEach((m) => { %>
+      <tr><td><%= m.name %><br><span class="muted"><%= m.email %></span></td>
+        <td><form method="post" action="<%= base %>/team/members/<%= m.id %>/role" class="row"><%- include('partials/csrf') %>
+          <select name="role" aria-label="Role of <%= m.name %>"><% ROLES.forEach((r) => { %><option value="<%= r %>" <%= m.role === r ? 'selected' : '' %>><%= ROLE_LABELS[r] %></option><% }) %></select>
+          <button class="secondary" type="submit">Save</button></form></td>
+        <td><form method="post" action="<%= base %>/team/members/<%= m.id %>/remove"><%- include('partials/csrf') %><button class="secondary" type="submit">Remove</button></form></td></tr>
+    <% }) %>
+    </tbody></table></div>
+  </div>
+  <% if (invites.length) { %><div class="card"><h2>Pending invitations</h2>
+    <% invites.forEach((i) => { %><div class="row" style="justify-content:space-between"><span><%= i.email %> · <%= ROLE_LABELS[i.role] %> <span class="muted">until <%= formatDate(i.expires_at) %></span></span>
+      <form method="post" action="<%= base %>/team/invites/<%= i.id %>/revoke"><%- include('partials/csrf') %><button class="secondary" type="submit">Revoke</button></form></div><% }) %>
+  </div><% } %>
+  <form class="card" method="post" action="<%= base %>/team/invite">
+    <%- include('partials/csrf') %>
+    <h2>Invite someone</h2>
+    <label for="email">Email</label><input id="email" name="email" type="email" required>
+    <label for="role">Role</label><select id="role" name="role"><% ROLES.forEach((r) => { %><option value="<%= r %>" <%= r === 'staff' ? 'selected' : '' %>><%= ROLE_LABELS[r] %></option><% }) %></select>
+    <p><button type="submit">Create invitation</button></p>
+    <p class="muted" style="font-size:13px;margin:0">You get a link to send them (by WhatsApp or email). It works once, for 14 days.</p>
+  </form>
+</main>
+</body></html>

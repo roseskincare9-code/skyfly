@@ -41,6 +41,12 @@ export function setup(overrides) {
   return { pool, config, app: createApp({ pool, config }) };
 }
 
+// Lets accounts other than the platform owner create their own business (platform setting).
+export async function openClientSignup(pool, trialDays = 7) {
+  await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
+  await pool.query('UPDATE platform_settings SET value = $1 WHERE key = $2', [JSON.stringify(trialDays), 'trial_days']);
+}
+
 export async function csrfToken(agent, path = '/login') {
   const res = await agent.get(path);
   const match = res.text.match(/name="_csrf" value="([^"]+)"/);

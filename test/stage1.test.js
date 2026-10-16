@@ -1,7 +1,7 @@
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
+import { setup, resetDatabase, csrfToken, signUp, ORIGIN, openClientSignup } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
 import { clearOriginCache } from '../src/lib/origins.js';
 
@@ -26,6 +26,7 @@ before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
   businessId = await seedLarose(pool, 'owner@larose.test');
+  await openClientSignup(pool);
   clearOriginCache();
 });
 after(() => pool.end());

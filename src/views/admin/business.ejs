@@ -1,0 +1,63 @@
+<%- include('../partials/head', { title: b.name }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main style="max-width:900px">
+  <p><a href="/admin">← Client businesses</a></p>
+  <div class="page-head"><div><h1><%= b.name %></h1><p><span class="pill <%= sub.open ? 'delivered' : 'cancelled' %>"><%= SUBSCRIPTION_LABELS[sub.status] %></span> · today in <%= b.timezone %>: <%= b.local_today %></p></div>
+    <a class="btn secondary" href="/businesses/<%= b.id %>">Open workspace</a></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %><% if (link) { %><br><code style="word-break:break-all"><%= link %></code><% } %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+  <% if (b.subscription_status !== 'internal') { %>
+  <form class="card" method="post" action="/admin/businesses/<%= b.id %>/renew">
+    <%- include('../partials/csrf') %>
+    <h2>Renew after payment</h2>
+    <p class="muted" style="margin-top:0">Only after you have confirmed the payment yourself. Sets the status to Active and restores access.</p>
+    <div class="two">
+      <div><label for="renew_expires">New paid-until date</label><input id="renew_expires" name="expires_on" type="date" value="<%= renewDefault %>" required></div>
+      <div><label for="reference">Payment reference (optional)</label><input id="reference" name="reference" maxlength="300" placeholder="e.g. bank transfer 16 Oct"></div>
+    </div>
+    <p><button type="submit">Renew</button></p>
+  </form>
+  <% } %>
+
+  <form class="card" method="post" action="/admin/businesses/<%= b.id %>/subscription">
+    <%- include('../partials/csrf') %>
+    <h2>Subscription details</h2>
+    <%- include('subscription-fields', { v: { subscription_status: b.subscription_status, subscription_currency: b.subscription_currency, price: b.subscription_price_minor == null ? '' : b.subscription_price_minor / 100, started_on: b.subscription_started_on, expires_on: b.subscription_expires_on, notes: b.subscription_notes } }) %>
+    <div class="row"><button type="submit">Save</button></div>
+  </form>
+  <div class="row" style="margin-bottom:18px">
+    <% if (sub.status !== 'locked') { %><form method="post" action="/admin/businesses/<%= b.id %>/lock"><%- include('../partials/csrf') %><button class="secondary" type="submit">Lock now</button></form><% } else { %>
+    <form method="post" action="/admin/businesses/<%= b.id %>/unlock"><%- include('../partials/csrf') %><button class="secondary" type="submit">Unlock</button></form><% } %>
+  </div>
+
+  <form class="card" method="post" action="/admin/businesses/<%= b.id %>/subdomain">
+    <%- include('../partials/csrf') %>
+    <h2>Business subdomain</h2>
+    <p class="muted" style="margin-top:0">Where this business's published Skyfly-hosted landing pages will open, e.g. <code><%= b.subdomain || 'glow' %>.<%= subdomain.platformDomain || 'your-domain.com' %>/page-name/</code>.</p>
+    <div class="row"><input name="subdomain" value="<%= b.subdomain || '' %>" placeholder="e.g. glow" aria-label="Subdomain" style="flex:1;min-width:160px" maxlength="32">
+      <span class="muted">.<%= subdomain.platformDomain || '(platform domain not set)' %></span><button class="secondary" type="submit">Save</button></div>
+    <p style="margin-bottom:0"><strong>Status:</strong> <%= subdomain.status ? subdomain.status.replace(/^[a-z_]+: /, '') : subdomain.state %><% if (subdomain.checkedAt) { %> <span class="muted">(checked <%= formatDate(subdomain.checkedAt) %>)</span><% } %></p>
+  </form>
+  <% if (subdomain.host) { %><form method="post" action="/admin/businesses/<%= b.id %>/subdomain/check" style="margin:-8px 0 18px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check DNS for <%= subdomain.host %></button></form><% } %>
+
+  <div class="card">
+    <h2>People</h2>
+    <% members.forEach((m) => { %><p style="margin:4px 0"><%= m.name %> · <%= m.email %> <span class="pill"><%= ROLE_LABELS[m.role] %></span></p><% }) %>
+    <% invites.forEach((i) => { %><p class="muted" style="margin:4px 0">Invited: <%= i.email %> (<%= ROLE_LABELS[i.role] %>) until <%= formatDate(i.expires_at) %></p><% }) %>
+    <form method="post" action="/admin/businesses/<%= b.id %>/invite" class="row" style="margin-top:12px">
+      <%- include('../partials/csrf') %>
+      <input name="email" type="email" required placeholder="email@client.com" aria-label="Email" style="flex:1;min-width:200px">
+      <select name="role" aria-label="Role"><% ROLES.forEach((r) => { %><option value="<%= r %>"><%= ROLE_LABELS[r] %></option><% }) %></select>
+      <button class="secondary" type="submit">Invite</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Subscription history</h2>
+    <% if (!history.length) { %><p class="muted">No changes yet.</p><% } %>
+    <% history.forEach((h) => { %><p style="margin:6px 0"><span class="muted"><%= formatDate(h.created_at) %></span> · <strong><%= h.action %></strong> <span class="muted"><%= h.by_email || 'automatic' %></span><br>
+      <span class="muted" style="font-size:12.5px"><%= h.details ? JSON.stringify(h.details) : '' %></span></p><% }) %>
+  </div>
+</main>
+</body></html>

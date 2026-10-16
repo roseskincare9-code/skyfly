@@ -1,0 +1,250 @@
+// Platform owner area: all client businesses, their subscriptions (set by hand after the
+// owner confirms payment; there is no payment gateway), setup progress, team invites and
+// platform settings. Only users with is_platform_admin may open it.
+import { Router } from 'express';
+import { requireAuth, slugify } from '../lib/auth.js';
+import { asyncHandler } from '../lib/http.js';
+import { audit } from '../lib/audit.js';
+import {
+  ROLES, ROLE_LABELS, SUBSCRIPTION_STATUSES, SUBSCRIPTION_LABELS, platformSettings, savePlatformSetting,
+  setupStatus, subscriptionState, expireSubscriptions,
+} from '../services/tenancy.js';
+import { inviteOrAdd, readInvite } from './team.js';
+import { normalizeSubdomain, subdomainHost, subdomainState } from '../services/subdomains.js';
+import { clearOriginCache } from '../lib/origins.js';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
+const CURRENCIES = ['NGN', 'GBP', 'USD', 'EUR'];
+const validDate = (s) => DATE_RE.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
+
+function addMonths(dateText, months) {
+  const [y, m, d] = dateText.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, last));
+  return target.toISOString().slice(0, 10);
+}
+
+export function adminRoutes({ pool, config }) {
+  const router = Router();
+  router.use('/admin', requireAuth, asyncHandler(async (req, res, next) => {
+    const { rows: [u] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
+    if (!u?.is_platform_admin) return res.status(404).render('error', { message: 'Page not found.' });
+    res.locals.adminArea = true;
+    next();
+  }));
+
+  const loadBusiness = async (id) => {
+    if (!/^\d+$/.test(String(id))) return null;
+    const { rows: [b] } = await pool.query(
+      `SELECT b.*, (now() AT TIME ZONE b.timezone)::date::text AS local_today FROM businesses b WHERE b.id = $1`, [id]);
+    return b ?? null;
+  };
+
+  router.get('/admin', asyncHandler(async (req, res) => {
+    await expireSubscriptions(pool);
+    const { rows } = await pool.query(
+      `SELECT b.id, b.name, b.slug, b.currency, b.timezone, b.created_at, b.subscription_status, b.subscription_price_minor,
+              b.subscription_currency, b.subscription_started_on, b.subscription_expires_on,
+              (now() AT TIME ZONE b.timezone)::date::text AS local_today,
+              (SELECT string_agg(u.email, ', ' ORDER BY u.email) FROM business_members m JOIN users u ON u.id = m.user_id
+                WHERE m.business_id = b.id AND m.role = 'owner') AS owners,
+              (SELECT count(*)::int FROM business_members m WHERE m.business_id = b.id) AS member_count,
+              (SELECT count(*)::int FROM business_invites i WHERE i.business_id = b.id AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS open_invites,
+              (SELECT count(*)::int FROM products p WHERE p.business_id = b.id) AS product_count,
+              (SELECT count(*)::int FROM landing_pages lp WHERE lp.business_id = b.id) AS page_count,
+              (SELECT count(*)::int FROM orders o WHERE o.business_id = b.id AND NOT o.is_test) AS order_count,
+              (SELECT max(o.created_at) FROM orders o WHERE o.business_id = b.id AND NOT o.is_test) AS last_order_at,
+              EXISTS (SELECT 1 FROM email_settings e WHERE e.business_id = b.id AND e.api_key_enc IS NOT NULL AND e.from_email IS NOT NULL) AS email_ready
+         FROM businesses b ORDER BY b.created_at`);
+    const businesses = rows.map((b) => ({ ...b, sub: subscriptionState(b), setup: setupStatus(b) }));
+    const counts = businesses.reduce((acc, b) => { acc[b.sub.status] = (acc[b.sub.status] || 0) + 1; return acc; }, {});
+    const inAWeek = (b) => new Date(Date.parse(`${b.local_today}T00:00:00Z`) + 7 * 864e5).toISOString().slice(0, 10);
+    const soon = businesses.filter((b) => b.sub.open && b.subscription_expires_on && b.subscription_expires_on <= inAWeek(b));
+    res.render('admin/index', { businesses, counts, soon, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+  }));
+
+  router.get('/admin/businesses/new', (req, res) => {
+    res.render('admin/new-business', { error: null, values: { currency: 'NGN', timezone: 'Africa/Lagos', subscription_status: 'active', role: 'owner' }, CURRENCIES, SUBSCRIPTION_LABELS, link: null });
+  });
+
+  function readSubscription(body, { requireAll = false } = {}) {
+    const errors = [];
+    const status = SUBSCRIPTION_STATUSES.includes(body.subscription_status) ? body.subscription_status : null;
+    if (!status) errors.push('Choose a subscription status.');
+    const priceText = String(body.price ?? '').replace(/[,\s₦£$€]/g, '');
+    const price = priceText === '' ? null : Number(priceText);
+    if (price !== null && (!Number.isFinite(price) || price < 0 || price > 1e9)) errors.push('Enter the monthly price as a number.');
+    const currency = CURRENCIES.includes(body.subscription_currency) ? body.subscription_currency : 'NGN';
+    const started = String(body.started_on ?? '').trim();
+    const expires = String(body.expires_on ?? '').trim();
+    if (started && !validDate(started)) errors.push('Start date must be a valid date.');
+    if (expires && !validDate(expires)) errors.push('Expiry date must be a valid date.');
+    if (started && expires && expires < started) errors.push('The expiry date is before the start date.');
+    if (requireAll && ['trial', 'active'].includes(status) && !expires) errors.push('Set an expiry date for a client subscription.');
+    const notes = String(body.notes ?? '').trim().slice(0, 1000) || null;
+    return { status, priceMinor: price === null ? null : Math.round(price * 100), currency, started: started || null, expires: expires || null, notes, errors };
+  }
+
+  router.post('/admin/businesses', asyncHandler(async (req, res) => {
+    const values = req.body;
+    const name = String(values.name ?? '').trim().slice(0, 100);
+    const currency = CURRENCIES.includes(values.currency) ? values.currency : null;
+    const timezone = TIMEZONES.has(values.timezone) ? values.timezone : null;
+    const sub = readSubscription(values, { requireAll: true });
+    const invite = readInvite({ email: values.owner_email, role: 'owner' });
+    const errors = [...(name ? [] : ['Enter the business name.']), ...(currency ? [] : ['Choose a currency.']), ...(timezone ? [] : ['Choose a valid time zone.']), ...sub.errors, ...invite.errors];
+    const again = (error, status = 400) => res.status(status).render('admin/new-business', { error, values, CURRENCIES, SUBSCRIPTION_LABELS, link: null });
+    if (errors.length) return again(errors.join(' '));
+    const slug = slugify(name);
+    const { rows: [b] } = await pool.query(
+      `INSERT INTO businesses (owner_id, name, slug, currency, timezone, subscription_status, subscription_price_minor, subscription_currency,
+                               subscription_started_on, subscription_expires_on, subscription_notes, subscription_updated_at)
+       VALUES ($1, $2, $3 || CASE WHEN EXISTS (SELECT 1 FROM businesses WHERE slug = $3) THEN '-' || substr(md5(random()::text), 1, 6) ELSE '' END,
+               $4, $5, $6, $7, $8, $9, $10, $11, now()) RETURNING id`,
+      [req.session.userId, name, slug || 'business', currency, timezone, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
+    await audit(pool, req, { action: 'admin.business_created', businessId: b.id, details: { name, status: sub.status, expires: sub.expires, price: sub.priceMinor } });
+    const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: invite.email, role: 'owner' });
+    if (result.link) {
+      return res.render('admin/new-business', { error: null, values: {}, CURRENCIES, SUBSCRIPTION_LABELS, link: result.link, created: { id: b.id, name, email: invite.email } });
+    }
+    res.redirect('/admin?done=created');
+  }));
+
+  async function renderBusiness(req, res, b, { error = null, notice = null, link = null, status = 200 } = {}) {
+    const [{ rows: members }, { rows: invites }, { rows: history }] = await Promise.all([
+      pool.query(`SELECT u.id, u.name, u.email, m.role FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 ORDER BY m.role = 'owner' DESC, u.email`, [b.id]),
+      pool.query(`SELECT id, email, role, expires_at FROM business_invites WHERE business_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() ORDER BY id DESC`, [b.id]),
+      pool.query(`SELECT a.action, a.details, a.created_at, u.email AS by_email FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+                   WHERE a.business_id = $1 AND (a.action LIKE 'subscription.%' OR a.action LIKE 'admin.%') ORDER BY a.id DESC LIMIT 30`, [b.id]),
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/business', {
+      b, sub: subscriptionState(b), members, invites, history, error, notice, link, ROLES, ROLE_LABELS, CURRENCIES, SUBSCRIPTION_LABELS,
+      subdomain: { platformDomain: config.platformDomain, host: subdomainHost(b, config), status: b.subdomain_status, checkedAt: b.subdomain_checked_at,
+        state: (await subdomainState(b, config)).message },
+      renewDefault: addMonths(b.subscription_expires_on && b.subscription_expires_on > b.local_today ? b.subscription_expires_on : b.local_today, 1),
+    });
+  }
+
+  router.get('/admin/businesses/:id', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const notice = { subdomain: 'Subdomain saved.', checked: 'DNS checked.', saved: 'Subscription saved.', renewed: 'Renewed. Client access is restored.', locked: 'Locked. The client sees the renewal screen; all data is kept.', unlocked: 'Unlocked.' }[req.query.done] ?? null;
+    await renderBusiness(req, res, b, { notice });
+  }));
+
+  async function saveSubscription(req, b, sub, action) {
+    await pool.query(
+      `UPDATE businesses SET subscription_status = $2, subscription_price_minor = $3, subscription_currency = $4, subscription_started_on = $5,
+              subscription_expires_on = $6, subscription_notes = $7, subscription_updated_at = now() WHERE id = $1`,
+      [b.id, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
+    await audit(pool, req, {
+      action, businessId: b.id, entityType: 'business', entityId: b.id,
+      details: {
+        before: { status: b.subscription_status, expires: b.subscription_expires_on, price: b.subscription_price_minor },
+        after: { status: sub.status, expires: sub.expires, price: sub.priceMinor }, reference: sub.notes ?? undefined,
+      },
+    });
+  }
+
+  router.post('/admin/businesses/:id/subscription', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const sub = readSubscription(req.body, { requireAll: true });
+    if (!sub.errors.length && ['trial', 'active'].includes(sub.status) && sub.expires < b.local_today) {
+      sub.errors.push(`The expiry date ${sub.expires} has already passed in ${b.timezone} (today is ${b.local_today}). Choose a later date, or set the status to Expired.`);
+    }
+    if (sub.errors.length) return renderBusiness(req, res, b, { error: sub.errors.join(' '), status: 400 });
+    await saveSubscription(req, b, sub, 'subscription.updated');
+    res.redirect(`/admin/businesses/${b.id}?done=saved`);
+  }));
+
+  // Renewal after the owner has confirmed payment: new expiry (default: one month after
+  // the current expiry, or after today if it has passed), status Active.
+  router.post('/admin/businesses/:id/renew', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const expires = String(req.body.expires_on ?? '').trim();
+    if (!validDate(expires) || expires < b.local_today) return renderBusiness(req, res, b, { error: 'Choose a new expiry date that is today or later.', status: 400 });
+    const reference = String(req.body.reference ?? '').trim().slice(0, 300);
+    await saveSubscription(req, b, {
+      status: 'active', priceMinor: b.subscription_price_minor, currency: b.subscription_currency,
+      started: b.subscription_started_on ?? b.local_today, expires,
+      notes: reference ? [b.subscription_notes, `${b.local_today}: renewed to ${expires} (${reference})`].filter(Boolean).join('\n').slice(-1000) : b.subscription_notes,
+    }, 'subscription.renewed');
+    res.redirect(`/admin/businesses/${b.id}?done=renewed`);
+  }));
+
+  router.post('/admin/businesses/:id/lock', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    await saveSubscription(req, b, { status: 'locked', priceMinor: b.subscription_price_minor, currency: b.subscription_currency, started: b.subscription_started_on, expires: b.subscription_expires_on, notes: b.subscription_notes }, 'subscription.locked');
+    res.redirect(`/admin/businesses/${b.id}?done=locked`);
+  }));
+
+  router.post('/admin/businesses/:id/unlock', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    if (b.subscription_expires_on && b.subscription_expires_on < b.local_today) {
+      return renderBusiness(req, res, b, { error: 'The expiry date has passed. Use "Renew" with a new expiry date instead.', status: 400 });
+    }
+    await saveSubscription(req, b, { status: 'active', priceMinor: b.subscription_price_minor, currency: b.subscription_currency, started: b.subscription_started_on, expires: b.subscription_expires_on, notes: b.subscription_notes }, 'subscription.unlocked');
+    res.redirect(`/admin/businesses/${b.id}?done=unlocked`);
+  }));
+
+  router.post('/admin/businesses/:id/invite', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const f = readInvite(req.body);
+    if (f.errors.length) return renderBusiness(req, res, b, { error: f.errors.join(' '), status: 400 });
+    const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: f.email, role: f.role });
+    if (result.added) return renderBusiness(req, res, b, { notice: `${f.email} was added as ${ROLE_LABELS[f.role]}.` });
+    return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
+  }));
+
+  // Business subdomain on the platform domain (reserved now, live only once the domain is set up).
+  router.post('/admin/businesses/:id/subdomain', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const { value, error } = normalizeSubdomain(req.body.subdomain, config);
+    if (error) return renderBusiness(req, res, b, { error, status: 400 });
+    try {
+      await pool.query('UPDATE businesses SET subdomain = $2, subdomain_status = NULL, subdomain_checked_at = NULL WHERE id = $1', [b.id, value]);
+    } catch (err) {
+      if (err.code === '23505') return renderBusiness(req, res, b, { error: 'Another business already uses that subdomain.', status: 409 });
+      throw err;
+    }
+    clearOriginCache();
+    await audit(pool, req, { action: 'admin.subdomain_changed', businessId: b.id, details: { from: b.subdomain, to: value } });
+    res.redirect(`/admin/businesses/${b.id}?done=subdomain`);
+  }));
+
+  router.post('/admin/businesses/:id/subdomain/check', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const result = await subdomainState(b, config, { check: true });
+    await pool.query('UPDATE businesses SET subdomain_status = $2, subdomain_checked_at = now() WHERE id = $1', [b.id, `${result.state}: ${result.message}`]);
+    res.redirect(`/admin/businesses/${b.id}?done=checked`);
+  }));
+
+  router.get('/admin/settings', asyncHandler(async (req, res) => {
+    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null });
+  }));
+
+  router.post('/admin/settings', asyncHandler(async (req, res) => {
+    const trialDays = Number(req.body.trial_days);
+    if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 90) {
+      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, error: 'Trial days must be a whole number from 0 to 90.' });
+    }
+    const signup = req.body.client_signup === 'open' ? 'open' : 'invite_only';
+    await savePlatformSetting(pool, 'client_signup', signup);
+    await savePlatformSetting(pool, 'trial_days', trialDays);
+    await savePlatformSetting(pool, 'renewal_instructions', String(req.body.renewal_instructions ?? '').trim().slice(0, 2000));
+    await audit(pool, req, { action: 'admin.settings_updated', details: { clientSignup: signup, trialDays } });
+    res.redirect('/admin/settings?done=1');
+  }));
+
+  return router;
+}

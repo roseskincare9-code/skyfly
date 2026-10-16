@@ -1,0 +1,40 @@
+<%- include('partials/head', { title: 'Email Contacts' }) %>
+<%- include('partials/nav', { active: 'contacts' }) %>
+<main style="max-width:1000px">
+  <div class="page-head"><div><h1>Email Contacts</h1><p>Customers with an email address. Marketing emails go only to contacts who agreed; anyone who unsubscribes gets no automated email.</p></div>
+    <a class="btn secondary" href="<%= base %>/email-contacts/export.csv">Download CSV</a></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="grid">
+    <div class="stat"><div class="n"><%= stats.total %></div><div class="l">Contacts</div></div>
+    <div class="stat"><div class="n"><%= stats.consent %></div><div class="l">Agreed to marketing</div></div>
+    <div class="stat"><div class="n"><%= stats.unsubscribed %></div><div class="l">Unsubscribed</div></div>
+    <div class="stat"><div class="n"><%= stats.suppressed %></div><div class="l">Suppressed</div></div>
+  </div>
+  <form class="card filters row" method="get">
+    <input name="q" value="<%= q %>" placeholder="Search email or name" aria-label="Search" style="flex:1;min-width:180px">
+    <select name="filter" aria-label="Filter"><% [['', 'All'], ['consent', 'Agreed to marketing'], ['no_consent', 'No marketing consent'], ['unsubscribed', 'Unsubscribed'], ['suppressed', 'Suppressed']].forEach(([k, l]) => { %><option value="<%= k %>" <%= filter === k ? 'selected' : '' %>><%= l %></option><% }) %></select>
+    <button class="secondary" type="submit">Show</button>
+  </form>
+  <div class="card"><div class="table-wrap"><table class="stack"><thead><tr><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
+    <% contacts.forEach((c) => { %><tr>
+      <td><%= c.email %><br><span class="muted"><%= c.name || '' %> · <%= c.source === 'order' ? 'from an order' : 'added by hand' %></span></td>
+      <td><% if (c.unsubscribed_at) { %><span class="pill cancelled">Unsubscribed</span><% } else if (c.suppressed_at) { %><span class="pill cancelled">Suppressed</span> <span class="muted"><%= c.suppressed_reason %></span><% } else if (c.marketing_consent) { %><span class="pill delivered">Marketing OK</span> <span class="muted"><%= c.consent_source %></span><% } else { %><span class="pill">Service emails only</span><% } %></td>
+      <td><form method="post" action="<%= base %>/email-contacts/<%= c.id %>" class="row"><%- include('partials/csrf') %>
+        <% if (!c.unsubscribed_at && !c.marketing_consent) { %><input name="consent_source" placeholder="How they agreed" aria-label="How they agreed" style="width:150px"><button class="secondary" name="action" value="consent">Record consent</button><% } %>
+        <% if (c.marketing_consent) { %><button class="secondary" name="action" value="withdraw">Withdraw consent</button><% } %>
+        <% if (!c.unsubscribed_at) { %><button class="secondary" name="action" value="unsubscribe">Unsubscribe</button><% } %>
+        <% if (c.suppressed_at) { %><button class="secondary" name="action" value="unsuppress">Unblock</button><% } else { %><button class="secondary" name="action" value="suppress">Block</button><% } %>
+      </form></td></tr><% }) %>
+    <% if (!contacts.length) { %><tr><td colspan="3" class="muted">No contacts yet. Customers who give an email at checkout appear here.</td></tr><% } %>
+  </tbody></table></div></div>
+  <form class="card" method="post" action="<%= base %>/email-contacts">
+    <%- include('partials/csrf') %>
+    <h2>Add a contact</h2>
+    <div class="two"><div><label for="email">Email</label><input id="email" name="email" type="email" required></div><div><label for="cname">Name</label><input id="cname" name="name"></div></div>
+    <label style="color:var(--text)"><input type="checkbox" name="marketing_consent"> They agreed to receive marketing emails</label>
+    <input name="consent_source" placeholder="How they agreed (required if ticked)" aria-label="How they agreed">
+    <p><button type="submit">Add</button></p>
+  </form>
+</main>
+</body></html>

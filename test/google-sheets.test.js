@@ -48,8 +48,10 @@ after(async () => { await pool.end(); mock.close(); });
 
 describe('connecting spreadsheets centrally', () => {
   test('Google Sheets is in the sidebar and the old address redirects', async () => {
+    const hub = await owner.get(`${base}/integrations`).expect(200);
+    assert.match(hub.text, new RegExp(`href="${base}/google-sheets"[^>]*><h2[^>]*>Google Sheets`));
     const page = await owner.get(`${base}/google-sheets`).expect(200);
-    assert.match(page.text, new RegExp(`href="${base}/google-sheets"[^>]*>[\\s\\S]{0,400}Google Sheets`));
+    assert.match(page.text, /class="on" aria-current=page>[\s\S]{0,300}Pixels &amp; Integrations/, 'highlighted under Pixels & Integrations');
     assert.match(page.text, /No spreadsheet connected yet/);
     const old = await owner.get(`${base}/sheet-backup?check=1`).expect(301);
     assert.equal(old.headers.location, `${base}/google-sheets?check=1`);
@@ -199,6 +201,7 @@ describe('business isolation', () => {
     other = await signUp(app, { email: 'other@shop.test' });
     const { rows: [u] } = await pool.query("SELECT id FROM users WHERE email = 'other@shop.test'");
     otherBiz = (await pool.query("INSERT INTO businesses (owner_id, name, slug, currency) VALUES ($1, 'Other shop', 'other-shop', 'NGN') RETURNING id", [u.id])).rows[0].id;
+    await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [otherBiz, u.id]);
     const p = (await pool.query("INSERT INTO products (business_id, code, name, price_minor) VALUES ($1, 'other-item', 'Other item', 500000) RETURNING id", [otherBiz])).rows[0].id;
     const lp = (await pool.query("INSERT INTO landing_pages (business_id, slug, name, status) VALUES ($1, 'other-page', 'Other page', 'active') RETURNING id", [otherBiz])).rows[0].id;
     await pool.query('INSERT INTO landing_page_products (landing_page_id, product_id) VALUES ($1, $2)', [lp, p]);

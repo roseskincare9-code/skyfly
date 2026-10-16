@@ -1,24 +1,26 @@
 <%
-  const tab = typeof active === 'undefined' ? '' : active;
+  const rawTab = typeof active === 'undefined' ? '' : active;
+  const tab = ({ pixels: 'integrations', sheet: 'integrations', apikeys: 'integrations', activity: 'settings', analytics: 'overview' })[rawTab] || rawTab;
   const hasBiz = typeof business !== 'undefined' && business;
   const user = typeof currentUser !== 'undefined' ? currentUser : null;
   const bizList = typeof userBusinesses !== 'undefined' ? userBusinesses : [];
   const pend = typeof pendingCount !== 'undefined' ? pendingCount : 0;
   const initials = (s) => String(s || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'S';
   const item = (key, href, icon, label, extra = '') => ({ key, href, icon, label, extra });
+  const allowed = (perm) => typeof can === 'function' ? can(perm) : true;
   const items = hasBiz ? [
-    item('overview', base, 'home', 'Dashboard'),
-    item('orders', base + '/orders', 'bag', 'Orders', pend ? `<span class="badge" title="${pend} pending">${pend}</span>` : ''),
-    item('products', base + '/products', 'box', 'Products'),
-    item('customers', base + '/customers', 'users', 'Customers'),
-    item('pages', base + '/landing-pages', 'layout', 'Landing Pages'),
-    item('analytics', base + '/analytics', 'chart', 'Analytics'),
-    item('pixels', base + '/pixels', 'target', 'Pixels & Tracking'),
-    item('sheet', base + '/google-sheets', 'sheet', 'Google Sheets'),
-    item('apikeys', base + '/api-keys', 'key', 'API Keys'),
-    item('activity', base + '/activity', 'clock', 'Activity Log'),
-    item('settings', base + '/settings', 'gear', 'Settings'),
-  ] : [];
+    item('overview', base, 'home', 'Overview'),
+    allowed('orders') && item('orders', base + '/orders', 'bag', 'Orders', pend ? `<span class="badge" title="${pend} pending">${pend}</span>` : ''),
+    allowed('catalog') && item('products', base + '/products', 'box', 'Products'),
+    allowed('orders') && item('customers', base + '/customers', 'users', 'Customers'),
+    allowed('catalog') && item('pages', base + '/landing-pages', 'layout', 'Landing Pages'),
+    allowed('marketing') && item('contacts', base + '/email-contacts', 'mail', 'Email Contacts'),
+    allowed('marketing') && item('email', base + '/email', 'send', 'Email Automations'),
+    allowed('integrations') && item('integrations', base + '/integrations', 'target', 'Pixels & Integrations'),
+    item('subscription', base + '/subscription', 'card', 'Subscription'),
+    allowed('settings') && item('settings', base + '/settings', 'gear', 'Settings'),
+  ].filter(Boolean) : [];
+  const isAdmin = Boolean(user && user.is_platform_admin);
 %>
 <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1">
 <label for="nav-toggle" class="nav-scrim" aria-hidden="true"></label>
@@ -38,10 +40,12 @@
   </details>
 
   <nav class="side-nav">
+    <% if (isAdmin) { %><a href="/admin" class="<%= typeof adminArea !== 'undefined' && adminArea ? 'on' : '' %>"><%- include('icon', { name: 'shield' }) %><span>Platform admin</span></a><% } %>
+    <% if (hasBiz && typeof viaAdmin !== 'undefined' && viaAdmin) { %><p class="muted" style="font-size:12px;margin:4px 12px">Support access as platform owner</p><% } %>
     <% if (hasBiz) { items.forEach((it) => { %>
       <a href="<%= it.href %>" class="<%= tab === it.key ? 'on' : '' %>" <%= tab === it.key ? 'aria-current=page' : '' %>><%- include('icon', { name: it.icon }) %><span><%= it.label %></span><%- it.extra %></a>
     <% }) } else { %>
-      <a href="/" class="on" aria-current="page"><%- include('icon', { name: 'store' }) %><span>Businesses</span></a>
+      <% const inAdmin = typeof adminArea !== 'undefined' && adminArea; %><a href="/?all=1" class="<%= inAdmin ? '' : 'on' %>" <%= inAdmin ? '' : 'aria-current=page' %>><%- include('icon', { name: 'store' }) %><span>Businesses</span></a>
       <% bizList.forEach((b) => { %><a href="/businesses/<%= b.id %>"><%- include('icon', { name: 'home' }) %><span><%= b.name %></span></a><% }) %>
     <% } %>
   </nav>

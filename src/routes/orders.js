@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
 import { retryEvent } from '../services/pixels.js';
 import { requeue } from '../services/sheets.js';
+import { cancelIneligible } from '../services/emailAutomation.js';
 import { whatsappDigits } from '../lib/phone.js';
 
 const PAGE_SIZE = 50;
@@ -252,6 +253,8 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
         details: { from: previous, to: value },
       });
       if (kind === 'payment' && value === 'paid' && previous !== 'paid' && onPaid) await onPaid(order.id, req);
+      // e.g. Delivered or Cancelled: queued "still processing" emails for this order stop at once.
+      if (kind === 'fulfillment') await cancelIneligible(pool, { orderId: order.id });
     }
     res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
   }));

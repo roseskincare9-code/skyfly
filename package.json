@@ -16,7 +16,8 @@
     "test:e2e": "node --env-file-if-exists=.env.test test/e2e/landing-page.e2e.js",
     "test:e2e:hosting": "node --env-file-if-exists=.env.test test/e2e/hosting.e2e.js",
     "test:e2e:packages": "node --env-file-if-exists=.env.test test/e2e/packages.e2e.js",
-    "pages:prepare": "python3 landing-pages/prepare.py"
+    "pages:prepare": "python3 landing-pages/prepare.py",
+    "test:e2e:workspaces": "node --env-file-if-exists=.env.test test/e2e/workspaces.e2e.js"
   },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",

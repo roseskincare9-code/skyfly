@@ -9,6 +9,7 @@ import { authRoutes } from './routes/auth.js';
 import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
+import { adminRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
 import { pageServer, sandboxPreview } from './hosting/server.js';
@@ -112,8 +113,10 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     if (!req.session.userId || req.method !== 'GET') return next();
     try {
       const [{ rows: [user] }, { rows: businesses }] = await Promise.all([
-        pool.query('SELECT id, name, email FROM users WHERE id = $1', [req.session.userId]),
-        pool.query('SELECT id, name FROM businesses WHERE owner_id = $1 ORDER BY created_at', [req.session.userId]),
+        pool.query('SELECT id, name, email, is_platform_admin FROM users WHERE id = $1', [req.session.userId]),
+        pool.query(
+          `SELECT b.id, b.name FROM business_members m JOIN businesses b ON b.id = m.business_id
+            WHERE m.user_id = $1 ORDER BY b.created_at`, [req.session.userId]),
       ]);
       res.locals.currentUser = user ?? null;
       res.locals.userBusinesses = businesses;
@@ -133,6 +136,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   app.use(authRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
+  app.use(adminRoutes({ pool, config }));
   app.use(workspaceRoutes({ pool, config, onPaid, onOrderSaved }));
 
   app.use((req, res) => res.status(404).render('error', { message: 'Page not found.' }));
