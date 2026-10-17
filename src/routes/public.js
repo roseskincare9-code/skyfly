@@ -140,7 +140,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
       "SELECT id, slug, business_id FROM landing_pages WHERE slug = $1 AND status = 'active'", [String(req.params.slug)],
     );
     if (!page) return res.status(404).json({ page: req.params.slug, pixels: [] });
-    res.json(await browserConfig(pool, page));
+    res.json(await browserConfig(pool, page, config));
   }));
 
   // Public catalog for the drop-in checkout: the page's active products and Skyfly's prices

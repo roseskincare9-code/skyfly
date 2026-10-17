@@ -2,7 +2,7 @@
 // (Meta Conversions API, TikTok Events API). Purchase is sent once per order and provider, when
 // the order is saved or marked Paid (per pixel setting); test orders go only to Test events.
 import { createHash } from 'node:crypto';
-import { decrypt } from '../lib/secrets.js';
+import { decrypt, encrypt } from '../lib/secrets.js';
 
 export const PROVIDERS = ['meta', 'tiktok'];
 // Purchase (browser) fires once per order, only after Skyfly has saved it (never for test orders).
@@ -14,8 +14,9 @@ export const PIXEL_ID_RULES = {
   tiktok: { re: /^[A-Z0-9]{10,40}$/, hint: '10–40 letters and digits, e.g. C4ABCDEFGH1234567890' },
 };
 
-// Page-specific settings win over the business default, per provider.
-export async function effectiveSettings(pool, businessId, landingPageId) {
+// Page-specific settings win over the business default, per provider. A Skyfly-owned business
+// with no Meta pixel of its own uses Skyfly's pixel (from the server config; nothing is stored).
+export async function effectiveSettings(pool, businessId, landingPageId, config = null) {
   const { rows } = await pool.query(
     `SELECT * FROM pixel_settings WHERE business_id = $1 AND (landing_page_id IS NULL OR landing_page_id = $2)
       ORDER BY landing_page_id NULLS LAST`,
@@ -23,12 +24,26 @@ export async function effectiveSettings(pool, businessId, landingPageId) {
   );
   const result = {};
   for (const provider of PROVIDERS) result[provider] = rows.find((r) => r.provider === provider) ?? null;
+  if (!result.meta && config) result.meta = await platformPixel(pool, config, businessId);
   return result;
 }
 
+// Skyfly's own pixel, for the businesses named in config.skyflyPixel.businesses only.
+export async function platformPixel(pool, config, businessId) {
+  const p = config?.skyflyPixel;
+  if (!p?.id || !PIXEL_ID_RULES.meta.re.test(p.id) || !p.businesses?.length) return null;
+  const { rows: [b] } = await pool.query('SELECT slug FROM businesses WHERE id = $1', [businessId]);
+  if (!b || !p.businesses.includes(b.slug)) return null;
+  const tokenEnc = p.accessToken && config.encryptionKey ? encrypt(config.encryptionKey, p.accessToken) : null;
+  return {
+    id: null, platform: true, provider: 'meta', enabled: true, pixel_id: p.id, events: [...BROWSER_EVENTS],
+    server_purchase: Boolean(tokenEnc), access_token_enc: tokenEnc, test_event_code: p.testEventCode,
+  };
+}
+
 // What the browser needs: only enabled pixels with valid IDs. No secrets.
-export async function browserConfig(pool, page) {
-  const settings = await effectiveSettings(pool, page.business_id, page.id);
+export async function browserConfig(pool, page, config = null) {
+  const settings = await effectiveSettings(pool, page.business_id, page.id, config);
   const pixels = [];
   for (const provider of PROVIDERS) {
     const s = settings[provider];
@@ -149,7 +164,7 @@ export async function recordPurchase(pool, config, orderId, { trigger = 'paid' }
   if (!order) return [];
   if (order.is_test) return trigger === 'saved' ? recordTestPurchase(pool, config, order, items) : [];
   if (trigger === 'paid' && order.payment_status !== 'paid') return [];
-  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
+  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id, config);
   const results = [];
   for (const provider of PROVIDERS) {
     const s = settings[provider];
@@ -173,7 +188,7 @@ export async function recordPurchase(pool, config, orderId, { trigger = 'paid' }
 // events screen and never in real reporting. No test event code: nothing is sent.
 const TEST_PURCHASE = 'Purchase (test)';
 async function recordTestPurchase(pool, config, order, items) {
-  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
+  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id, config);
   const results = [];
   for (const provider of PROVIDERS) {
     const s = settings[provider];
@@ -192,6 +207,7 @@ async function recordTestPurchase(pool, config, order, items) {
 
 // The platform accepting an event is what makes server-side Purchase "verified".
 export async function markServerVerified(pool, settingsId) {
+  if (!settingsId) return; // Skyfly's own pixel lives in the server config, not in pixel_settings
   await pool.query('UPDATE pixel_settings SET server_verified_at = now() WHERE id = $1', [settingsId]);
 }
 
@@ -215,7 +231,7 @@ export async function retryEvent(pool, config, eventRowId, businessId) {
   );
   if (!ev) return null;
   const { order, items } = await loadOrder(pool, ev.order_id);
-  const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id))[ev.provider];
+  const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id, config))[ev.provider];
   if (ev.test_mode) {
     if (!serverReady(config, settings) || !settings.test_event_code) return { ok: false, error: 'Add the access token and test event code again to resend this test event.' };
     return attempt(pool, config, ev.id, ev.provider, settings, order, items, ev.event_id, { test: true });

@@ -67,6 +67,15 @@ export function loadConfig() {
     renderHost: process.env.RENDER_EXTERNAL_HOSTNAME || null,
     // Encrypts pixel access tokens at rest. Without it, server-side Purchase events are unavailable.
     encryptionKey: parseKey(process.env.SKYFLY_ENCRYPTION_KEY),
+    // Skyfly's own Meta Pixel ("Skyfly" dataset). Used only on pages of the Skyfly-owned businesses
+    // listed here (by slug) that have no Meta pixel of their own; customer businesses never get it.
+    // The pixel ID is public. The Conversions API token and test code are optional secrets.
+    skyflyPixel: {
+      id: process.env.SKYFLY_META_PIXEL_ID ?? '1325736489534601',
+      businesses: (process.env.SKYFLY_PIXEL_BUSINESSES ?? 'skyfly-demo').split(',').map((v) => v.trim()).filter(Boolean),
+      accessToken: process.env.SKYFLY_META_ACCESS_TOKEN || null,
+      testEventCode: process.env.SKYFLY_META_TEST_EVENT_CODE || null,
+    },
     metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
     // Must match the browser event (the SDK sends CompletePayment) so TikTok deduplicates them.

@@ -24,6 +24,10 @@
     <% } %>
   </div>
 
+  <% if (skyflyPixel) { %>
+    <div class="notice" role="status" data-skyfly-pixel>This Skyfly business uses <strong>Skyfly's own Meta pixel <%= skyflyPixel.pixel_id %></strong> on its pages (set on the server; customer businesses never get it).
+      Server-side Purchase: <%= skyflyPixel.server_purchase ? 'on' : 'off until SKYFLY_META_ACCESS_TOKEN is set on the server' %>. Adding a Meta pixel below replaces it for this business.</div>
+  <% } %>
   <% PROVIDERS.forEach((provider) => { const saved = Boolean(settings[provider]); const method = (form && form.provider === provider && form.method) || (settings[provider] && settings[provider].install_method) || 'id'; const pname = provider === 'meta' ? 'Meta' : 'TikTok'; const s = settings[provider] || { enabled: false, pixel_id: '', events: ['PageView', 'InitiateCheckout', 'Lead'], server_purchase: false }; %>
   <div class="card" id="<%= provider %>">
     <div class="row" style="justify-content:space-between">

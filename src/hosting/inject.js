@@ -10,7 +10,7 @@ function safeJson(value) {
 
 export async function injectSkyfly(pool, config, html, { page, preview, filePath }) {
   if (preview || !config.publicBaseUrl) return html;
-  const tracking = await browserConfig(pool, page);
+  const tracking = await browserConfig(pool, page, config);
   const snippet = `<script data-skyfly-config>window.__SKYFLY__=${safeJson({ ...tracking, api: config.publicBaseUrl, file: filePath })};</script>`
     + `<script src="${config.publicBaseUrl}/sdk/skyfly.js" defer></script>`;
   const head = html.match(/<\/head\s*>/i);

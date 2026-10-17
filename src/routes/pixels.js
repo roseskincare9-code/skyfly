@@ -3,7 +3,7 @@ import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { encrypt } from '../lib/secrets.js';
 import { parsePixelCode } from '../services/pixelCode.js';
-import { BROWSER_EVENTS, PIXEL_ID_RULES, PROVIDERS, sendTestEvent, markServerVerified } from '../services/pixels.js';
+import { BROWSER_EVENTS, PIXEL_ID_RULES, PROVIDERS, sendTestEvent, markServerVerified, effectiveSettings } from '../services/pixels.js';
 
 const LABELS = { meta: 'Meta Pixel (Facebook / Instagram)', tiktok: 'TikTok Pixel' };
 
@@ -33,9 +33,12 @@ export function pixelRoutes({ pool, config }) {
          FROM conversion_events e JOIN orders o ON o.id = e.order_id WHERE o.business_id = $1 ORDER BY e.id DESC LIMIT 10`,
       [req.business.id],
     );
+    // A Skyfly-owned business without its own Meta pixel uses Skyfly's (set on the server).
+    const { meta: inUse } = await effectiveSettings(pool, req.business.id, page?.id, config);
+    const skyflyPixel = inUse?.platform ? inUse : null;
     res.set('Cache-Control', 'no-store');
     res.status(status).render('pixels', {
-      active: 'pixels', page, settings, pages, recent, error, notice, form, LABELS, PROVIDERS, BROWSER_EVENTS, PIXEL_ID_RULES,
+      active: 'pixels', page, settings, skyflyPixel, pages, recent, error, notice, form, LABELS, PROVIDERS, BROWSER_EVENTS, PIXEL_ID_RULES,
       encryptionReady: Boolean(config.encryptionKey),
     });
   }

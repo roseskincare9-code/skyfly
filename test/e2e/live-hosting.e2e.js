@@ -1,5 +1,5 @@
 // Live check of Skyfly's own page hosting on production, using the labelled demo site
-// (/p/skyfly-demo/, test mode: its orders are test orders; no pixel or Google Sheet connected).
+// (/p/skyfly-demo/, test mode: its orders are test orders; Skyfly's own Meta pixel, no Google Sheet).
 // Places ONE clearly labelled TEST ORDER through the drop-in checkout and checks every step.
 //   SKYFLY_URL=https://<service>.onrender.com [SKYFLY_OWNER_EMAIL=… SKYFLY_OWNER_PASSWORD=…] node test/e2e/live-hosting.e2e.js
 import { mkdirSync } from 'node:fs';
@@ -113,8 +113,14 @@ await step('G. Refreshing and sending the same details again returns the same or
   return `same reference ${again}, replayed`;
 });
 
-await step('H. No ad-platform requests from the demo page (no pixel connected; test orders never fire Purchase)', async () => {
-  assert(adRequests.length === 0, adRequests.join(', '));
+await step('H. The demo page loads only Skyfly\'s own Meta pixel (1325736489534601); no Purchase for this test order (intercepted, nothing sent to Meta)', async () => {
+  const cfg = await shop.evaluate(() => window.__SKYFLY__ && window.__SKYFLY__.pixels);
+  const ids = (cfg || []).map((p) => p.id);
+  assert(ids.length === 0 || (ids.length === 1 && ids[0] === '1325736489534601'), `pixels on the page: ${JSON.stringify(cfg)}`);
+  const other = adRequests.filter((u) => !/connect\.facebook\.net\/en_US\/fbevents\.js/.test(u) && !u.includes('1325736489534601'));
+  assert(other.length === 0, `unexpected ad requests: ${other.join(', ')}`);
+  assert(!adRequests.some((u) => /[?&]ev=Purchase/.test(u)), 'no Purchase');
+  return ids.length ? `pixel ${ids[0]} configured; script requests: ${adRequests.length}` : 'no pixel configured on this deployment';
 });
 
 await step('I. A desktop visitor gets the same page and checkout', async () => {
