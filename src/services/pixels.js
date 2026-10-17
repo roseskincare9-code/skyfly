@@ -124,7 +124,7 @@ async function deliver(config, provider, settings, order, items, eventId, { test
       return { ok, status: r.status, error: ok ? null : (r.json?.error?.message || r.text) };
     }
     const r = await post(`${config.tiktokApiBase}/event/track/`, { 'Access-Token': token },
-      tiktokPayload(order, items, eventId, settings.pixel_id, config.tiktokPurchaseEvent, testCode));
+      tiktokPayload(order, items, eventId, settings.pixel_id, config.tiktokPurchaseEvent || 'CompletePayment', testCode));
     const ok = r.status === 200 && r.json?.code === 0;
     return { ok, status: r.status, error: ok ? null : (r.json?.message || r.text) };
   } catch (err) {
@@ -192,8 +192,10 @@ export async function retryEvent(pool, config, eventRowId, businessId) {
   );
   if (!ev) return null;
   const { order, items } = await loadOrder(pool, ev.order_id);
-  if (order.payment_status !== 'paid' || order.is_test) return null;
+  if (order.is_test) return null;
   const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id))[ev.provider];
+  // Purchase counted at save can be resent for any saved order; otherwise only once it is Paid.
+  if (!purchaseOnSave(settings) && order.payment_status !== 'paid') return null;
   if (!serverReady(config, settings)) return { ok: false, error: 'Server-side Purchase is not set up for this pixel any more.' };
   return attempt(pool, config, ev.id, ev.provider, settings, order, items, ev.event_id);
 }

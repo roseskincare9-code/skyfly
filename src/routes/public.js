@@ -96,9 +96,15 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         onOrderSaved(order.id);
         recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));
       }
+      // Reached only after the order is committed: the reply is the proof of a saved order.
+      const { rows: [biz] } = await pool.query('SELECT b.slug FROM orders o JOIN businesses b ON b.id = o.business_id WHERE o.id = $1', [order.id]);
       res.status(replayed ? 200 : 201).json({
         ok: true,
+        saved: true,
         reference: order.reference,
+        business: biz.slug,
+        // Same ID for the browser pixel and the server event, so the platform counts one purchase.
+        purchaseEventId: `purchase_${order.reference}`,
         total: Number(order.total_minor) / 100,
         currency: order.currency,
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,

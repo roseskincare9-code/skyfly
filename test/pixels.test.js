@@ -29,7 +29,7 @@ const base = `http://127.0.0.1:${mock.address().port}`;
 
 const encryptionKey = randomBytes(32);
 const { pool, app } = setup({
-  encryptionKey, metaGraphBase: `${base}/meta/v26.0`, tiktokApiBase: `${base}/tiktok/v1.3`, tiktokPurchaseEvent: 'Purchase',
+  encryptionKey, metaGraphBase: `${base}/meta/v26.0`, tiktokApiBase: `${base}/tiktok/v1.3`,
 });
 const sha = (v) => createHash('sha256').update(v).digest('hex');
 let owner;
@@ -171,7 +171,7 @@ describe('Purchase events', () => {
     assert.equal(tiktok.url, '/tiktok/v1.3/event/track/');
     assert.equal(tiktok.headers['access-token'], TIKTOK_TOKEN);
     assert.equal(tiktok.body.event_source_id, 'C4ABCDEFGH1234567890');
-    assert.equal(tiktok.body.data[0].event, 'Purchase');
+    assert.equal(tiktok.body.data[0].event, 'CompletePayment', 'same event name as the browser pixel, so TikTok deduplicates');
     assert.equal(tiktok.body.data[0].event_id, `purchase_${order.reference}`);
     assert.equal(tiktok.body.data[0].user.phone, sha('+2348035550101'));
     assert.equal(tiktok.body.data[0].user.ttclid, 'tt-click');

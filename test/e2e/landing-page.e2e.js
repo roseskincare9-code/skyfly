@@ -129,7 +129,10 @@ try {
     await shop.waitForSelector('#skyErr', { state: 'visible' });
     assert.match(await shop.textContent('#skyErr'), /Please fill in all required fields/);
     assert.ok(fbCalls.some((a) => a.includes('PageView')), 'PageView fired on load');
-    assert.equal(purchases().length, 0, 'viewing the page and clicking Order is not a Purchase');
+    // A. a visit, B. looking at a product, C. clicking Order without completing: none is a Purchase.
+    await shop.click('text=Order Power Glow');
+    await shop.click('a.btng[href="#order"] >> nth=0');
+    assert.equal(purchases().length, 0, 'viewing the page, a product and clicking Order is not a Purchase');
     await shop.screenshot({ path: path.join(shots, '1-landing-validation-error.png') });
   });
 
@@ -263,6 +266,8 @@ try {
     assert.equal(rows[0].n, 1, 'exactly one order');
     const lost = (await pool.query("SELECT reference FROM orders WHERE customer_name = 'Lost Reply'")).rows[0].reference;
     assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, 1, 'one Purchase for the order whose reply was lost');
+    // J. two different orders: two Purchases, one per order.
+    assert.deepEqual(purchases().map((a) => a[4].eventID), [`purchase_${reference}`, `purchase_${lost}`]);
     assert.equal(sheetRows.length, before, 'no fallback row: the order was saved in Skyfly');
     await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
     sheetRows.splice(before);

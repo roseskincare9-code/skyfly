@@ -67,7 +67,8 @@ export function loadConfig() {
     encryptionKey: parseKey(process.env.SKYFLY_ENCRYPTION_KEY),
     metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
-    tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'Purchase',
+    // Must match the browser event (the SDK sends CompletePayment) so TikTok deduplicates them.
+    tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'CompletePayment',
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
     // Local development only: send emails to a stand-in provider instead of the real one.
     emailApiBase: isProduction ? null : (process.env.EMAIL_API_BASE || null),

@@ -111,7 +111,8 @@
   // this browser (a refresh, a retry or a second tab never counts it again); never for test
   // orders. The event ID matches Skyfly's server-side Purchase, so the platform counts it once.
   function purchase(data) {
-    if (!data || !data.reference || data.test) return;
+    // Only Skyfly's success reply for a saved order counts (never a click, an attempt or a page visit).
+    if (!data || data.ok !== true || !data.reference || data.test) return;
     var key = 'skyfly_purchase_' + data.reference;
     var seen = false;
     try { seen = Boolean(localStorage.getItem(key)); localStorage.setItem(key, '1'); } catch (e) { /* storage blocked */ }
