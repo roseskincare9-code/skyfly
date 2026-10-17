@@ -58,6 +58,7 @@ export function emailRoutes({ pool, config }) {
 
   const getSettings = async (businessId) => (await pool.query('SELECT * FROM email_settings WHERE business_id = $1', [businessId])).rows[0] ?? null;
   const ready = (s) => Boolean(s?.api_key_enc && s.from_email);
+  const testOnlySender = (s) => /@resend\.dev$/i.test(s?.from_email ?? '');
 
   // ---------- Hub: automations, templates, history, setup
   router.get('/', asyncHandler(async (req, res) => {
@@ -345,6 +346,8 @@ export function emailRoutes({ pool, config }) {
     const next = { activate: 'active', pause: 'paused', resume: 'active', stop: 'stopped' }[action];
     if (!next || a.status === 'stopped') return renderAutomation(req, res, a, { error: 'This change is not possible. A stopped automation can be duplicated.', status: 400 });
     if (next === 'active' && !ready(settings)) return renderAutomation(req, res, a, { error: 'Set up email sending first (Email Automations → Sending setup).', status: 400 });
+    // Resend's shared test sender only delivers to the account owner's own address.
+    if (next === 'active' && testOnlySender(settings)) return renderAutomation(req, res, a, { error: 'The sender is Resend\'s test address (@resend.dev), which can only email your own Resend account. Verify your domain in Resend → Domains and use a sender on it before activating.', status: 400 });
     if (next === 'active' && !stepCount) return renderAutomation(req, res, a, { error: 'Add at least one message step first.', status: 400 });
     // Activation time is kept from the first activation: orders before it never get emails.
     await pool.query(

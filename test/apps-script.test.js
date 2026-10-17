@@ -33,7 +33,7 @@ const server = createServer((req, res) => {
       script.header ??= [...SHEET_COLUMNS];
       if (req.method === 'GET' && p.action === 'keys') out = { ok: true, columns: script.header };
       else if (req.method === 'GET' && p.action === 'search') out = { ok: true, rows: find(p.q) };
-      else if (req.method === 'POST' && p.ref && find(p.ref).length) out = { ok: true, created: 0, existing: true };
+      else if (req.method === 'POST' && ((p.id && script.rows.some((r) => r.skyflyId === p.id)) || (p.ref && find(p.ref).length))) out = { ok: true, created: 0, existing: true };
       else if (req.method === 'POST') { script.rows.push(p.row); out = { ok: true, created: 1 }; }
       else out = { ok: false, error: 'Unknown action' };
     }
@@ -103,6 +103,7 @@ describe('Apps Script spreadsheet connection', () => {
     assert.equal(mine[0].phone, '+2348051234567', 'the phone number stays text with its +');
     assert.equal(mine[0].quantity, 2);
     assert.deepEqual(Object.keys(mine[0]), SHEET_COLUMNS);
+    assert.equal(mine[0].skyflyId, row.idempotency_key, 'the row carries the Skyfly order ID used to prevent duplicates');
     await pool.query("UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_attempts = 1 WHERE id = $1", [row.id]);
     await sync();
     assert.equal(script.rows.filter((r) => r.source.includes(o.body.reference)).length, 1, 'still one row');

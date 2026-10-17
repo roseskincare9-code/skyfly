@@ -500,3 +500,28 @@ describe('customer has not ordered again', () => {
     assert.equal(sentTo('noconsent@customer.test').filter((x) => /top-up/.test(x.subject)).length, 0);
   });
 });
+
+describe('Resend test sender', () => {
+  test('a test email to yourself works with onboarding@resend.dev, but automations cannot be activated with it', async () => {
+    const { rows: [s] } = await pool.query('SELECT provider, from_email FROM email_settings WHERE business_id = $1', [B.one.id]);
+    await pool.query("UPDATE email_settings SET from_email = 'onboarding@resend.dev' WHERE business_id = $1", [B.one.id]);
+    try {
+      const page = await owner.get(`${base(B.one)}/email?tab=setup`).expect(200);
+      assert.match(page.text, /only delivers to the email address of your own Resend account/);
+      const created = await post(owner, B.one, '/email/automations', { preset: 'processing' });
+      const id = created.headers.location.match(/automations\/(\d+)/)[1];
+      const res = await post(owner, B.one, `/email/automations/${id}/status`, { action: 'activate' });
+      assert.equal(res.status, 400);
+      assert.match(res.text, /Verify your domain in Resend/);
+      assert.equal((await pool.query('SELECT status FROM email_automations WHERE id = $1', [id])).rows[0].status, 'draft');
+      const before = provider.sent.length;
+      const t = await post(owner, B.one, '/email/settings/test', { to: 'owner@larose.test' });
+      assert.equal(t.status, 302);
+      assert.match(t.headers.location, /done=test/);
+      assert.equal(provider.sent.length, before + 1);
+      assert.equal(provider.sent.at(-1).from.includes('onboarding@resend.dev'), true);
+    } finally {
+      await pool.query('UPDATE email_settings SET from_email = $2 WHERE business_id = $1', [B.one.id, s.from_email]);
+    }
+  });
+});

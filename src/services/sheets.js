@@ -275,7 +275,7 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     if (!conn.url) throw new SheetError(conn.urlError);
     // Apps Script checks for the order and adds it in one locked step.
     if (isAppsScript(conn)) {
-      await scriptCall(conn, { body: { action: 'append', ref: o.reference, row: sheetRow(o, items, o.page_name) } });
+      await scriptCall(conn, { body: { action: 'append', id: o.idempotency_key, ref: o.reference, row: sheetRow(o, items, o.page_name) } });
       return;
     }
     // Always check first: the landing page (older versions) or a slow earlier attempt may already have written this order.

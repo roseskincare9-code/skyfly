@@ -67,6 +67,7 @@
       <h2>Sending setup</h2>
       <p class="muted" style="margin-top:0">Use your own account with one of these providers and a sender address on a domain you have verified with them. <%= settings && settings.verified_at ? 'Last test accepted ' + formatDate(settings.verified_at) + '.' : 'Not tested yet.' %></p>
       <% if (!encryptionReady) { %><p class="error">The server has no encryption key, so API keys cannot be stored.</p><% } %>
+      <% if (settings && /@resend\.dev$/i.test(settings.from_email || '')) { %><div class="warn-box">Test sender: <code><%= settings.from_email %></code> only delivers to the email address of your own Resend account, so it is fine for "Send a test email" to yourself but customers will not receive automations. Verify your domain in Resend → Domains, then change the sender to an address on it.</div><% } %>
       <label for="provider">Provider</label>
       <select id="provider" name="provider"><% Object.entries(PROVIDERS).forEach(([k, p]) => { %><option value="<%= k %>" <%= settings && settings.provider === k ? 'selected' : '' %>><%= p.label %></option><% }) %></select>
       <label for="api_key">API key <%= settings && settings.api_key_hint ? `(saved: ${settings.api_key_hint}; leave empty to keep it)` : '' %></label>

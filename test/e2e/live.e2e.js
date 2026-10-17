@@ -65,7 +65,10 @@ const ready = await step('A. Larose Natural Skincare Nigeria is set up on the li
   const cfg = await t.json();
   const meta = (cfg.pixels || []).find((p) => p.provider === 'meta');
   assert(meta?.id === '1357015185691765', `Meta Pixel in Skyfly: ${JSON.stringify(cfg.pixels)}`);
-  return `pixels: ${cfg.pixels.map((p) => `${p.provider} ${p.id}`).join(', ')}`;
+  // The browser only ever receives public pixel IDs: no Conversions API / Events API token.
+  const raw = JSON.stringify(cfg);
+  assert(!/token|EAA[A-Za-z0-9]{20,}|secret/i.test(raw), 'the public tracking config contains a token-like value');
+  return `pixels: ${cfg.pixels.map((p) => `${p.provider} ${p.id}`).join(', ')}; no token in the public config`;
 });
 if (!ready) process.exit(1);
 

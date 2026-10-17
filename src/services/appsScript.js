@@ -23,10 +23,10 @@ function sheet_(tab) {
 }
 function header_(sh) { return sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-function find_(sh, field, text) {
+function find_(sh, field, text, whole) {
   var h = header_(sh), col = h.indexOf(field);
   if (col < 0 || sh.getLastRow() < 2 || !text) return [];
-  return sh.getRange(2, col + 1, sh.getLastRow() - 1, 1).createTextFinder(text).findAll().map(function (cell) {
+  return sh.getRange(2, col + 1, sh.getLastRow() - 1, 1).createTextFinder(String(text)).matchEntireCell(Boolean(whole)).findAll().map(function (cell) {
     var values = sh.getRange(cell.getRow(), 1, 1, h.length).getValues()[0], row = {};
     h.forEach(function (k, i) { row[k] = values[i] instanceof Date ? values[i].toISOString() : values[i]; });
     return row;
@@ -34,20 +34,24 @@ function find_(sh, field, text) {
 }
 function doGet(e) {
   var p = e.parameter || {};
-  if (p.key !== KEY) return out_({ ok: false, error: 'Wrong key' });
+  if (!KEY || p.key !== KEY) return out_({ ok: false, error: 'Wrong key' });
   var sh = sheet_(p.tab);
   if (p.action === 'keys') return out_({ ok: true, columns: header_(sh) });
   if (p.action === 'search') return out_({ ok: true, rows: find_(sh, p.field || 'source', p.q) });
   return out_({ ok: false, error: 'Unknown action' });
 }
 function doPost(e) {
-  var body = JSON.parse(e.postData.contents);
-  if (body.key !== KEY) return out_({ ok: false, error: 'Wrong key' });
+  var body;
+  try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: 'Bad request' }); }
+  if (!KEY || body.key !== KEY || !body.row) return out_({ ok: false, error: 'Wrong key' });
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = sheet_(body.tab);
-    if (body.ref && find_(sh, 'source', body.ref).length) return out_({ ok: true, created: 0, existing: true });
+    // One row per Skyfly order: the order ID (skyflyId column) or its reference already there = done.
+    if ((body.id && find_(sh, 'skyflyId', body.id, true).length) || (body.ref && find_(sh, 'source', body.ref).length)) {
+      return out_({ ok: true, created: 0, existing: true });
+    }
     var h = header_(sh), values = [], formats = [];
     h.forEach(function (k) {
       var v = body.row[k];
