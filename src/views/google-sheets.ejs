@@ -104,10 +104,12 @@
       <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
       <li>Delete what is there, paste the script below, and click <strong>Save</strong>.</li>
       <li>Click <strong>Deploy → New deployment</strong> → type <strong>Web app</strong>. Execute as: <strong>Me</strong>. Who has access: <strong>Anyone</strong>. Click <strong>Deploy</strong> and allow access when Google asks.</li>
-      <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) into the box below and click Connect. Skyfly checks it at once.</li>
+      <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) into the box below and click Connect. Skyfly checks it at once, adds any missing columns to row 1 (existing rows are kept), and sends the orders that were waiting.</li>
     </ol>
     <label for="script-code">Script (contains this connection's private key: don't share it)</label>
     <textarea id="script-code" readonly rows="8" style="font-family:ui-monospace,monospace;font-size:12px"><%= appsScript %></textarea>
+    <p style="margin:6px 0 0"><button type="button" class="secondary" data-copy="script-code">Copy script</button></p>
+    <script src="/static/copy.js" defer></script>
     <label for="script-name">Name</label>
     <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
     <label for="script-url">Web app URL</label>

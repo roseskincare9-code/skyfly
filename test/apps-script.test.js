@@ -132,3 +132,22 @@ describe('Apps Script spreadsheet connection', () => {
     assert.equal((await orderRow(o2.body.reference)).sheet_sync_status, 'synced');
   });
 });
+
+describe('switching to a working sheet', () => {
+  test('orders that were waiting (e.g. for SheetDB\'s quota) go to the new default sheet at once, once each', async () => {
+    const waiting = await order('Waiting For Quota');
+    await pool.query("UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_error = 'Waiting: SheetDB''s monthly request limit is used up.', sheet_sync_next_at = now() + interval '6 hours' WHERE reference = $1", [waiting.body.reference]);
+    const page = await owner.get(`${base}/google-sheets`).expect(200);
+    const scriptKey = page.text.match(/name="script_key" value="([A-Za-z0-9_-]{32})"/)[1];
+    script.key = scriptKey;
+    const _csrf = await csrfToken(owner, `${base}/google-sheets`);
+    await owner.post(`${base}/google-sheets/connections`).type('form')
+      .send({ _csrf, kind: 'apps_script', name: 'New sheet', api_url: scriptUrl.replace('AKfycbTestDeployment0123456789', 'AKfycbSecondDeployment98765432'), script_key: scriptKey, make_default: 'on' }).expect(302);
+    const queued = await orderRow(waiting.body.reference);
+    assert.equal(queued.sheet_sync_status, 'pending', 'no 6-hour wait');
+    assert.ok(new Date(queued.sheet_sync_next_at) <= new Date());
+    await syncDue(pool, { key });
+    assert.equal((await orderRow(waiting.body.reference)).sheet_sync_status, 'synced');
+    assert.equal(script.rows.filter((r) => r.orderId === waiting.body.reference).length, 1);
+  });
+});

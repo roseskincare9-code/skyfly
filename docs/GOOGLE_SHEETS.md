@@ -33,12 +33,15 @@ the URL stays the same. Never share the script or its URL: the key in it is what
 // then Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
 // Copy the Web app URL into Skyfly. Keep this key private: it is what lets Skyfly add rows.
 var KEY = 'KEY-SHOWN-ON-YOUR-SKYFLY-GOOGLE-SHEETS-PAGE';
-var COLUMNS = ["timestamp","fullName","address","phone","email","package","source","state","quantity","notes","skyflyId","total"];
+var COLUMNS = ["timestamp","fullName","address","phone","email","package","source","state","quantity","notes","skyflyId","total","orderId","status"];
 
 function sheet_(tab) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = tab ? (ss.getSheetByName(tab) || ss.insertSheet(tab)) : ss.getSheets()[0];
-  if (sh.getLastRow() === 0) sh.appendRow(COLUMNS);
+  if (sh.getLastRow() === 0) { sh.appendRow(COLUMNS); return sh; }
+  // An existing column row keeps its columns and data; any Skyfly column it lacks is added at the end.
+  var h = header_(sh), missing = COLUMNS.filter(function (c) { return h.indexOf(c) < 0; });
+  if (missing.length) sh.getRange(1, h.filter(String).length ? sh.getLastColumn() + 1 : 1, 1, missing.length).setValues([missing]);
   return sh;
 }
 function header_(sh) { return sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String); }

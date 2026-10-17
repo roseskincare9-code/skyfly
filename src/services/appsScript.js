@@ -18,7 +18,10 @@ var COLUMNS = ${JSON.stringify(SHEET_COLUMNS)};
 function sheet_(tab) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = tab ? (ss.getSheetByName(tab) || ss.insertSheet(tab)) : ss.getSheets()[0];
-  if (sh.getLastRow() === 0) sh.appendRow(COLUMNS);
+  if (sh.getLastRow() === 0) { sh.appendRow(COLUMNS); return sh; }
+  // An existing column row keeps its columns and data; any Skyfly column it lacks is added at the end.
+  var h = header_(sh), missing = COLUMNS.filter(function (c) { return h.indexOf(c) < 0; });
+  if (missing.length) sh.getRange(1, h.filter(String).length ? sh.getLastColumn() + 1 : 1, 1, missing.length).setValues([missing]);
   return sh;
 }
 function header_(sh) { return sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String); }

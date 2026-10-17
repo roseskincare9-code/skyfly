@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS } from './sheetColumns.js';
+import { STATUS_LABELS } from '../lib/statuses.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -225,6 +226,8 @@ export function sheetRow(order, items, pageName) {
     notes: safe(order.customer_notes || ''),
     skyflyId: order.idempotency_key || '',
     total: Number(order.total_minor) / 100,
+    orderId: order.reference,
+    status: STATUS_LABELS[order.status] ?? order.status ?? '',
   };
 }
 

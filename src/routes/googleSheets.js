@@ -99,6 +99,14 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     });
   }
 
+  // A working sheet that is now the business default takes the orders that were waiting
+  // (e.g. for SheetDB's monthly quota) at once, instead of after their next scheduled retry.
+  async function sendWaitingTo(businessId, connectionId, status) {
+    if (status !== 'ok') return;
+    const { rows: [b] } = await pool.query('SELECT default_sheet_connection_id AS d FROM businesses WHERE id = $1', [businessId]);
+    if (String(b?.d) === String(connectionId) && await requeue(pool, businessId)) onOrderSaved();
+  }
+
   const done = (res, what, anchor = '') => res.redirect(`${res.locals.base}/google-sheets?done=${what}${anchor}`);
   const notFound = (res) => res.status(404).render('error', { message: 'Spreadsheet connection not found.' });
 
@@ -115,7 +123,8 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
       throw err;
     }
     const conn = await loadConnection(pool, key, req.business.id, id);
-    await checkConnection(pool, conn);
+    const { status } = await checkConnection(pool, conn);
+    await sendWaitingTo(req.business.id, conn.id, status);
     await audit(pool, req, { action: 'google_sheets.connected', businessId: req.business.id, entityType: 'sheet_connection', entityId: id, details: { name: f.name, tab: f.tab } });
     done(res, 'added', `#sheet-${id}`);
   }));
@@ -148,6 +157,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     const conn = await loadConnection(pool, key, req.business.id, req.params.id);
     if (!conn) return notFound(res);
     await pool.query('UPDATE businesses SET default_sheet_connection_id = $1 WHERE id = $2', [conn.id, req.business.id]);
+    await sendWaitingTo(req.business.id, conn.id, conn.check_status);
     await audit(pool, req, { action: 'google_sheets.default_changed', businessId: req.business.id, entityType: 'sheet_connection', entityId: conn.id });
     done(res, 'default');
   }));

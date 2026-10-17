@@ -63,7 +63,7 @@ describe('connecting spreadsheets centrally', () => {
     const c = await conn('Main orders');
     assert.ok(!c.api_url_enc.includes('mainsheet01'));
     assert.equal(c.check_status, 'ok', 'columns checked on connect');
-    assert.match(c.check_detail, /All 12 of Skyfly's 12 columns match/);
+    assert.match(c.check_detail, /All 14 of Skyfly's 14 columns match/);
     assert.equal((await pool.query('SELECT default_sheet_connection_id AS d FROM businesses WHERE id = $1', [biz])).rows[0].d, c.id);
     const page = await owner.get(`${base}/google-sheets`).expect(200);
     assert.ok(!page.text.includes('mainsheet01'), 'the API URL is not shown');
