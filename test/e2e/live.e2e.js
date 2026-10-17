@@ -125,6 +125,9 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   assert(apiReply && apiReply.ok, `API reply ${JSON.stringify(apiReply)}`);
   reference = apiReply.reference;
   confirmationUrl = apiReply.confirmationUrl;
+  // The success reply is the proof of a saved order: persistent reference, verified total, currency, business, event ID.
+  assert(apiReply.saved === true && apiReply.business === 'larose-nigeria' && apiReply.purchaseEventId === `purchase_${reference}`
+    && apiReply.total === 103000 && apiReply.currency === 'NGN' && apiReply.test === true, `reply fields ${JSON.stringify({ ...apiReply, confirmationUrl: undefined })}`);
   mkdirSync('live-screenshots', { recursive: true });
   await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: false });
   const text = await page.textContent('body');
@@ -134,7 +137,7 @@ await step('C/H. A test order placed through the real checkout is saved; the con
     assert(/Total \(pay on delivery\): ₦103,000/.test(await page.textContent('#skyConf')), 'confirmed total');
   }
   assert(!navigations.some((u) => /wa\.me|whatsapp\.com/.test(u)), 'navigated to WhatsApp');
-  return `${reference}, total ₦${apiReply.total.toLocaleString('en-NG')}; page wrote ${sheetPosts.length} sheet row(s) itself`;
+  return `${reference}, total ₦${apiReply.total.toLocaleString('en-NG')} ${apiReply.currency}, business ${apiReply.business}, event ID ${apiReply.purchaseEventId}; page wrote ${sheetPosts.length} sheet row(s) itself`;
 });
 
 await step('D. The order persists: the confirmation page (read from the database) still shows it after a refresh', async () => {
