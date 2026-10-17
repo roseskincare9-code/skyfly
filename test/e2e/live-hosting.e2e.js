@@ -141,6 +141,45 @@ await step('J. The order appears exactly once in the Skyfly Demo Shop (test) das
   return `1 row in ${href}/orders`;
 });
 
+await step('K. Owner: import a labelled test page, add the checkout, publish, open it, edit and republish, then unpublish', async () => {
+  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in');
+  const d = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  await d.goto(`${SKYFLY}/login`);
+  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
+  await d.goto(`${SKYFLY}/`);
+  const href = await d.getAttribute('a:text-is("Skyfly Demo Shop (test)")', 'href');
+  assert(href, 'demo business not in the dashboard');
+  const name = `TEST page ${RUN}`;
+  const html = (v) => `<!doctype html><html><head><meta charset="utf-8"><title>${name}</title></head><body><h1>${name} v${v}</h1></body></html>`;
+  await d.goto(`${SKYFLY}${href}/landing-pages`);
+  await d.fill('#imp-name', name);
+  await d.setInputFiles('#imp-file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(html(1)) });
+  await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[enctype] button[type=submit]')]);
+  const pageUrl = d.url().split('?')[0];
+  await Promise.all([d.waitForURL(/done=checkout/), d.click('button:text-is("Add Skyfly checkout")')]);
+  // Test mode on and the demo products connected, in Page settings.
+  await d.check('input[name=test_mode]');
+  for (const box of await d.locator('input[name=products]').all()) await box.check();
+  await Promise.all([d.waitForLoadState('load'), d.click('form.card >> button:text-is("Save")')]);
+  await d.goto(pageUrl);
+  await Promise.all([d.waitForURL(/done=published/), d.locator('button:text-is("Publish this version")').first().click()]);
+  const live = await d.getAttribute('#live-url', 'href');
+  const v1 = await fetch(live);
+  const t1 = await v1.text();
+  assert(v1.status === 200 && t1.includes(`${name} v1`) && t1.includes('data-skyfly-checkout'), `published page HTTP ${v1.status}`);
+  await d.setInputFiles('#file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(html(2)) });
+  await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[action$="/upload"] button[type=submit]')]);
+  assert((await (await fetch(live)).text()).includes(`${name} v1`), 'changed before republishing');
+  await Promise.all([d.waitForURL(/done=published/), d.locator('button:text-is("Publish this version")').first().click()]);
+  const t2 = await (await fetch(live)).text();
+  assert(t2.includes(`${name} v2`), 'republished version not served');
+  await Promise.all([d.waitForURL(/done=unpublished/), d.click('button:text-is("Unpublish")')]);
+  const gone = await fetch(live);
+  assert(gone.status === 404, `after unpublishing HTTP ${gone.status}`);
+  return `${live}: v1 published, v2 republished at the same address, unpublished (404)`;
+});
+
 await browser.close();
 if (blocked) console.log(`\n${blocked} check(s) BLOCKED (missing credential, see above)`);
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks that could run passed');

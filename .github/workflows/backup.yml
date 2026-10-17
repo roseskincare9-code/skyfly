@@ -1,0 +1,57 @@
+# Full backup of the live Skyfly database through Platform admin → System (/admin/backup.json),
+# checked by restoring it into a throwaway database. The file is uploaded ENCRYPTED (this
+# repository is public): AES-256 with the BACKUP_PASSPHRASE secret, or the owner's password if
+# that secret is not set. Logs show only sizes and row counts. Manual only; reads, never writes.
+name: Database backup
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore
+          POSTGRES_DB: restore_check
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Download and check the backup
+        id: dl
+        run: |
+          set +e
+          node scripts/backup-live.mjs backup.json; code=$?
+          if [ $code = 2 ]; then echo "blocked=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit $code
+        env:
+          SKYFLY_URL: https://skyfly-gybf.onrender.com
+          SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
+          SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
+      - name: Restore into an empty throwaway database (proves the file is complete and usable)
+        if: steps.dl.outputs.blocked != '1'
+        run: node scripts/restore-backup.mjs backup.json
+        env:
+          DATABASE_URL: postgres://restore:restore@localhost:5432/restore_check
+      - name: Encrypt (the plain file never leaves this machine)
+        if: steps.dl.outputs.blocked != '1'
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 -iter 250000 -salt -in backup.json -out skyfly-backup.json.enc -pass env:PASS
+          shred -u backup.json
+          ls -l skyfly-backup.json.enc
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: steps.dl.outputs.blocked != '1'
+        with:
+          name: skyfly-backup-encrypted
+          path: skyfly-backup.json.enc
+          retention-days: 30

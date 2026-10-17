@@ -18,7 +18,8 @@
     "test:e2e:packages": "node --env-file-if-exists=.env.test test/e2e/packages.e2e.js",
     "pages:prepare": "python3 landing-pages/prepare.py",
     "test:e2e:workspaces": "node --env-file-if-exists=.env.test test/e2e/workspaces.e2e.js",
-    "test:e2e:checkout": "node --env-file-if-exists=.env.test test/e2e/checkout.e2e.js"
+    "test:e2e:checkout": "node --env-file-if-exists=.env.test test/e2e/checkout.e2e.js",
+    "test:e2e:compat": "node --env-file-if-exists=.env.test test/e2e/sandbox-compat.e2e.js"
   },
   "dependencies": {
     "compression": "^1.8.1",
