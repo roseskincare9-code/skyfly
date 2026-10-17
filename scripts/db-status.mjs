@@ -26,6 +26,7 @@ console.log('== Render database (skyfly-db)');
 for (const k of ['name', 'plan', 'status', 'region', 'version', 'createdAt', 'updatedAt', 'expiresAt', 'diskSizeGB', 'highAvailabilityEnabled', 'databaseName', 'suspended', 'role']) {
   if (detail[k] !== undefined) line(k, JSON.stringify(detail[k]));
 }
+if (Array.isArray(detail.ipAllowList)) line('external access (IP allow list)', detail.ipAllowList.length ? detail.ipAllowList.map((x) => x.cidrBlock).join(', ') : 'none: outside connections are blocked (only the Render service can connect)');
 const shown = new Set(['name', 'plan', 'status', 'region', 'version', 'createdAt', 'updatedAt', 'expiresAt', 'diskSizeGB', 'highAvailabilityEnabled', 'databaseName', 'suspended', 'role', 'id', 'owner', 'dashboardUrl', 'ipAllowList', 'databaseUser']);
 const other = Object.keys(detail).filter((k) => !shown.has(k));
 if (other.length) line('other fields (names only)', other.join(', '));
@@ -48,7 +49,12 @@ const conn = info.json?.externalConnectionString;
 if (!conn) { line('connection info', `HTTP ${info.status} (not available)`); process.exit(0); }
 console.log(`::add-mask::${conn}`);
 const client = new pg.Client({ connectionString: conn, ssl: { rejectUnauthorized: false } });
-await client.connect();
+try {
+  await client.connect();
+} catch (err) {
+  line('row counts', `not available from outside Render (${err.message}); the database only accepts connections allowed by its IP allow list`);
+  process.exit(0);
+}
 try {
   await client.query('BEGIN TRANSACTION READ ONLY');
   const one = async (sql) => (await client.query(sql)).rows;
