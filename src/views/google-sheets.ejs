@@ -114,8 +114,8 @@
     <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
     <label for="script-url">Web app URL</label>
     <input id="script-url" name="api_url" required autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
-    <label for="script-tab">Tab name (optional, empty = first tab; created if missing)</label>
-    <input id="script-tab" name="sheet_tab" maxlength="100">
+    <label for="script-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”; your existing tabs and their history are never changed)</label>
+    <input id="script-tab" name="sheet_tab" maxlength="100" placeholder="<%= skyflyTab %>">
     <label for="script-link">Google Sheets link (optional, for “Open spreadsheet”)</label>
     <input id="script-link" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/…">
     <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>

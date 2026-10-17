@@ -1,6 +1,9 @@
 # Google Sheets: direct connection (Google Apps Script)
 
-Free, and independent of SheetDB and its monthly request limit. Orders are always saved in Skyfly
+Free, and independent of SheetDB and its monthly request limit. **Existing data is safe:** Skyfly
+writes only to its own tab, "Skyfly Orders" (created automatically), never changes or deletes other
+tabs, and before adding a row checks every tab so an order already in the spreadsheet is not added
+again. When you connect, Skyfly shows each tab and how many rows it has (read-only). Orders are always saved in Skyfly
 first; each one is then copied to the sheet once (checked by its Skyfly order ID in the `skyflyId`
 column, and by its reference). If Google is unavailable or over its quota, the order waits in Skyfly
 and is copied later; nothing is lost.
@@ -14,9 +17,12 @@ and is copied later; nothing is lost.
    script, click **Save**.
 3. **Deploy → New deployment** → gear icon → **Web app**:
    - Description: `Skyfly orders`
-   - Execute as: **Me** (the script writes to your sheet with your access)
+   - Execute as: **Me** (be signed in as the account that owns the spreadsheet, e.g.
+     laroseskincare3@gmail.com; the script writes with that account's access)
    - Who has access: **Anyone** (Skyfly's server calls it; requests without the key are refused)
-   - Click **Deploy**, then **Authorize access** and allow it for your Google account.
+   - Click **Deploy**, then **Authorize access**, choose the spreadsheet's account. Google shows
+     "Google hasn't verified this app" (it is your own script): click **Advanced** →
+     **Go to Skyfly orders (unsafe)** → **Allow**. It asks for access to spreadsheets only.
 4. Copy the **Web app URL** (`https://script.google.com/macros/s/…/exec`).
 5. In Skyfly, paste it into **Web app URL**, optionally a tab name, tick **Make it the default
    spreadsheet**, and click **Connect**. Skyfly checks it at once ("All 12 of Skyfly's 12 columns match").
@@ -34,10 +40,13 @@ the URL stays the same. Never share the script or its URL: the key in it is what
 // Copy the Web app URL into Skyfly. Keep this key private: it is what lets Skyfly add rows.
 var KEY = 'KEY-SHOWN-ON-YOUR-SKYFLY-GOOGLE-SHEETS-PAGE';
 var COLUMNS = ["timestamp","fullName","address","phone","email","package","source","state","quantity","notes","skyflyId","total","orderId","status"];
+// Skyfly writes only to this tab (created if missing). Other tabs and their history are never changed.
+var DEFAULT_TAB = "Skyfly Orders";
 
 function sheet_(tab) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = tab ? (ss.getSheetByName(tab) || ss.insertSheet(tab)) : ss.getSheets()[0];
+  var name = tab || DEFAULT_TAB;
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sh.getLastRow() === 0) { sh.appendRow(COLUMNS); return sh; }
   // An existing column row keeps its columns and data; any Skyfly column it lacks is added at the end.
   var h = header_(sh), missing = COLUMNS.filter(function (c) { return h.indexOf(c) < 0; });
@@ -55,9 +64,24 @@ function find_(sh, field, text, whole) {
     return row;
   });
 }
+// Read-only summary of every tab (name, size, first row), so the owner can see what is there.
+function tabs_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) {
+    var cols = s.getLastColumn();
+    var first = cols ? s.getRange(1, 1, 1, Math.min(cols, 20)).getValues()[0].map(function (v) { return String(v).slice(0, 40); }) : [];
+    return { name: s.getName(), rows: s.getLastRow(), columns: cols, firstRow: first };
+  });
+}
+// Has this order already been written anywhere in the spreadsheet (any tab)?
+function written_(id, ref) {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets().some(function (s) {
+    return (id && find_(s, 'skyflyId', id, true).length) || (ref && (find_(s, 'orderId', ref, true).length || find_(s, 'source', ref).length));
+  });
+}
 function doGet(e) {
   var p = e.parameter || {};
   if (!KEY || p.key !== KEY) return out_({ ok: false, error: 'Wrong key' });
+  if (p.action === 'tabs') return out_({ ok: true, tabs: tabs_() });
   var sh = sheet_(p.tab);
   if (p.action === 'keys') return out_({ ok: true, columns: header_(sh) });
   if (p.action === 'search') return out_({ ok: true, rows: find_(sh, p.field || 'source', p.q) });
@@ -70,11 +94,9 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    // One row per Skyfly order: if its order ID or reference is already in any tab, nothing is added.
+    if (written_(body.id, body.ref)) return out_({ ok: true, created: 0, existing: true });
     var sh = sheet_(body.tab);
-    // One row per Skyfly order: the order ID (skyflyId column) or its reference already there = done.
-    if ((body.id && find_(sh, 'skyflyId', body.id, true).length) || (body.ref && find_(sh, 'source', body.ref).length)) {
-      return out_({ ok: true, created: 0, existing: true });
-    }
     var h = header_(sh), values = [], formats = [];
     h.forEach(function (k) {
       var v = body.row[k];

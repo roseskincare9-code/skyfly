@@ -31,7 +31,8 @@ const server = createServer((req, res) => {
     if (p.key !== script.key) out = { ok: false, error: 'Wrong key' };
     else {
       script.header ??= [...SHEET_COLUMNS];
-      if (req.method === 'GET' && p.action === 'keys') out = { ok: true, columns: script.header };
+      if (req.method === 'GET' && p.action === 'tabs') out = { ok: true, tabs: [{ name: 'Laroseorders', rows: 41, columns: 6, firstRow: ['Date', 'Name'] }, { name: 'Skyfly Orders', rows: 1, columns: 14, firstRow: [] }] };
+      else if (req.method === 'GET' && p.action === 'keys') out = { ok: true, columns: script.header };
       else if (req.method === 'GET' && p.action === 'search') out = { ok: true, rows: find(p.q) };
       else if (req.method === 'POST' && ((p.id && script.rows.some((r) => r.skyflyId === p.id)) || (p.ref && find(p.ref).length))) out = { ok: true, created: 0, existing: true };
       else if (req.method === 'POST') { script.rows.push(p.row); out = { ok: true, created: 1 }; }
@@ -87,6 +88,8 @@ describe('Apps Script spreadsheet connection', () => {
     const { rows: [c] } = await pool.query("SELECT * FROM sheet_connections WHERE name = 'Direct'");
     assert.equal(c.provider, 'apps_script');
     assert.equal(c.check_status, 'ok');
+    assert.equal(c.sheet_tab, 'Skyfly Orders', 'Skyfly\'s own tab by default');
+    assert.match(c.check_detail, /Tabs: Laroseorders \(40 rows below row 1, not changed\); Skyfly Orders \(Skyfly writes here\)\./);
     assert.ok(!c.api_url_enc.includes(scriptKey), 'stored encrypted');
     assert.ok(!scriptKey.endsWith(c.api_hint), 'the hint never shows part of the key');
     const after = await owner.get(`${base}/google-sheets`).expect(200);

@@ -3,7 +3,7 @@
 // requests carrying the connection's secret key, writes the column row itself, never adds an
 // order twice (checked under a lock), and stores text as text (phone numbers keep their "+").
 import { randomBytes } from 'node:crypto';
-import { SHEET_COLUMNS } from './sheetColumns.js';
+import { SHEET_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
 
 export const APPS_SCRIPT_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/;
 export const newScriptKey = () => randomBytes(24).toString('base64url');
@@ -14,10 +14,13 @@ export function appsScriptSource(key) {
 // Copy the Web app URL into Skyfly. Keep this key private: it is what lets Skyfly add rows.
 var KEY = '${key}';
 var COLUMNS = ${JSON.stringify(SHEET_COLUMNS)};
+// Skyfly writes only to this tab (created if missing). Other tabs and their history are never changed.
+var DEFAULT_TAB = ${JSON.stringify(SKYFLY_TAB)};
 
 function sheet_(tab) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = tab ? (ss.getSheetByName(tab) || ss.insertSheet(tab)) : ss.getSheets()[0];
+  var name = tab || DEFAULT_TAB;
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sh.getLastRow() === 0) { sh.appendRow(COLUMNS); return sh; }
   // An existing column row keeps its columns and data; any Skyfly column it lacks is added at the end.
   var h = header_(sh), missing = COLUMNS.filter(function (c) { return h.indexOf(c) < 0; });
@@ -35,9 +38,24 @@ function find_(sh, field, text, whole) {
     return row;
   });
 }
+// Read-only summary of every tab (name, size, first row), so the owner can see what is there.
+function tabs_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) {
+    var cols = s.getLastColumn();
+    var first = cols ? s.getRange(1, 1, 1, Math.min(cols, 20)).getValues()[0].map(function (v) { return String(v).slice(0, 40); }) : [];
+    return { name: s.getName(), rows: s.getLastRow(), columns: cols, firstRow: first };
+  });
+}
+// Has this order already been written anywhere in the spreadsheet (any tab)?
+function written_(id, ref) {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets().some(function (s) {
+    return (id && find_(s, 'skyflyId', id, true).length) || (ref && (find_(s, 'orderId', ref, true).length || find_(s, 'source', ref).length));
+  });
+}
 function doGet(e) {
   var p = e.parameter || {};
   if (!KEY || p.key !== KEY) return out_({ ok: false, error: 'Wrong key' });
+  if (p.action === 'tabs') return out_({ ok: true, tabs: tabs_() });
   var sh = sheet_(p.tab);
   if (p.action === 'keys') return out_({ ok: true, columns: header_(sh) });
   if (p.action === 'search') return out_({ ok: true, rows: find_(sh, p.field || 'source', p.q) });
@@ -50,11 +68,9 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    // One row per Skyfly order: if its order ID or reference is already in any tab, nothing is added.
+    if (written_(body.id, body.ref)) return out_({ ok: true, created: 0, existing: true });
     var sh = sheet_(body.tab);
-    // One row per Skyfly order: the order ID (skyflyId column) or its reference already there = done.
-    if ((body.id && find_(sh, 'skyflyId', body.id, true).length) || (body.ref && find_(sh, 'source', body.ref).length)) {
-      return out_({ ok: true, created: 0, existing: true });
-    }
     var h = header_(sh), values = [], formats = [];
     h.forEach(function (k) {
       var v = body.row[k];

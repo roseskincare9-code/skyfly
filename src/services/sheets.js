@@ -6,13 +6,12 @@
 // never added twice.
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
-import { SHEET_COLUMNS, REQUIRED_COLUMNS } from './sheetColumns.js';
+import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
+export { SKYFLY_TAB };
 import { STATUS_LABELS } from '../lib/statuses.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
-// The tab Skyfly creates when a connected spreadsheet has no column row yet.
-export const SKYFLY_TAB = 'Skyfly Orders';
 const RETRY_MINUTES = [1, 5, 15, 60, 180, 360, 720];
 // How long copies wait while a sheet can't take rows (free SheetDB plans have a small monthly request quota).
 const HOLD_MINUTES = 360;
@@ -149,13 +148,19 @@ export async function adoptLegacyUrls(pool, key) {
 
 // Reads the sheet's column row and compares it with what Skyfly writes. Saves the result.
 export async function checkConnection(pool, conn) {
-  let status; let detail; let columns = null;
+  let status; let detail; let columns = null; let tabSummary = '';
   if (!conn.url) {
     status = 'error'; detail = conn.urlError;
   } else {
     try {
+      // Apps Script: first a read-only look at every tab, reported to the owner.
+      const tabs = isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'tabs' } })).tabs : null;
       columns = await sheetKeys(conn);
       if (!Array.isArray(columns)) throw new SheetError('The sheet did not return its column names.');
+      if (tabs) {
+        const target = conn.sheet_tab || SKYFLY_TAB;
+        tabSummary = `Tabs: ${tabs.map((t) => (t.name === target ? `${t.name} (Skyfly writes here)` : `${t.name} (${Math.max(t.rows - 1, 0)} rows below row 1, not changed)`)).join('; ')}.`;
+      }
       const missingRequired = REQUIRED_COLUMNS.filter((c) => !columns.includes(c));
       const missing = SHEET_COLUMNS.filter((c) => !columns.includes(c));
       const extra = columns.filter((c) => c && !SHEET_COLUMNS.includes(c));
@@ -165,6 +170,7 @@ export async function checkConnection(pool, conn) {
       } else {
         status = 'ok';
         detail = [
+          tabSummary,
           `All ${SHEET_COLUMNS.length - missing.length} of Skyfly's ${SHEET_COLUMNS.length} columns match.`,
           missing.length ? `Not in the sheet (left out): ${missing.join(', ')}.` : '',
           extra.length ? `Extra columns left empty: ${extra.join(', ')}.` : '',

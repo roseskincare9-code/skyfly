@@ -35,12 +35,14 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
       if (!validScriptUrl(apiUrl)) errors.push('Enter the Web app URL from Apps Script (Deploy → Manage deployments), like https://script.google.com/macros/s/…/exec.');
       else if (!/^[A-Za-z0-9_-]{32}$/.test(scriptKey)) errors.push('The script key is missing. Copy the script on this page again.');
       else apiUrl = `${apiUrl}?key=${scriptKey}`;
+      // Skyfly's own tab unless another is named: the spreadsheet's existing tabs are never written to.
     } else if (requireUrl || apiUrl) {
       if (!validApiUrl(apiUrl)) errors.push('Enter the SheetDB API URL, like https://sheetdb.io/api/v1/abc123def456.');
     }
     const spreadsheetUrl = String(body.spreadsheet_url ?? '').trim();
     if (spreadsheetUrl && !GOOGLE_SHEET_URL_RE.test(spreadsheetUrl)) errors.push('The spreadsheet link must be a Google Sheets link (https://docs.google.com/spreadsheets/d/…).');
-    return { name, apiUrl, tab: readTab(body.sheet_tab), spreadsheetUrl: spreadsheetUrl || null, errors };
+    const tab = readTab(body.sheet_tab) || (body.kind === 'apps_script' ? SKYFLY_TAB : null);
+    return { name, apiUrl, tab, spreadsheetUrl: spreadsheetUrl || null, errors };
   }
 
   async function render(req, res, { error = null, notice = null, status = 200, form = {} } = {}) {
