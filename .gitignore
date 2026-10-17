@@ -8,3 +8,4 @@ test/e2e/screenshots/
 test/e2e/.landing.html
 test/e2e/.glow-promo.zip
 landing-pages/dist/
+live-screenshots/
