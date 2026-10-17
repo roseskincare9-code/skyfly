@@ -1,0 +1,19 @@
+# Read-only report on the production database (plan, creation/expiry dates, backups, row
+# counts). Connects in a READ ONLY transaction and prints counts only, never customer data.
+name: Database status (read-only)
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --omit=dev --ignore-scripts
+      - run: node scripts/db-status.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
