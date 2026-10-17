@@ -54,7 +54,7 @@
               <li>Open the platform's <strong>Test events</strong> screen (<%= provider === 'meta' ? 'Meta Events Manager → your pixel → Test events' : 'TikTok Events Manager → your pixel → Test events' %>), or install the <strong><%= provider === 'meta' ? 'Meta Pixel Helper' : 'TikTok Pixel Helper' %></strong> browser extension.</li>
               <li>Open your published page. <strong>PageView</strong> should appear <strong>once</strong>.</li>
               <li>Tap into the order form: <strong>InitiateCheckout</strong> appears once.</li>
-              <li>Submit a test order: <strong><%= provider === 'meta' ? 'Lead' : 'SubmitForm' %></strong> appears once, and <strong>no Purchase</strong>. Then mark that order as a test order in Skyfly.</li>
+              <li>Submit a test order with a name starting <strong>TEST ORDER</strong>: <strong><%= provider === 'meta' ? 'Lead' : 'SubmitForm' %></strong> appears once and there is <strong>no browser Purchase</strong>. With a test event code and access token saved, the server's <strong>Purchase</strong> (with the order's value and currency) appears once in Test events, marked as a test.</li>
             </ol>
           </details>
           <input type="hidden" name="verified" value="true"><button class="secondary" type="submit">I've checked: events arrive once</button>
@@ -97,14 +97,15 @@
       <% }) %>
 
       <h3 style="font-size:1rem;margin:16px 0 4px">Purchase (server-side)</h3>
-      <p class="muted" style="font-size:13px;margin:0">Purchase is <strong>never</strong> sent when someone visits or submits the form. Skyfly sends it from the server once, when you mark an order <strong>Paid</strong>, using the <%= provider === 'meta' ? 'Conversions API' : 'Events API' %>.</p>
+      <p class="muted" style="font-size:13px;margin:0">Purchase is <strong>never</strong> sent when someone visits or submits the form. Skyfly sends it from the server once per order, using the <%= provider === 'meta' ? 'Conversions API' : 'Events API' %>: when the order is saved if <strong>Purchase</strong> is ticked above, otherwise when you mark it <strong>Paid</strong>. It uses the same event ID as the browser Purchase, so <%= provider === 'meta' ? 'Meta' : 'TikTok' %> counts it once.</p>
       <% if (!encryptionReady) { %><div class="warn-box" style="margin-top:8px">Server-side Purchase is unavailable until the server has SKYFLY_ENCRYPTION_KEY set (see docs/SETUP.md).</div><% } %>
-      <label><input type="checkbox" name="server_purchase" <%= s.server_purchase ? 'checked' : '' %> <%= encryptionReady ? '' : 'disabled' %>> Send Purchase when an order is marked Paid</label>
+      <label><input type="checkbox" name="server_purchase" <%= s.server_purchase ? 'checked' : '' %> <%= encryptionReady ? '' : 'disabled' %>> Send Purchase from the server</label>
       <label for="<%= provider %>-token">Access token <%= s.access_token_enc ? '(saved; leave blank to keep it)' : '' %></label>
       <input id="<%= provider %>-token" name="access_token" type="password" autocomplete="new-password" placeholder="<%= s.access_token_enc ? '••••••••  saved' : 'Paste from the ad platform' %>" <%= encryptionReady ? '' : 'disabled' %>>
       <% if (s.access_token_enc) { %><label style="color:var(--text)"><input type="checkbox" name="remove_token"> Remove saved token</label><% } %>
       <label for="<%= provider %>-test">Test event code (optional)</label>
       <input id="<%= provider %>-test" name="test_event_code" value="<%= s.test_event_code || '' %>" placeholder="e.g. TEST12345">
+      <p class="muted" style="font-size:13px;margin:4px 0 0">From <%= provider === 'meta' ? 'Meta Events Manager → your pixel → Test events → "Test server events"' : 'TikTok Events Manager → your pixel → Test events' %>. With a code saved, a test order placed on your page (name starting "TEST ORDER") sends its Purchase <strong>only</strong> to the Test events screen, never to your real reports. Clear the code when you've finished testing.</p>
       <p><button type="submit"><%= saved ? 'Save changes' : (provider === 'meta' ? 'Add Meta Pixel' : 'Add TikTok Pixel') %></button></p>
     </form>
     <% if (saved) { %>

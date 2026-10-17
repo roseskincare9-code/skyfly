@@ -1,6 +1,6 @@
 // Pixel settings, browser tracking config, and server-side Purchase events
-// (Meta Conversions API, TikTok Events API). Purchase is sent only when the
-// owner marks an order Paid, at most once per order and provider.
+// (Meta Conversions API, TikTok Events API). Purchase is sent once per order and provider, when
+// the order is saved or marked Paid (per pixel setting); test orders go only to Test events.
 import { createHash } from 'node:crypto';
 import { decrypt } from '../lib/secrets.js';
 
@@ -146,7 +146,8 @@ function serverReady(config, s) {
 // marked Paid (the others). Same event_id as the browser event, so the platform counts it once.
 export async function recordPurchase(pool, config, orderId, { trigger = 'paid' } = {}) {
   const { order, items } = await loadOrder(pool, orderId);
-  if (!order || order.is_test) return [];
+  if (!order) return [];
+  if (order.is_test) return trigger === 'saved' ? recordTestPurchase(pool, config, order, items) : [];
   if (trigger === 'paid' && order.payment_status !== 'paid') return [];
   const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
   const results = [];
@@ -167,13 +168,35 @@ export async function recordPurchase(pool, config, orderId, { trigger = 'paid' }
   return results;
 }
 
+// A test order ("TEST ORDER …" or a page in test mode) placed through the real checkout sends its
+// server-side Purchase only with the pixel's test event code, so it shows in the platform's Test
+// events screen and never in real reporting. No test event code: nothing is sent.
+const TEST_PURCHASE = 'Purchase (test)';
+async function recordTestPurchase(pool, config, order, items) {
+  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
+  const results = [];
+  for (const provider of PROVIDERS) {
+    const s = settings[provider];
+    if (!serverReady(config, s) || !s.test_event_code) continue;
+    const eventId = `test_purchase_${order.reference}`;
+    const { rows: [event] } = await pool.query(
+      `INSERT INTO conversion_events (order_id, provider, pixel_id, event_name, event_id, test_mode)
+       VALUES ($1, $2, $3, $4, $5, true) ON CONFLICT DO NOTHING RETURNING id`,
+      [order.id, provider, s.pixel_id, TEST_PURCHASE, eventId],
+    );
+    if (!event) continue;
+    results.push(await attempt(pool, config, event.id, provider, s, order, items, eventId, { test: true }));
+  }
+  return results;
+}
+
 // The platform accepting an event is what makes server-side Purchase "verified".
 export async function markServerVerified(pool, settingsId) {
   await pool.query('UPDATE pixel_settings SET server_verified_at = now() WHERE id = $1', [settingsId]);
 }
 
-async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId) {
-  const r = await deliver(config, provider, settings, order, items, eventId);
+async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId, { test = false } = {}) {
+  const r = await deliver(config, provider, settings, order, items, eventId, { test });
   if (r.ok) await markServerVerified(pool, settings.id);
   await pool.query(
     `UPDATE conversion_events SET attempts = attempts + 1, status = $2, response_code = $3, last_error = $4,
@@ -192,8 +215,12 @@ export async function retryEvent(pool, config, eventRowId, businessId) {
   );
   if (!ev) return null;
   const { order, items } = await loadOrder(pool, ev.order_id);
-  if (order.is_test) return null;
   const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id))[ev.provider];
+  if (ev.test_mode) {
+    if (!serverReady(config, settings) || !settings.test_event_code) return { ok: false, error: 'Add the access token and test event code again to resend this test event.' };
+    return attempt(pool, config, ev.id, ev.provider, settings, order, items, ev.event_id, { test: true });
+  }
+  if (order.is_test) return null;
   // Purchase counted at save can be resent for any saved order; otherwise only once it is Paid.
   if (!purchaseOnSave(settings) && order.payment_status !== 'paid') return null;
   if (!serverReady(config, settings)) return { ok: false, error: 'Server-side Purchase is not set up for this pixel any more.' };

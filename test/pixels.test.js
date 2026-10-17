@@ -303,14 +303,17 @@ describe('Purchase when the order is saved (pixels set to count Purchase at save
     assert.equal(calls.filter((c) => c.url.startsWith('/tiktok')).length, 1);
   });
 
-  test('a test order is never sent as a Purchase', async () => {
+  test('a test order is never sent as a real Purchase (only to Test events, when a test event code is saved)', async () => {
     calls.length = 0;
     const order = await placeOrder({ customer: { name: 'TEST ORDER pixel check', phone: '0803 555 0101', address: '7 Pixel Lane, Lagos' } });
     assert.equal(order.test, true, 'the page is told it is a test order');
     await new Promise((r) => setTimeout(r, 200));
-    assert.equal(calls.length, 0);
+    const { rows: [meta] } = await pool.query("SELECT test_event_code FROM pixel_settings WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+    const sent = calls.length;
+    assert.ok(calls.every((c) => c.body.test_event_code), 'anything sent carries the test event code');
+    assert.equal(sent, meta.test_event_code ? 1 : 0);
     await setPayment(order.id, 'paid');
-    assert.equal(calls.length, 0);
+    assert.equal(calls.length, sent, 'marking it Paid sends nothing');
   });
 
   test('a refused submission creates no order and no Purchase', async () => {

@@ -220,6 +220,32 @@ describe('one saved order, one Purchase', () => {
     await settle();
     assert.equal(calls.length, 0);
   });
+
+  test('with a test event code saved, a test order\'s server Purchase goes only to Test events (value, currency, labelled), once', async () => {
+    await pool.query("UPDATE pixel_settings SET test_event_code = 'TEST98765' WHERE business_id = $1 AND provider = 'meta'", [larose]);
+    calls.length = 0;
+    const body = orderBody({ customer: { name: 'TEST ORDER test events check', phone: '08031112222', address: '5 Allen Avenue, Ikeja' } });
+    const res = await send(body);
+    assert.equal(res.status, 201);
+    assert.equal(res.body.test, true, 'the browser is told not to fire Purchase');
+    await settle();
+    assert.equal(calls.length, 1, 'Meta only: TikTok has no test event code, so nothing goes to TikTok');
+    const [call] = metaCalls();
+    assert.equal(call.body.test_event_code, 'TEST98765', 'marked as a test: shown in Test events, not counted in reports');
+    const [ev] = call.body.data;
+    assert.equal(ev.event_name, 'Purchase');
+    assert.equal(ev.event_id, `test_purchase_${res.body.reference}`);
+    assert.equal(ev.custom_data.value, res.body.total);
+    assert.equal(ev.custom_data.currency, 'NGN');
+    assert.ok(!JSON.stringify(call.body).includes('META-LAROSE-TOKEN'), 'the token is in the request URL only, never in the event');
+    const { rows } = await pool.query("SELECT e.event_name, e.test_mode, e.status FROM conversion_events e JOIN orders o ON o.id = e.order_id WHERE o.reference = $1", [res.body.reference]);
+    assert.deepEqual(rows, [{ event_name: 'Purchase (test)', test_mode: true, status: 'sent' }]);
+    const again = await send(body);
+    assert.equal(again.body.reference, res.body.reference);
+    await settle();
+    assert.equal(calls.length, 1, 'a repeated submission sends nothing more');
+    await pool.query("UPDATE pixel_settings SET test_event_code = NULL WHERE business_id = $1 AND provider = 'meta'", [larose]);
+  });
 });
 
 describe('L. each business uses only its own pixels', () => {
