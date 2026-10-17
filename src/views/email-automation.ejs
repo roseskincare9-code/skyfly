@@ -4,7 +4,12 @@
   <p><a href="<%= base %>/email">← Email Automations</a></p>
   <% const statusPill = { draft: '', active: 'delivered', paused: 'pending', stopped: 'cancelled' }; %>
   <div class="page-head"><div><h1><%= a.name %> <span class="pill <%= statusPill[a.status] %>"><%= a.status %></span></h1>
-    <p><%= a.kind === 'processing' ? 'Trigger: the order is in Processing. Each email is sent only if the order is still in Processing at that moment.' : 'Trigger: after purchase. Each email checks the order again (not cancelled or returned) right before sending.' %>
+    <p><%= {
+      processing: 'Trigger: the order is in Processing. Each email is sent only if the order is still in Processing at that moment.',
+      post_purchase: 'Trigger: after purchase. Each email checks the order again (not cancelled or returned) right before sending.',
+      unpaid: 'Trigger: the order is not marked Paid. Each email checks again right before sending and is not sent once the order is Paid, Refunded, Cancelled or Returned.',
+      winback: 'Trigger: days after the customer\'s latest order. Not sent if they have ordered again since. Marketing: only contacts who agreed to receive offers.',
+    }[a.kind] %>
     <%= a.activated_at ? 'Only orders that reach the trigger after ' + formatDate(a.activated_at) + ' get these emails.' : 'Only orders that reach the trigger after you activate it get these emails.' %></p></div>
     <div class="row">
       <% const acts = { draft: [['activate', 'Activate']], active: [['pause', 'Pause'], ['stop', 'Stop']], paused: [['resume', 'Resume'], ['stop', 'Stop']], stopped: [] }[a.status]; %>
@@ -20,7 +25,7 @@
     <div class="two">
       <div><label for="name">Name</label><input id="name" name="name" value="<%= a.name %>" maxlength="120" required></div>
       <div><label for="anchor">Count days from</label>
-        <% if (a.kind === 'processing') { %><input id="anchor" value="<%= ANCHORS.processing_since %>" disabled>
+        <% if (a.kind !== 'post_purchase') { %><input id="anchor" value="<%= ANCHORS[a.anchor] %>" disabled>
         <% } else { %><select id="anchor" name="anchor"><% ['delivered_date', 'order_date'].forEach((k) => { %><option value="<%= k %>" <%= a.anchor === k ? 'selected' : '' %>><%= ANCHORS[k] %></option><% }) %></select><% } %></div>
     </div>
     <p><button class="secondary" type="submit">Save</button></p>

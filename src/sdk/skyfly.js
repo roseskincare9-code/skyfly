@@ -40,12 +40,22 @@
     }
     return false;
   }
+  // Ad platform scripts are fetched after the page has loaded (so they never slow down the
+  // page's own content); events called before that are queued and sent once they arrive.
+  function later(fn) {
+    function go() { if (window.requestIdleCallback) requestIdleCallback(fn, { timeout: 2000 }); else setTimeout(fn, 1); }
+    if (document.readyState === 'complete') go(); else window.addEventListener('load', go);
+  }
+  function addScript(src) {
+    var t = document.createElement('script'); t.async = true; t.src = src;
+    var s = document.getElementsByTagName('script')[0]; s ? s.parentNode.insertBefore(t, s) : document.head.appendChild(t);
+  }
   function loadMeta(p) {
     if (!window.fbq) {
-      /* Meta Pixel base code */
-      !function (f, b, e, v, n, t, s) { if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
-        if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0'; n.queue = []; t = b.createElement(e); t.async = !0;
-        t.src = v; s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s); }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+      /* Meta Pixel base code (queue now, script after load) */
+      var n = window.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+      if (!window._fbq) window._fbq = n; n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
+      later(function () { addScript('https://connect.facebook.net/en_US/fbevents.js'); });
     }
     window.fbq('init', p.id);
   }
@@ -57,7 +67,7 @@
         for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
         ttq.instance = function (t) { for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]); return e; };
         ttq.load = function (e, n) { var r = 'https://analytics.tiktok.com/i18n/pixel/events.js'; ttq._i = ttq._i || {}; ttq._i[e] = []; ttq._i[e]._u = r; ttq._t = ttq._t || {}; ttq._t[e] = +new Date(); ttq._o = ttq._o || {}; ttq._o[e] = n || {};
-          var o = d.createElement('script'); o.type = 'text/javascript'; o.async = !0; o.src = r + '?sdkid=' + e + '&lib=' + t; var a = d.getElementsByTagName('script')[0]; a.parentNode.insertBefore(o, a); };
+          later(function () { addScript(r + '?sdkid=' + e + '&lib=' + t); }); };
       }(window, document, 'ttq');
     }
     window.ttq.load(p.id);
@@ -124,16 +134,32 @@
   }
 
   // Same details => same key, so retries and double clicks never create a second order.
+  var canStore = (function () { try { sessionStorage.setItem('skyfly_t', '1'); sessionStorage.removeItem('skyfly_t'); return true; } catch (e) { return false; } })();
+  function hash(text) { // cyrb53: a short, stable fingerprint (not a secret)
+    var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+  }
   function keyFor(order) {
     var text = JSON.stringify([order.landingPage, order.customer, order.items]);
+    // Without storage (sandboxed or private pages) the key comes from the details and a 30-minute
+    // window, so submitting the same order again after a refresh returns the saved order.
+    if (!canStore) return 'skyh-' + hash(text) + '-' + Math.floor(Date.now() / 1800000).toString(36);
     if (store('skyfly_payload') !== text) { store('skyfly_key', randomId()); store('skyfly_payload', text); }
     return store('skyfly_key');
   }
 
   // Resolves with { ok: true, reference, confirmationUrl, ... } only after Skyfly has saved the order.
+  var attempted = {};
   function submitOrder(order) {
     order = Object.assign({ landingPage: pageKey }, order);
     order.idempotencyKey = keyFor(order);
+    // A replayed order that this visit never sent was saved (and counted) on an earlier visit:
+    // e.g. a refresh, then the same details sent again. Without storage, only this tells them apart.
+    var earlierVisit = !canStore && !attempted[order.idempotencyKey];
+    attempted[order.idempotencyKey] = true;
     order.attribution = Object.assign(attribution(), order.attribution || {});
     var ctrl = window.AbortController ? new AbortController() : null;
     var timer = ctrl && setTimeout(function () { ctrl.abort(); }, 60000);
@@ -142,8 +168,10 @@
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {
         if (res.ok && data && data.ok) {
-          track('Lead', { data: { value: data.total, currency: data.currency }, eventId: 'lead_' + data.reference }, data.reference);
-          purchase(data);
+          if (!(data.replayed && earlierVisit)) {
+            track('Lead', { data: { value: data.total, currency: data.currency }, eventId: 'lead_' + data.reference }, data.reference);
+            purchase(data);
+          }
           return data;
         }
         return data || { ok: false, message: 'We could not save your order. Please try again.' };

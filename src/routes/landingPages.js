@@ -9,6 +9,7 @@ import { clearOriginCache } from '../lib/origins.js';
 import { importUpload, ImportError } from '../hosting/importer.js';
 import { saveVersion } from '../hosting/storage.js';
 import { LIMITS } from '../hosting/files.js';
+import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
 import { checkDomain, normalizeDomain } from '../hosting/domains.js';
 
@@ -267,6 +268,8 @@ export function landingPageRoutes({ pool, config }) {
         WHERE id = $2`,
       [version.id, page.id],
     );
+    // WebP sizes for the page's images, in the background (the page is live either way).
+    optimizeVersion(pool, version.id).catch((err) => console.error('Image optimization failed:', err.message));
     clearOriginCache();
     await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId } });
     res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=published`);

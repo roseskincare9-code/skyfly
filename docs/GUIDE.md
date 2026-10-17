@@ -15,10 +15,22 @@ pixels, and manage orders.
    - **Order form**: whether it is connected to Skyfly yet.
 3. Click **Preview** to see it exactly as visitors will (the link works for one hour).
 4. Under **Page settings**, tick the **connected products** the page sells, then **Save**.
-5. Click **Publish this version**. The live address appears (e.g. `https://pages.yourbrand.com/glow-promo/`).
+5. Click **Publish this version**. The live address appears: until you have a domain it is on
+   the Skyfly address, e.g. `https://skyfly-gybf.onrender.com/p/glow-promo/` (it stays the same
+   when you publish new versions).
    **Unpublish** takes it offline immediately. Uploading again creates a new version. The live page doesn't change until you publish it.
 
-Skyfly never edits your page's design. It only adds its small script and your pixels when serving it.
+Skyfly never edits your page's design. When serving it, it adds its small script and your pixels,
+and speeds it up: WebP copies of large images in several sizes (the original stays as the fallback),
+lazy loading for images further down, reserved space for images (no jumping), long-lived browser
+caching for the page's files, and compression. Ad pixels load after the page has appeared.
+
+**Pages on the Skyfly address run in a secure sandbox:** page scripts cannot reach your dashboard,
+but they also cannot use browser storage or cookies, and browsers don't reuse their cache between
+visits there. A custom domain or business subdomain removes both limits.
+
+**Test mode** (Page settings): every order from the page is saved as a test order, never counted in
+sales, sent to Meta/TikTok, or emailed. The demo page `/p/skyfly-demo/` is always in test mode.
 
 **Custom domain (optional):** on the page's screen, enter e.g. `shop.yourbrand.com`,
 follow the 3 steps shown (DNS record, add the domain in Render, publish), then
@@ -29,7 +41,16 @@ follow the 3 steps shown (DNS record, add the domain in Render, publish), then
 **A page does not send orders to Skyfly by itself.** Until the form is connected,
 orders go wherever they went before (e.g. a Google Sheet) and do not appear in Skyfly.
 
-### Option A: standard HTML form (easiest)
+### Easiest: Skyfly checkout (no coding)
+
+On the page's screen, click **Add Skyfly checkout** (or put `<div data-skyfly-checkout></div>`
+where the order form should go). Customers choose a package and quantity, enter their details,
+review the order and place it. The confirmation, with the order reference and the total Skyfly
+calculated, appears only after Skyfly has saved the order; if saving fails they see why and can try
+again. Packages and prices come from the page's **connected products**. Optional attributes:
+`data-title`, `data-button`, `data-place` (button texts) and `data-product="code"` (preselected).
+
+### Option A: standard HTML form
 
 Add `data-skyfly-form` to the `<form>` tag and use these field names:
 
@@ -160,3 +181,27 @@ save, click **Send test Purchase**, and confirm it appears there.
   but are left out of all sales figures and never sent to ad platforms as purchases.
 - **Overview**: paid revenue, money still to collect, order counts by status, recent orders and orders per page.
 - **Settings → Activity log**: who changed what.
+
+## 5. Google Sheets: the free direct connection
+
+**Google Sheets → Connect a spreadsheet directly.** Skyfly shows a short script with a private key.
+In your Google Sheet: **Extensions → Apps Script**, replace everything with the script, **Save**,
+then **Deploy → New deployment → Web app** (Execute as: *Me*; Who has access: *Anyone*), allow
+access, and paste the **Web app URL** into Skyfly. Skyfly checks it at once. Orders are saved in
+Skyfly first and then copied (one row per order, never twice, column row created automatically).
+No SheetDB account or SheetDB request limit is involved. All the business's pages use its default
+spreadsheet unless a page is given its own.
+
+## 6. Email automations: triggers
+
+- **Order still processing**: while an order stays in Processing; stops when it changes.
+- **Post-purchase follow-up**: N days after delivery or after the order date (e.g. 7, 10, 30).
+- **Order not yet paid**: while the order is not marked Paid; stops once Paid, Refunded, Cancelled
+  or Returned. About payment only: an order in Processing is never treated as "not bought".
+- **Customer has not ordered again**: N days after the customer's latest order, only if they have
+  not ordered since. Marketing: only contacts who agreed to offers.
+
+Each email is checked again right before sending (status, unsubscribe, consent, subscription) and
+is never sent twice. Only orders reaching a trigger after the automation is activated get emails.
+Abandoned-checkout emails are not offered: Skyfly only has a customer's details once they order.
+These are emails sent through your own email provider; SMS and WhatsApp are not sent automatically.

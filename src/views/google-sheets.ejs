@@ -37,7 +37,7 @@
       </div>
     </div>
     <dl class="kv" style="margin-top:10px">
-      <dt>SheetDB API</dt><dd><code>…<%= c.api_hint %></code> <span class="muted"><%= encrypted ? '(stored encrypted)' : '' %></span></dd>
+      <dt><%= c.provider === 'apps_script' ? 'Google Apps Script' : 'SheetDB API' %></dt><dd><code>…<%= c.api_hint %></code> <span class="muted"><%= encrypted ? '(stored encrypted)' : '' %></span></dd>
       <dt>Tab</dt><dd><%= c.sheet_tab || 'First tab' %></dd>
       <dt>Columns</dt><dd><%= c.check_detail || 'Not checked yet.' %><% if (c.checked_at) { %> <span class="muted">Checked <%= formatDate(c.checked_at) %>.</span><% } %></dd>
       <dt>Last successful copy</dt><dd><%= c.last_success_at ? formatDate(c.last_success_at) : 'None yet' %></dd>
@@ -95,9 +95,35 @@
     </tbody></table></div><% } %>
   </div>
 
+  <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add-script">
+    <%- include('partials/csrf') %>
+    <input type="hidden" name="kind" value="apps_script"><input type="hidden" name="script_key" value="<%= scriptKey %>">
+    <h2>Connect a spreadsheet directly (free, recommended)</h2>
+    <p class="muted" style="margin-top:0">Orders go straight from Skyfly to your Google Sheet through a small script that lives in your own spreadsheet. No SheetDB account and no SheetDB request limit. Takes about 3 minutes:</p>
+    <ol style="padding-left:18px;font-size:14px">
+      <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
+      <li>Delete what is there, paste the script below, and click <strong>Save</strong>.</li>
+      <li>Click <strong>Deploy → New deployment</strong> → type <strong>Web app</strong>. Execute as: <strong>Me</strong>. Who has access: <strong>Anyone</strong>. Click <strong>Deploy</strong> and allow access when Google asks.</li>
+      <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) into the box below and click Connect. Skyfly checks it at once.</li>
+    </ol>
+    <label for="script-code">Script (contains this connection's private key: don't share it)</label>
+    <textarea id="script-code" readonly rows="8" style="font-family:ui-monospace,monospace;font-size:12px"><%= appsScript %></textarea>
+    <label for="script-name">Name</label>
+    <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
+    <label for="script-url">Web app URL</label>
+    <input id="script-url" name="api_url" required autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
+    <label for="script-tab">Tab name (optional, empty = first tab; created if missing)</label>
+    <input id="script-tab" name="sheet_tab" maxlength="100">
+    <label for="script-link">Google Sheets link (optional, for “Open spreadsheet”)</label>
+    <input id="script-link" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/…">
+    <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
+    <p><button type="submit">Connect</button></p>
+  </form>
+
   <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add">
     <%- include('partials/csrf') %>
-    <h2>Connect a spreadsheet</h2>
+    <h2>Connect a spreadsheet through SheetDB</h2>
+    <p class="muted" style="margin-top:0">Free SheetDB plans have a small monthly request limit; when it is used up, copies wait (orders stay safe in Skyfly).</p>
     <p class="muted" style="margin-top:0">Use the SheetDB API URL of the Google Sheet (in SheetDB: your API → “API URL”). It is stored encrypted and never shown again; anyone with it can add rows, so keep it private.</p>
     <label for="new-name">Name</label>
     <input id="new-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.name || '' %>">

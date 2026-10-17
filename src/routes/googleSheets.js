@@ -8,8 +8,9 @@ import { toCsv } from '../lib/csv.js';
 import {
   SHEETDB_URL_RE, GOOGLE_SHEET_URL_RE, SHEET_COLUMNS, SKYFLY_TAB, FALLBACK_MARKERS,
   addConnection, adoptLegacyUrls, checkConnection, loadConnection, setupColumns, sheetRow,
-  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey,
+  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey, isAppsScript,
 } from '../services/sheets.js';
+import { APPS_SCRIPT_URL_RE, appsScriptSource, newScriptKey } from '../services/appsScript.js';
 
 const NOTICES = {
   added: 'Spreadsheet connected.', saved: 'Saved.', default: 'Default spreadsheet changed. Pages without their own sheet now use it.',
@@ -21,13 +22,20 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
   const router = Router({ mergeParams: true });
   const key = config.encryptionKey ?? null;
   const validApiUrl = (u) => SHEETDB_URL_RE.test(u) || (!config.isProduction && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/api\/v1\/[A-Za-z0-9]+$/.test(u));
+  const validScriptUrl = (u) => APPS_SCRIPT_URL_RE.test(u) || (!config.isProduction && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(u));
   const readTab = (v) => String(v ?? '').trim().slice(0, 100) || null;
 
   function readForm(body, { requireUrl }) {
     const errors = [];
     const name = String(body.name ?? '').trim().slice(0, 120) || 'Orders sheet';
-    const apiUrl = String(body.api_url ?? '').trim().replace(/\/+$/, '');
-    if (requireUrl || apiUrl) {
+    let apiUrl = String(body.api_url ?? '').trim().replace(/\/+$/, '');
+    if (body.kind === 'apps_script') {
+      // The web app URL plus the secret key written into the script shown on this page.
+      const scriptKey = String(body.script_key ?? '');
+      if (!validScriptUrl(apiUrl)) errors.push('Enter the Web app URL from Apps Script (Deploy → Manage deployments), like https://script.google.com/macros/s/…/exec.');
+      else if (!/^[A-Za-z0-9_-]{32}$/.test(scriptKey)) errors.push('The script key is missing. Copy the script on this page again.');
+      else apiUrl = `${apiUrl}?key=${scriptKey}`;
+    } else if (requireUrl || apiUrl) {
       if (!validApiUrl(apiUrl)) errors.push('Enter the SheetDB API URL, like https://sheetdb.io/api/v1/abc123def456.');
     }
     const spreadsheetUrl = String(body.spreadsheet_url ?? '').trim();
@@ -37,12 +45,14 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
 
   async function render(req, res, { error = null, notice = null, status = 200, form = {} } = {}) {
     const b = req.business;
+    // A fresh secret for a new Apps Script connection (kept when the form is shown again after an error).
+    const scriptKey = /^[A-Za-z0-9_-]{32}$/.test(String(form.script_key ?? '')) ? form.script_key : newScriptKey();
     await adoptLegacyUrls(pool, key);
     const { rows: [biz] } = await pool.query('SELECT default_sheet_connection_id FROM businesses WHERE id = $1', [b.id]);
     const defaultId = biz.default_sheet_connection_id;
     const [{ rows: connections }, { rows: counts }, { rows: pages }] = await Promise.all([
       pool.query(
-        `SELECT c.id, c.name, c.api_hint, c.sheet_tab, c.spreadsheet_url, c.check_status, c.check_detail, c.checked_at,
+        `SELECT c.id, c.name, c.api_hint, c.provider, c.sheet_tab, c.spreadsheet_url, c.check_status, c.check_detail, c.checked_at,
                 c.last_success_at, c.last_error, c.last_error_at, c.created_at,
                 (SELECT count(*)::int FROM orders o WHERE o.sheet_connection_id = c.id AND o.sheet_sync_status = 'synced') AS synced,
                 (SELECT count(*)::int FROM orders o WHERE o.sheet_connection_id = c.id AND o.sheet_sync_status = 'failed') AS failed
@@ -85,7 +95,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.status(status).render('google-sheets', {
       active: 'sheet', error, notice, count, connections, defaultId, pages, lastSync: last.at, form,
       rows, fetchError, checked: Boolean(checkId), markers: FALLBACK_MARKERS, columns: SHEET_COLUMNS, skyflyTab: SKYFLY_TAB,
-      encrypted: Boolean(key),
+      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey),
     });
   }
 
@@ -120,9 +130,11 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
       await pool.query(
         `UPDATE sheet_connections SET name = $2, sheet_tab = $3, spreadsheet_url = $4, updated_at = now(),
                 api_url_enc = coalesce($5, api_url_enc), api_url_hash = coalesce($6, api_url_hash), api_hint = coalesce($7, api_hint),
-                auto_setup_at = CASE WHEN $5::text IS NULL THEN auto_setup_at END
+                auto_setup_at = CASE WHEN $5::text IS NULL THEN auto_setup_at END,
+                provider = coalesce($9, provider)
           WHERE id = $1 AND business_id = $8`,
-        [conn.id, f.name, f.tab, f.spreadsheetUrl, f.apiUrl ? sealUrl(key, f.apiUrl) : null, f.apiUrl ? urlHash(f.apiUrl) : null, f.apiUrl ? urlHint(f.apiUrl) : null, req.business.id]);
+        [conn.id, f.name, f.tab, f.spreadsheetUrl, f.apiUrl ? sealUrl(key, f.apiUrl) : null, f.apiUrl ? urlHash(f.apiUrl) : null, f.apiUrl ? urlHint(f.apiUrl) : null, req.business.id,
+          f.apiUrl ? (isAppsScript({ url: f.apiUrl }) ? 'apps_script' : 'sheetdb') : null]);
     } catch (err) {
       if (err.code === '23505') return render(req, res, { error: 'This spreadsheet (and tab) is already connected.', status: 409 });
       throw err;

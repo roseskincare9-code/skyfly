@@ -1,0 +1,33 @@
+# Live check of Skyfly page hosting on the labelled demo site (/p/skyfly-demo/, test mode).
+# Places ONE clearly labelled TEST ORDER (a test order: not counted, no pixel, no sheet). Manual only.
+name: Live hosting test (demo page)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com)
+        required: true
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: node test/e2e/live-hosting.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
+          SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-hosting-screenshots
+          path: live-screenshots/
+          retention-days: 7

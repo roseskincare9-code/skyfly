@@ -148,6 +148,21 @@ try {
     assert.ok(w <= 393, `no horizontal scroll (got ${w})`);
   });
 
+  await step('refreshing and sending the same details again (no storage in the sandbox) returns the same order: no duplicate, no second Purchase', async () => {
+    await shop.reload();
+    await shop.waitForSelector('.sky-opt');
+    await shop.locator('.sky-opt', { hasText: 'Package 2' }).click();
+    await shop.selectOption('#sky-qty', '2');
+    await shop.fill('#sky-name', 'Ada Checkout'); await shop.fill('#sky-phone', '08031234567');
+    await shop.fill('#sky-address', '4 Allen Avenue, Ikeja'); await shop.fill('#sky-state', 'Lagos');
+    await shop.click('text=Review my order');
+    await shop.click('text=Place my order');
+    await shop.waitForSelector('.sky-ok');
+    assert.equal((await shop.textContent('[data-skyfly-reference]')).trim(), reference);
+    assert.equal((await orders()).length, 1, 'still one order');
+    assert.equal(purchases().length, 1, 'still one Purchase');
+  });
+
   await step('a desktop visitor sees the same page and checkout', async () => {
     const desk = await (await browser.newContext({ viewport: { width: 1366, height: 800 } })).newPage();
     await desk.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (route) => route.abort());

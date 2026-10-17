@@ -16,7 +16,7 @@
     <% automations.forEach((a) => { %>
       <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/email/automations/<%= a.id %>">
         <div class="row" style="justify-content:space-between"><h2 style="margin:0"><%= a.name %></h2><span class="pill <%= statusPill[a.status] %>"><%= a.status[0].toUpperCase() + a.status.slice(1) %></span></div>
-        <p class="muted" style="margin:6px 0 0"><%= a.kind === 'processing' ? 'While an order stays in Processing' : 'After purchase' %> · <%= ANCHORS[a.anchor] %>:
+        <p class="muted" style="margin:6px 0 0"><%= { processing: 'While an order stays in Processing', post_purchase: 'After purchase', unpaid: 'While an order is not marked Paid', winback: 'If the customer has not ordered again' }[a.kind] %> · <%= ANCHORS[a.anchor] %>:
           <%= (a.steps || []).map((s) => `day ${s.delay}${s.purpose === 'marketing' ? ' (marketing)' : ''}`).join(', ') || 'no steps' %> · <%= a.sent %> sent · <%= a.queued %> queued</p>
       </a>
     <% }) %>
@@ -24,7 +24,10 @@
       <%- include('partials/csrf') %>
       <h2>New automation</h2>
       <label style="color:var(--text)"><input type="radio" name="preset" value="processing" checked> <strong>Order still processing</strong> — follow-ups on day 1, 2 and 3 while an order stays in Processing. They stop as soon as the order is Delivered, Cancelled or changes status.</label>
-      <label style="color:var(--text)"><input type="radio" name="preset" value="post_purchase"> <strong>Post-purchase follow-up</strong> — 7, 10 and 30 days after delivery: product tips, a check-in, and an optional offer (sent only to contacts who agreed to marketing).</label>
+      <label style="color:var(--text)"><input type="radio" name="preset" value="post_purchase"> <strong>Post-purchase follow-up</strong> — 7, 10 and 30 days after delivery (or after the order date): product tips, a check-in, and an optional offer (sent only to contacts who agreed to marketing).</label>
+      <label style="color:var(--text)"><input type="radio" name="preset" value="unpaid"> <strong>Order not yet paid</strong> — a reminder while the order is not marked Paid. Stops once it is marked Paid, Refunded, Cancelled or Returned. About payment only: an order still in Processing is never treated as "not bought".</label>
+      <label style="color:var(--text)"><input type="radio" name="preset" value="winback"> <strong>Customer has not ordered again</strong> — an offer a set number of days after the customer's latest order, only if they have not ordered since (marketing: only contacts who agreed).</label>
+      <p class="muted" style="font-size:13px">Abandoned-checkout emails are not offered: Skyfly only saves a customer's details when they place an order, so there is no consented contact for an unfinished checkout. These automations send <strong>email</strong> through your email provider; SMS or WhatsApp messages are not sent automatically.</p>
       <p><button type="submit">Create as draft</button></p>
     </form>
   <% } %>

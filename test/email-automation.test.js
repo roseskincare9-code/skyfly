@@ -421,3 +421,82 @@ describe('follow-ups counted from the order date (customers who ordered 7, 10 or
     assert.deepEqual(await planned(old.id), [], 'an order from 40 days ago gets no late day-7/10/30 emails');
   });
 });
+
+describe('order not yet paid', () => {
+  let automationId;
+  before(async () => {
+    const created = await post(owner, B.one, '/email/automations', { preset: 'unpaid' });
+    automationId = created.headers.location.match(/automations\/(\d+)/)[1];
+    await post(owner, B.one, `/email/automations/${automationId}/status`, { action: 'activate' });
+  });
+  const mine = async (orderId) => (await messagesFor(orderId)).filter((m) => String(m.automation_id) === automationId);
+
+  test('an unpaid order gets one payment reminder (service email, no marketing consent needed), sent once', async () => {
+    const o = await placeOrder(B.one, 'Pay Later', 'paylater@customer.test');
+    await jobs(); await jobs();
+    assert.equal((await mine(o.id)).length, 1);
+    await makeDue('order_id = $1 AND automation_id = $2', [o.id, automationId]);
+    await jobs(); await jobs();
+    assert.equal(sentTo('paylater@customer.test').filter((m) => /waiting for payment/.test(m.subject)).length, 1);
+  });
+
+  test('marking the order Paid stops the reminder before it is sent; Processing alone never stops or starts it', async () => {
+    const o = await placeOrder(B.one, 'Pays Soon', 'payssoon@customer.test');
+    await setStatus(owner, B.one, o.id, 'processing');
+    await jobs();
+    assert.equal((await mine(o.id))[0].status, 'queued', 'still unpaid: a reminder about payment, not a "non-buyer" label');
+    await post(owner, B.one, `/orders/${o.id}/status`, { kind: 'payment', status: 'paid' });
+    await jobs();
+    const [m] = await mine(o.id);
+    assert.equal(m.status, 'cancelled');
+    assert.match(m.reason, /marked paid/i);
+    await makeDue('order_id = $1', [o.id]);
+    await jobs();
+    assert.equal(sentTo('payssoon@customer.test').filter((x) => /waiting for payment/.test(x.subject)).length, 0);
+  });
+});
+
+describe('customer has not ordered again', () => {
+  let automationId;
+  before(async () => {
+    const created = await post(owner, B.one, '/email/automations', { preset: 'winback' });
+    automationId = created.headers.location.match(/automations\/(\d+)/)[1];
+    await post(owner, B.one, `/email/automations/${automationId}/status`, { action: 'activate' });
+    await pool.query("UPDATE email_automations SET activated_at = now() - interval '90 days' WHERE id = $1", [automationId]);
+  });
+  const mine = async (orderId) => (await messagesFor(orderId)).filter((m) => String(m.automation_id) === automationId);
+
+  test('45 days after the latest order, a consenting customer gets the offer once; one who ordered again does not', async () => {
+    const loyal = await placeOrder(B.one, 'Win Back', 'winback@customer.test', { marketingConsent: true });
+    const again = await placeOrder(B.one, 'Came Back', 'cameback@customer.test', { marketingConsent: true });
+    await jobs(); // contacts (with consent) are recorded when the orders arrive
+    await pool.query("UPDATE orders SET created_at = now() - interval '45 days 1 hour' WHERE id = ANY($1)", [[loyal.id, again.id]]);
+    await jobs();
+    assert.equal((await mine(loyal.id)).length, 1);
+    assert.equal((await mine(again.id)).length, 1);
+    // The second customer orders again before the offer goes out.
+    const newer = await placeOrder(B.one, 'Came Back', 'cameback@customer.test', { marketingConsent: true });
+    await makeDue('automation_id = $1', [automationId]);
+    await jobs(); await jobs();
+    assert.equal(sentTo('winback@customer.test').filter((m) => /top-up/.test(m.subject)).length, 1);
+    assert.equal(sentTo('cameback@customer.test').filter((m) => /top-up/.test(m.subject)).length, 0);
+    const [old] = await mine(again.id);
+    assert.equal(old.status, 'cancelled');
+    assert.equal(old.reason, 'Customer ordered again');
+    const [next] = await mine(newer.id);
+    assert.equal(next.status, 'queued', 'counted again from the newest order');
+    assert.ok(new Date(next.scheduled_for) > new Date(Date.now() + 40 * 86400e3));
+  });
+
+  test('without marketing consent the offer is not sent', async () => {
+    const o = await placeOrder(B.one, 'No Consent', 'noconsent@customer.test');
+    await pool.query("UPDATE orders SET created_at = now() - interval '45 days 1 hour' WHERE id = $1", [o.id]);
+    await jobs();
+    await makeDue('order_id = $1 AND automation_id = $2', [o.id, automationId]);
+    await jobs();
+    const [m] = await mine(o.id);
+    assert.equal(m.status, 'skipped');
+    assert.match(m.reason, /No marketing consent/);
+    assert.equal(sentTo('noconsent@customer.test').filter((x) => /top-up/.test(x.subject)).length, 0);
+  });
+});

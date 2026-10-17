@@ -129,3 +129,29 @@ describe('demo site', () => {
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, before + 1);
   });
 });
+
+describe('isolation between businesses', () => {
+  test('another business cannot add a checkout to, publish, edit or see this business\'s page', async () => {
+    const { openClientSignup } = await import('./helpers.js');
+    await openClientSignup(pool);
+    const other = await signUp(app, { email: 'other@shop.test' });
+    const _csrfHome = await csrfToken(other, '/?all=1');
+    const created = await other.post('/businesses').type('form').send({ _csrf: _csrfHome, name: 'Other Shop' });
+    const otherBiz = created.headers.location.match(/businesses\/(\d+)/)[1];
+    await pool.query("UPDATE businesses SET subscription_status = 'active', subscription_expires_on = NULL WHERE id = $1", [otherBiz]);
+    const versionId = await latestVersion();
+    const _csrf = await csrfToken(other, `/businesses/${otherBiz}/landing-pages`);
+    // Through its own workspace address, with this business's page and version numbers: not found.
+    for (const path of [`/${pageId}/versions/${versionId}/add-checkout`, `/${pageId}/publish`, `/${pageId}/unpublish`]) {
+      const res = await other.post(`/businesses/${otherBiz}/landing-pages${path}`).type('form').send({ _csrf, version_id: String(versionId) });
+      assert.equal(res.status, 404, path);
+    }
+    await other.get(`/businesses/${otherBiz}/landing-pages/${pageId}`).expect(404);
+    await other.get(`/businesses/${otherBiz}/landing-pages/${pageId}/versions/${versionId}/edit`).expect(404);
+    // Through this business's address: no access at all.
+    const direct = await other.get(`/businesses/${businessId}/landing-pages/${pageId}`);
+    assert.ok([403, 404].includes(direct.status), `HTTP ${direct.status}`);
+    const count = (await pool.query('SELECT count(*)::int AS n FROM page_versions WHERE landing_page_id = $1', [pageId])).rows[0].n;
+    assert.equal(count, 2, 'no version was added');
+  });
+});

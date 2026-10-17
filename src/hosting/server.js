@@ -8,6 +8,7 @@ import { asyncHandler } from '../lib/http.js';
 import { readFile } from './storage.js';
 import { verifyPreviewToken } from './preview.js';
 import { isHtml } from './files.js';
+import { optimizeCss } from './speed.js';
 import { subdomainOf } from '../services/subdomains.js';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
@@ -64,15 +65,21 @@ function makeSender(pool, transformHtml) {
 
     let body = file.data;
     let etag = `"${file.sha256.slice(0, 32)}"`;
+    // "?v=<this version>" URLs (written into the served HTML) never change content: cache for a year.
+    const pinned = req.query.v === String(versionId);
     if (isHtml(filePath)) {
       res.set('Cache-Control', preview ? 'no-store' : 'no-cache');
       if (transformHtml) {
-        const html = await transformHtml(body.toString('utf8'), { page, preview, filePath });
+        const html = await transformHtml(body.toString('utf8'), { page, preview, filePath, versionId });
         body = Buffer.from(html);
         etag = `W/"${createHash('sha1').update(body).digest('hex').slice(0, 24)}"`;
       }
     } else {
-      res.set('Cache-Control', 'public, max-age=300');
+      res.set('Cache-Control', pinned ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
+      if (pinned && /^text\/css/.test(file.contentType)) {
+        body = Buffer.from(optimizeCss(body.toString('utf8'), versionId));
+        etag = `W/"${file.sha256.slice(0, 24)}-${versionId}"`;
+      }
     }
     res.set('ETag', etag);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();

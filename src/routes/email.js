@@ -37,6 +37,21 @@ const PRESETS = {
   },
 };
 
+PRESETS.unpaid = {
+  name: 'Order not yet paid', kind: 'unpaid', anchor: 'unpaid_since',
+  steps: [
+    { delay: 1, purpose: 'operational', name: 'Payment — reminder', subject: 'Your order {{order_reference}} is waiting for payment',
+      body: 'Hi {{first_name}},\n\nThank you for your order with {{business_name}} ({{order_items}}, {{order_total}}). We have not received your payment yet.\n\nIf you have already paid, please ignore this email or reply with your payment details so we can confirm it.\n\n{{business_name}}' },
+  ],
+};
+PRESETS.winback = {
+  name: 'Customer has not ordered again', kind: 'winback', anchor: 'last_order',
+  steps: [
+    { delay: 45, purpose: 'marketing', name: 'Win-back — we miss you', subject: '{{first_name}}, time for a top-up?',
+      body: 'Hi {{first_name}},\n\nIt has been a while since your last order with {{business_name}}. If you are running low, reply to this email and we will help you reorder.\n\n{{business_name}}' },
+  ],
+};
+
 export function emailRoutes({ pool, config }) {
   const router = Router({ mergeParams: true });
   const key = config.encryptionKey ?? null;
@@ -261,7 +276,8 @@ export function emailRoutes({ pool, config }) {
     const a = await loadAutomation(req);
     if (!a) return res.status(404).render('error', { message: 'Automation not found.' });
     const name = String(req.body.name ?? '').trim().slice(0, 120);
-    const anchor = a.kind === 'processing' ? 'processing_since' : (['order_date', 'delivered_date'].includes(req.body.anchor) ? req.body.anchor : a.anchor);
+    // Only post-purchase follow-ups can count from either the order date or delivery; other triggers are fixed.
+    const anchor = a.kind === 'post_purchase' && ['order_date', 'delivered_date'].includes(req.body.anchor) ? req.body.anchor : a.anchor;
     if (!name) return renderAutomation(req, res, a, { error: 'Give the automation a name.', status: 400 });
     await pool.query('UPDATE email_automations SET name = $3, anchor = $4, updated_at = now() WHERE id = $1 AND business_id = $2', [a.id, req.business.id, name, anchor]);
     res.redirect(`${res.locals.base}/email/automations/${a.id}?done=saved`);
@@ -270,7 +286,8 @@ export function emailRoutes({ pool, config }) {
   function readStep(body, kind) {
     const delay = Number(body.delay_days);
     const hour = Number(body.send_hour ?? 10);
-    const purpose = kind === 'processing' ? 'operational' : (body.purpose === 'marketing' ? 'marketing' : 'operational');
+    // Processing and payment reminders are about the order (service); win-back emails are marketing (need consent).
+    const purpose = kind === 'post_purchase' ? (body.purpose === 'marketing' ? 'marketing' : 'operational') : (kind === 'winback' ? 'marketing' : 'operational');
     const errors = [];
     if (!Number.isInteger(delay) || delay < 0 || delay > 365) errors.push('Days must be a whole number from 0 to 365.');
     if (!Number.isInteger(hour) || hour < 0 || hour > 23) errors.push('Send hour must be 0–23.');

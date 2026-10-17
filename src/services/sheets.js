@@ -6,6 +6,7 @@
 // never added twice.
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
+import { SHEET_COLUMNS, REQUIRED_COLUMNS } from './sheetColumns.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -17,10 +18,7 @@ const HOLD_MINUTES = 360;
 const MAX_ATTEMPTS = 20;
 const TIMEOUT_MS = 15000;
 
-// Column names, in the order the landing page has always written them.
-export const SHEET_COLUMNS = ['timestamp', 'fullName', 'address', 'phone', 'email', 'package', 'source', 'state', 'quantity', 'notes', 'skyflyId', 'total'];
-// Without these the copy is not useful (source also carries the reference used to avoid duplicates).
-export const REQUIRED_COLUMNS = ['fullName', 'phone', 'package', 'source'];
+export { SHEET_COLUMNS, REQUIRED_COLUMNS } from './sheetColumns.js';
 
 export class SheetError extends Error {
   constructor(message, status = null) { super(message); this.status = status; }
@@ -40,6 +38,46 @@ async function call(url, options = {}) {
   return json;
 }
 
+// ---- Google Apps Script connections ("<web app URL>?key=<secret>"): the business's own script in
+// its spreadsheet (services/appsScript.js) answers keys/search/append, straight from Google.
+export const isAppsScript = (conn) => /\/macros\/s\/[A-Za-z0-9_-]+\/exec\?key=/.test(conn?.url || '');
+
+async function scriptCall(conn, { params = {}, body = null }) {
+  const u = new URL(conn.url);
+  const key = u.searchParams.get('key');
+  u.search = '';
+  if (conn.sheet_tab) params.tab = conn.sheet_tab;
+  const url = body ? u.toString() : `${u}?${new URLSearchParams({ key, ...params })}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: body ? 'POST' : 'GET', redirect: 'follow', signal: AbortSignal.timeout(TIMEOUT_MS * 2),
+      ...(body ? { body: JSON.stringify({ key, tab: conn.sheet_tab || null, ...body }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } } : {}),
+    });
+  } catch (err) {
+    throw new SheetError(`Google Sheet (Apps Script) could not be reached: ${err.name === 'TimeoutError' ? 'no answer in 30 seconds' : 'network error'}`);
+  }
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
+  if (!res.ok || !json) {
+    throw new SheetError(`Google Sheet (Apps Script) answered HTTP ${res.status} without data. Check the script is deployed as a Web app with access "Anyone".`, res.ok ? null : res.status);
+  }
+  if (json.ok !== true) {
+    const msg = String(json.error || 'unknown error').slice(0, 160);
+    throw new SheetError(`Google Sheet (Apps Script): ${msg}`, /too many times|quota|rate/i.test(msg) ? 429 : /wrong key/i.test(msg) ? 403 : null);
+  }
+  return json;
+}
+
+// The same three operations for either kind of connection.
+async function sheetKeys(conn) {
+  return isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'keys' } })).columns : call(endpoint(conn, '/keys'));
+}
+async function sheetSearch(conn, text) {
+  return isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'search', field: 'source', q: text } })).rows : call(endpoint(conn, '/search', { source: `*${text}*` }));
+}
+
 export const isEmptySheetError = (err) => /Spreadsheet is empty|Fill first row/i.test(String(err?.message || err));
 
 // ---- Stored connection URLs: encrypted with SKYFLY_ENCRYPTION_KEY (plain only where no key is configured, e.g. tests).
@@ -50,7 +88,7 @@ export function openUrl(key, stored) {
   try { return decrypt(key, stored); } catch { throw new SheetError('The saved SheetDB URL can no longer be read (the server key changed). Enter the URL again.'); }
 }
 export const urlHash = (url) => createHash('sha256').update(url).digest('hex');
-export const urlHint = (url) => url.slice(-4);
+export const urlHint = (url) => url.split('?')[0].slice(-4); // never part of an Apps Script key
 
 function endpoint(conn, path = '', params = {}) {
   const q = new URLSearchParams(params);
@@ -70,9 +108,10 @@ export async function loadConnection(pool, key, businessId, connectionId) {
 
 export async function addConnection(db, key, businessId, { name, apiUrl, tab = null, spreadsheetUrl = null, makeDefault = false }) {
   const { rows: [conn] } = await db.query(
-    `INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint, sheet_tab, spreadsheet_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [businessId, name, sealUrl(key, apiUrl), urlHash(apiUrl), urlHint(apiUrl), tab || null, spreadsheetUrl || null]);
+    `INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint, sheet_tab, spreadsheet_url, provider)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [businessId, name, sealUrl(key, apiUrl), urlHash(apiUrl), urlHint(apiUrl), tab || null, spreadsheetUrl || null,
+      isAppsScript({ url: apiUrl }) ? 'apps_script' : 'sheetdb']);
   await db.query(
     'UPDATE businesses SET default_sheet_connection_id = $1 WHERE id = $2 AND ($3 OR default_sheet_connection_id IS NULL)',
     [conn.id, businessId, makeDefault]);
@@ -114,8 +153,8 @@ export async function checkConnection(pool, conn) {
     status = 'error'; detail = conn.urlError;
   } else {
     try {
-      columns = await call(endpoint(conn, '/keys'));
-      if (!Array.isArray(columns)) throw new SheetError('SheetDB did not return the column names.');
+      columns = await sheetKeys(conn);
+      if (!Array.isArray(columns)) throw new SheetError('The sheet did not return its column names.');
       const missingRequired = REQUIRED_COLUMNS.filter((c) => !columns.includes(c));
       const missing = SHEET_COLUMNS.filter((c) => !columns.includes(c));
       const extra = columns.filter((c) => c && !SHEET_COLUMNS.includes(c));
@@ -145,6 +184,7 @@ export async function checkConnection(pool, conn) {
 // For a spreadsheet with no column row: adds a "Skyfly Orders" tab whose first row holds
 // Skyfly's columns, and points the connection at it. Existing tabs are not touched.
 export async function setupColumns(pool, conn, { auto = false } = {}) {
+  if (isAppsScript(conn)) return checkConnection(pool, conn); // the script writes its own column row
   if (auto) await pool.query('UPDATE sheet_connections SET auto_setup_at = now() WHERE id = $1', [conn.id]);
   const tabConn = { ...conn, sheet_tab: SKYFLY_TAB };
   try {
@@ -189,11 +229,12 @@ export function sheetRow(order, items, pageName) {
 }
 
 async function alreadyInSheet(conn, reference) {
-  const rows = await call(endpoint(conn, '/search', { source: `*${reference}*` }));
+  const rows = await sheetSearch(conn, reference);
   return Array.isArray(rows) && rows.length > 0;
 }
 
 async function sheetIsEmpty(conn) {
+  if (isAppsScript(conn)) return false;
   try { await call(endpoint(conn, '/keys')); return false; } catch (err) { return isEmptySheetError(err); }
 }
 
@@ -232,6 +273,11 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
   const attempt = async () => {
     if (!conn.url) throw new SheetError(conn.urlError);
+    // Apps Script checks for the order and adds it in one locked step.
+    if (isAppsScript(conn)) {
+      await scriptCall(conn, { body: { action: 'append', ref: o.reference, row: sheetRow(o, items, o.page_name) } });
+      return;
+    }
     // Always check first: the landing page (older versions) or a slow earlier attempt may already have written this order.
     if (!(await alreadyInSheet(conn, o.reference))) {
       const r = await call(endpoint(conn), { method: 'POST', body: JSON.stringify({ data: sheetRow(o, items, o.page_name) }) });
@@ -364,7 +410,7 @@ export async function fallbackRows(conn) {
   for (const t of targets) {
     for (const marker of FALLBACK_MARKERS) {
       try {
-        const rows = await call(endpoint(t, '/search', { source: `*${marker}*` }));
+        const rows = await sheetSearch(t, marker);
         if (Array.isArray(rows)) found.push(...rows);
       } catch (err) {
         if (t === conn && !isEmptySheetError(err)) firstError ??= err;

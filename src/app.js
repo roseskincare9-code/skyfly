@@ -13,7 +13,10 @@ import { adminRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
 import { pageServer, sandboxPreview, pathPages } from './hosting/server.js';
+import compression from 'compression';
 import { injectSkyfly } from './hosting/inject.js';
+import { optimizeHtml } from './hosting/speed.js';
+import { imageMeta } from './hosting/images.js';
 import { recordPurchase } from './services/pixels.js';
 import { formatMoney } from './lib/money.js';
 import { lineChart, donut, shortMoney } from './lib/charts.js';
@@ -39,11 +42,15 @@ function isDashboardRequest(req, config) {
 
 export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {}, workers = null }) {
   // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
-  transformHtml ??= (html, ctx) => injectSkyfly(pool, config, html, ctx);
+  transformHtml ??= async (html, ctx) => optimizeHtml(await injectSkyfly(pool, config, html, ctx), {
+    meta: await imageMeta(pool, ctx.versionId), filePath: ctx.filePath, versionId: ctx.versionId,
+  });
   // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
   onPaid ??= (orderId) => recordPurchase(pool, config, orderId).catch((err) => console.error('Purchase event error:', err.message));
   const app = express();
   const PgStore = connectPgSimple(session);
+  // gzip for HTML, CSS, JS and JSON (pages, dashboard, SDK, API); images are already compressed.
+  app.use(compression());
 
   app.set('view engine', 'ejs');
   app.set('views', viewsDir);
@@ -78,6 +85,9 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.use(pathPages({ pool, transformHtml }));
 
   app.use(helmet());
+
+  // Dashboard fonts (versioned file names, so they can be cached for a year).
+  app.use('/static', express.static(new URL('./static', import.meta.url).pathname, { immutable: true, maxAge: '365d', index: false }));
 
   // The page SDK, loaded by landing pages on other sites.
   app.get('/sdk/skyfly.js', (req, res) => {

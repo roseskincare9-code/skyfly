@@ -10,7 +10,7 @@
 // "outcome unknown" and are never retried automatically, so nobody gets two copies.
 import { decrypt } from '../lib/secrets.js';
 import { formatMoney } from '../lib/money.js';
-import { STATUS_LABELS } from '../lib/statuses.js';
+import { STATUS_LABELS, PAYMENT_LABELS } from '../lib/statuses.js';
 import { sendEmail, renderEmail, SendError, PROVIDERS } from './emailProviders.js';
 import { subscriptionState, expireSubscriptions } from './tenancy.js';
 
@@ -23,7 +23,14 @@ export const ANCHORS = {
   processing_since: 'Days after the order entered Processing',
   order_date: 'Days after the order was placed',
   delivered_date: 'Days after the order was marked Delivered',
+  unpaid_since: 'Days after the order, while it is not marked Paid',
+  last_order: 'Days after the customer\'s latest order, if they have not ordered again',
 };
+// Payment states in which an "order not yet paid" reminder still applies.
+export const UNPAID = ['unpaid', 'pending', 'failed'];
+// SQL: a later live order from the same customer exists (used by "has not ordered again").
+const NEWER_ORDER = `EXISTS (SELECT 1 FROM orders n WHERE n.business_id = o.business_id AND lower(n.email) = lower(o.email)
+  AND n.created_at > o.created_at AND NOT n.is_test AND n.status NOT IN ('cancelled', 'returned'))`;
 
 // ---- 1. Contacts from orders (recent ones; existing customers were added by the migration).
 export async function syncContacts(pool, { days = 3 } = {}) {
@@ -46,7 +53,7 @@ export async function planMessages(pool) {
     `WITH x AS (
        SELECT a.id AS automation_id, a.business_id, a.activated_at, s.id AS step_id, s.template_id, s.delay_days, s.send_hour, s.purpose,
               o.id AS order_id, lower(o.email) AS email, b.timezone,
-              CASE a.anchor WHEN 'order_date' THEN o.created_at ELSE
+              CASE WHEN a.anchor IN ('order_date', 'unpaid_since', 'last_order') THEN o.created_at ELSE
                 (SELECT max(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.kind = 'fulfillment'
                     AND h.to_status = CASE a.anchor WHEN 'processing_since' THEN 'processing' ELSE 'delivered' END) END AS anchor_at
          FROM email_automations a
@@ -58,6 +65,8 @@ export async function planMessages(pool) {
           AND o.created_at > now() - interval '400 days'
           AND CASE a.anchor WHEN 'processing_since' THEN o.status = 'processing'
                             WHEN 'delivered_date' THEN o.status = 'delivered'
+                            WHEN 'unpaid_since' THEN o.status NOT IN ('cancelled', 'returned') AND o.payment_status = ANY(ARRAY['unpaid', 'pending', 'failed'])
+                            WHEN 'last_order' THEN o.status NOT IN ('cancelled', 'returned') AND NOT ${NEWER_ORDER}
                             ELSE o.status NOT IN ('cancelled', 'returned') END
      ), timed AS (
        SELECT x.*, GREATEST(x.anchor_at,
@@ -80,6 +89,8 @@ export async function cancelIneligible(pool, { orderId = null } = {}) {
     `UPDATE email_messages m SET status = 'cancelled', updated_at = now(),
             reason = CASE WHEN a.status = 'stopped' THEN 'Automation stopped'
                           WHEN s.removed_at IS NOT NULL THEN 'Step removed from the automation'
+                          WHEN a.anchor = 'unpaid_since' AND NOT (o.payment_status = ANY(ARRAY['unpaid', 'pending', 'failed'])) THEN 'Order is now marked ' || o.payment_status
+                          WHEN a.anchor = 'last_order' AND ${NEWER_ORDER} THEN 'Customer ordered again'
                           ELSE 'Order is now ' || o.status END
        FROM email_automations a, orders o, email_automation_steps s
       WHERE m.status = 'queued' AND m.kind = 'automation' AND a.id = m.automation_id AND o.id = m.order_id AND s.id = m.step_id
@@ -87,7 +98,9 @@ export async function cancelIneligible(pool, { orderId = null } = {}) {
         AND (a.status = 'stopped' OR s.removed_at IS NOT NULL
              OR o.status IN ('cancelled', 'returned')
              OR (a.anchor = 'processing_since' AND o.status <> 'processing')
-             OR (a.anchor = 'delivered_date' AND o.status <> 'delivered'))`, params);
+             OR (a.anchor = 'delivered_date' AND o.status <> 'delivered')
+             OR (a.anchor = 'unpaid_since' AND NOT (o.payment_status = ANY(ARRAY['unpaid', 'pending', 'failed'])))
+             OR (a.anchor = 'last_order' AND ${NEWER_ORDER}))`, params);
   return rowCount;
 }
 
@@ -129,6 +142,8 @@ function ineligible(m, ctx) {
   if (['cancelled', 'returned'].includes(order.status)) return ['cancelled', `Order is now ${STATUS_LABELS[order.status]}`];
   if (automation.anchor === 'processing_since' && order.status !== 'processing') return ['cancelled', `Order is now ${STATUS_LABELS[order.status] ?? order.status}`];
   if (automation.anchor === 'delivered_date' && order.status !== 'delivered') return ['cancelled', `Order is now ${STATUS_LABELS[order.status] ?? order.status}`];
+  if (automation.anchor === 'unpaid_since' && !UNPAID.includes(order.payment_status)) return ['cancelled', `Order is now marked ${PAYMENT_LABELS[order.payment_status] ?? order.payment_status}`];
+  if (automation.anchor === 'last_order' && ctx.orderedAgain) return ['cancelled', 'Customer ordered again'];
   if (!order.email || order.email.toLowerCase() !== m.to_email) return ['skipped', 'The order\'s email address changed'];
   if (contact?.unsubscribed_at) return ['skipped', 'Contact unsubscribed'];
   if (contact?.suppressed_at) return ['skipped', `Contact suppressed${contact.suppressed_reason ? `: ${contact.suppressed_reason}` : ''}`];
@@ -172,7 +187,9 @@ export async function sendDue(pool, config, { limit = 20 } = {}) {
         await finish(pool, m.id, { status: 'queued', attempts: m.attempts - 1, next_attempt_at: new Date(Date.now() + 15 * 60e3) });
         continue;
       }
-      const no = ineligible(m, { business, automation, step, order, contact });
+      const orderedAgain = automation?.anchor === 'last_order' && order
+        ? (await pool.query(`SELECT ${NEWER_ORDER} AS yes FROM orders o WHERE o.id = $1`, [order.id])).rows[0].yes : false;
+      const no = ineligible(m, { business, automation, step, order, contact, orderedAgain });
       if (no) { await finish(pool, m.id, { status: no[0], reason: no[1] }); continue; }
       let transport;
       try { transport = providerFor(settings, key, config); } catch { transport = null; }

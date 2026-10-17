@@ -6,9 +6,10 @@
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#FDE8EF">
   <title><%= title %> · Skyfly by ScaleForge</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="preload" href="/static/fonts/dm-sans-v17-latin.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    @font-face { font-family:'DM Sans'; font-style:normal; font-weight:400 700; font-display:swap; src:url(/static/fonts/dm-sans-v17-latin.woff2) format('woff2'); }
+    @font-face { font-family:'Playfair Display'; font-style:normal; font-weight:600 700; font-display:swap; src:url(/static/fonts/playfair-display-v40-latin.woff2) format('woff2'); }
     :root {
       --bg:#FFF8F5; --card:#FFFFFF; --text:#2B2229; --muted:#7A6871; --border:#F2DDE5; --line:#F7E9EE;
       --rose:#C2366B; --rose-2:#D9578A; --rose-soft:#FDE8EF; --blush:#FBD5E2; --cream:#FFF4EE;
