@@ -98,7 +98,17 @@ if (!url) {
 } else {
   console.log(`\nChecking ${url}\n`);
   const health = await get(`${url}/healthz`);
-  report(health.status === 200 && health.text.trim() === '{"status":"ok"}', 'GET /healthz (app up, database connected)', `HTTP ${health.status} ${health.text.slice(0, 80)}`);
+  let hj = null;
+  try { hj = JSON.parse(health.text); } catch { /* not JSON */ }
+  report(health.status === 200 && hj?.status === 'ok', 'GET /healthz (app up, database connected)', `HTTP ${health.status} status ${hj?.status ?? health.text.slice(0, 80)}`);
+  // Background jobs (email follow-ups, Google Sheet copies) run inside the web service.
+  const w = hj?.workers;
+  if (w) {
+    const fresh = (j) => Boolean(j?.lastOkAt && Date.now() - Date.parse(j.lastOkAt) < 5 * 60000);
+    const line = (j) => (j ? `last run ${j.lastRunAt ?? 'never'}, last OK ${j.lastOkAt ?? 'never'}${j.lastError ? `, error: ${j.lastError}` : ''}${j.last ? `, ${JSON.stringify(j.last)}` : ''}` : 'not running');
+    report(fresh(w.email), 'Background job: email automations / subscriptions', line(w.email));
+    report(fresh(w.sheets), 'Background job: Google Sheet copies', line(w.sheets));
+  } else report(null, 'Background jobs', 'not reported by this version');
 
   const sdk = await get(`${url}/sdk/skyfly.js`);
   const login = await get(`${url}/login`);
