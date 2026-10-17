@@ -23,7 +23,8 @@ jobs:
       - run: npm ci
       - run: npx playwright-core install --with-deps chromium
       - name: Wake the Skyfly service (free plan sleeps when idle)
-        run: curl -s -m 90 -o /dev/null -w 'wake: HTTP %{http_code}\n' https://skyfly-gybf.onrender.com/healthz || true
+        run: |
+          curl -s -m 90 -o /dev/null -w 'wake: HTTP %{http_code}\n' https://skyfly-gybf.onrender.com/healthz || true
       - run: >-
           node scripts/perf.mjs
           "Skyfly demo page (hosted)|https://skyfly-gybf.onrender.com/p/skyfly-demo/|.sky-opt >> nth=1"
