@@ -62,6 +62,38 @@ if '7039361243' in html:
     sys.exit('Old WhatsApp number still present after replacement')
 print(f'Replaced {found} uses of the old WhatsApp number')
 
+# Orders are placed on the website (saved in Skyfly). The two "order on WhatsApp" buttons now
+# open the on-page checkout, in the page's own button style. WhatsApp stays as a voluntary
+# support contact (the floating button and "Chat With Us"), and never opens by itself.
+ORDER_CTA = '<a class="btng" href="#order" style="text-decoration:none;font-size:13px;padding:15px 38px;animation:none" onclick="smoothTo(\'order\',event)">'
+replace_once(
+    '<a class="wa-sbtn" href="https://wa.me/2349049206695?text=Hi%20Larose!%20I%20want%20to%20order!" target="_blank"><svg viewBox="0 0 24 24"><use href="#waico"/></svg>Order on WhatsApp Now</a>',
+    ORDER_CTA + '🛍️ Order Now — Pay on Delivery</a>')
+replace_once(
+    '<a class="wa-sbtn" href="https://wa.me/2349049206695?text=Hi%20Larose!%20I%20want%20to%20order!" target="_blank"><svg viewBox="0 0 24 24"><use href="#waico"/></svg>Yes! I Want This — WhatsApp Me</a>',
+    ORDER_CTA + '💜 Yes! I Want This — Order Now</a>')
+replace_once('<div class="wabub" id="wabub">Order on <span>WhatsApp</span>! 👋</div>',
+             '<div class="wabub" id="wabub">Questions? Chat on <span>WhatsApp</span> 👋</div>')
+replace_once('<a class="wafbtn" href="https://wa.me/2349049206695?text=Hi%20Larose!%20I%20want%20to%20order!" target="_blank">',
+             '<a class="wafbtn" href="https://wa.me/2349049206695?text=Hi%20Larose!%20I%20have%20a%20question." target="_blank" rel="noopener" aria-label="Chat with Larose on WhatsApp (09049206695)">')
+replace_once('<button class="subbtn" id="sb" onclick="doSub()">📲 Place My Order — Call/WhatsApp Me →</button>',
+             '<button class="subbtn" id="sb" onclick="doSub()">🛍️ Place My Order →</button>')
+# The confirmation is shown on the page, filled in from Skyfly's reply (never before the order is saved).
+replace_once('''    <div class="succbox" id="sb2">
+      <div class="ck">🎉</div>
+      <h3>Order Received!</h3>
+      <p>Our team will call or WhatsApp you within <strong>1 hour</strong> to confirm your package and arrange delivery.</p>
+      <p style="margin-top:10px;color:var(--purple);font-weight:600">Can't wait? Message us now 👇</p>
+      <a class="wabig" id="waFinal" href="#" target="_blank"><svg style="width:20px;height:20px;fill:#fff" viewBox="0 0 24 24"><use href="#waico"/></svg>Message Larose on WhatsApp</a>
+    </div>''', '''    <div class="succbox" id="sb2" role="status" aria-live="polite">
+      <div class="ck">🎉</div>
+      <h3 id="skyThanks">Thank you! Your order is confirmed.</h3>
+      <div id="skyConf" style="background:#FFF8EC;border:1px solid #E8C989;color:#3D2A10;padding:14px 16px;border-radius:10px;font-size:14px;line-height:1.8;text-align:left;margin:14px 0"></div>
+      <p><strong>What happens next:</strong> our team will call you within <strong>1 hour</strong> (8am–8pm) to confirm your package and delivery. You pay when your order arrives.</p>
+      <p style="margin-top:10px"><a id="skyView" href="#" style="color:var(--purple);font-weight:600">View your order details</a> · <a href="#" id="skyAgain" style="color:var(--muted)">Place another order</a></p>
+      <p style="margin-top:10px;font-size:12px">Questions? <a href="https://wa.me/2349049206695" target="_blank" rel="noopener" style="color:var(--pink2)">WhatsApp 09049206695</a></p>
+    </div>''')
+
 start = html.index('async function doSub(){')
 end = html.index('</script>', start)
 if html.count('async function doSub(){') != 1:
@@ -70,9 +102,8 @@ if html.count('async function doSub(){') != 1:
 new_sub = r'''// --- Skyfly order submission --------------------------------------------
 const SKYFLY_API="__SKYFLY_API__";
 const SKYFLY_PAGE="larosenigeria";
-// While Skyfly is being proven, orders Skyfly can't save still go to the Google Sheet.
-// Set to false once Skyfly has received real orders reliably.
-const SKYFLY_SHEET_FALLBACK=true;
+// Orders are confirmed only by Skyfly (the database is the source of truth). Skyfly copies
+// each saved order to the Google Sheet itself, so the page never writes to the Sheet.
 let skyMem={};
 function skyStore(k,v){try{if(v===undefined)return sessionStorage.getItem(k);sessionStorage.setItem(k,v);}catch(e){if(v===undefined)return skyMem[k]||null;skyMem[k]=v;}}
 function skyRandom(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();let s='';const a=new Uint8Array(16);crypto.getRandomValues(a);a.forEach(b=>s+=b.toString(16).padStart(2,'0'));return s;}
@@ -138,14 +169,7 @@ async function doSub(){
 
   const btn=document.getElementById('sb');
   const label=btn.textContent;
-  skyBusy=true;btn.disabled=true;btn.textContent='Submitting...';
-  // No confirmed Skyfly address yet: send the order only to the Google Sheet, as before.
-  if(!SKYFLY_API){
-    if(await skySheet(order,'SKYFLY NOT CONNECTED',15000)){skyOldSuccess(fn,sel.value,addr);return;}
-    skyBusy=false;btn.disabled=false;btn.textContent=label;
-    skyShowError("We couldn't send your order. Please check your internet connection and tap the button again — your details are still here.");
-    return;
-  }
+  skyBusy=true;btn.disabled=true;btn.textContent='Placing your order...';
   document.getElementById('skyErr').style.display='none';
   let res,data;
   // One retry with the same submission ID if Skyfly can't be reached or errors on its side.
@@ -161,14 +185,15 @@ async function doSub(){
     if(res&&res.status<500&&res.status!==429)break;
   }
 
-  if(res&&res.ok&&data&&data.ok&&data.confirmationUrl){
+  if(res&&res.ok&&data&&data.ok&&data.reference){
     btn.textContent='Order saved ✓';
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
     try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
     // One Purchase per saved order (never for test orders); Skyfly keeps it from repeating on retries or refreshes.
     try{if(window.Skyfly&&Skyfly.trackPurchase)Skyfly.trackPurchase(data);}catch(e){}
-    // Skyfly copies saved orders to the Google Sheet itself (with retries), so the page doesn't.
-    setTimeout(()=>{location.href=data.confirmationUrl;},300);
+    const conf={name:fn,reference:data.reference,item:opt.value.replace(/\s+–\s+₦[\d,]+$/,''),quantity:qty,total:data.total,currency:data.currency,url:data.confirmationUrl};
+    skyStore('skyflyConfirmed',JSON.stringify(conf));
+    skyShowConfirmation(conf);
     return;
   }
   // The customer's details need fixing: show what to change and let them retry.
@@ -177,36 +202,31 @@ async function doSub(){
     skyShowError(data.message,data.fields);
     return;
   }
-  // Skyfly unreachable or not ready: fall back to the existing Google Sheet flow so no order is lost.
-  if(SKYFLY_SHEET_FALLBACK){
-    const saved=await skySheet(order,'NOT IN SKYFLY ('+((data&&data.error)||'unreachable')+')',15000);
-    if(saved){skyOldSuccess(fn,sel.value,addr);return;}
-  }
+  // Not saved: say so plainly. Tapping again is safe (same submission ID, so never a duplicate).
   skyBusy=false;btn.disabled=false;btn.textContent=label;
   if(data&&data.message){skyShowError(data.message,data.fields);}
-  else{skyShowError("We couldn't reach our order system. Please check your internet connection and tap the button again — your details are still here.");}
+  else{skyShowError("Your order has not been placed yet: we couldn't reach our order system. Please check your internet connection and tap the button again — your details are still here.");}
 }
-// Sends the order to the existing Google Sheet (SheetDB). Resolves true if it was accepted.
-async function skySheet(order,marker,waitMs){
-  const c=order.customer,it=order.items[0];
-  const d={timestamp:new Date().toISOString(),fullName:c.name,address:c.address+(c.state?', '+c.state:''),phone:c.phone,email:c.email,
-    package:document.getElementById('pr').value+(it.quantity>1?' x'+it.quantity:''),
-    // The submission ID is also stored in Skyfly, so any row can be matched to (or ruled out from) a Skyfly order.
-    source:'Larose Nigeria Landing Page 2026 | '+marker+(order.idempotencyKey?' | ID '+order.idempotencyKey.slice(0,8):''),
-    state:c.state,quantity:it.quantity,notes:c.notes,skyflyId:order.idempotencyKey||''};
-  try{
-    const req=fetch(SHEET,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})}).then(r=>r.ok,()=>false);
-    return await Promise.race([req,new Promise(r=>setTimeout(()=>r(false),waitMs))]);
-  }catch(e){return false;}
-}
-// The page's original "Order Received" box with its WhatsApp button (used only in fallback).
-function skyOldSuccess(fn,pr,addr){
-  const msg=encodeURIComponent(`Hi Larose! I just placed an order.\n\n👤 Name: ${fn}\n📦 Package: ${pr}\n📍 Address: ${addr}\n\nPlease confirm my order. Thank you! 🙏`);
-  document.getElementById('waFinal').href=`https://wa.me/${WA}?text=${msg}`;
+// The on-page confirmation, built only from Skyfly's reply for a saved order.
+function skyShowConfirmation(c){
+  const box=document.getElementById('skyConf');box.textContent='';
+  const fmt=(n)=>(c.currency==='NGN'?'₦':c.currency+' ')+Number(n).toLocaleString('en-NG');
+  [['Order reference',c.reference],['Package',c.item],['Quantity',String(c.quantity)],['Total (pay on delivery)',fmt(c.total)]].forEach(([k,v])=>{
+    const row=document.createElement('div');const b=document.createElement('strong');b.textContent=k+': ';row.appendChild(b);
+    const val=document.createElement('span');val.textContent=v;if(k==='Order reference')val.id='skyRef';row.appendChild(val);box.appendChild(row);});
+  document.getElementById('skyThanks').textContent='Thank you'+(c.name?', '+c.name.split(' ')[0]:'')+'! Your order is confirmed.';
+  const view=document.getElementById('skyView');if(c.url){view.href=c.url;view.style.display='';}else{view.style.display='none';}
   document.getElementById('formContent').style.display='none';
   document.getElementById('sb2').style.display='block';
-  window.scrollTo({top:document.getElementById('order').offsetTop-80,behavior:'smooth'});
+  const o=document.getElementById('order');if(o)window.scrollTo({top:o.offsetTop-80,behavior:'smooth'});
 }
+// After a refresh the confirmation stays (no new order, no new Purchase); "Place another order" clears it.
+(function(){
+  const again=document.getElementById('skyAgain');
+  if(again)again.addEventListener('click',function(e){e.preventDefault();skyStore('skyflyConfirmed','');skyStore('skyflyPayload','');location.hash='order';location.reload();});
+  let saved=null;try{saved=JSON.parse(skyStore('skyflyConfirmed')||'null');}catch(e){}
+  if(saved&&saved.reference)skyShowConfirmation(saved);
+})();
 '''.replace('__SKYFLY_API__', api)
 
 html = html[:start] + new_sub + html[end:]

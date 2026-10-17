@@ -31,7 +31,11 @@ const patched = path.join(root, 'test/e2e/.landing.html');
 execFileSync('python3', [path.join(root, 'integrations/larosenigeria/patch.py'), landingSource, patched, SKYFLY]);
 const patchedHtml = readFileSync(patched, 'utf8');
 assert.ok(!patchedHtml.includes('7039361243'), 'old WhatsApp number must not remain on the page');
-assert.equal((patchedHtml.match(/wa\.me\/2349049206695/g) || []).length, 5, 'all 5 WhatsApp links use the new number');
+// WhatsApp stays as voluntary support (floating button, "Chat With Us", footer, confirmation), all on the new number;
+// ordering happens on the website, so no "order on WhatsApp" links remain.
+assert.equal((patchedHtml.match(/wa\.me\/2349049206695/g) || []).length, 4, '4 voluntary WhatsApp links, all on the new number');
+assert.ok(!/wa\.me\/[^"']*want%20to%20order/.test(patchedHtml), 'no order-on-WhatsApp links');
+assert.ok(!patchedHtml.includes('skyOldSuccess') && !patchedHtml.includes('skySheet('), 'no unconfirmed Sheet-only success path');
 const landing = createServer((req, res) => {
   if (req.url.startsWith('/Larosenigeria/')) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -81,6 +85,7 @@ try {
     body: 'fbq.callMethod=function(){window.recordFb(Array.prototype.slice.call(arguments));};'
       + 'var q=fbq.queue.splice(0);q.forEach(function(a){fbq.callMethod.apply(null,a);});',
   }));
+  const openedPages = [];
   const purchases = () => fbCalls.filter((a) => (a[0] === 'track' && a[1] === 'Purchase') || (a[0] === 'trackSingle' && a[2] === 'Purchase'));
   const page = await context.newPage();
 
@@ -100,6 +105,8 @@ try {
   });
 
   const shop = await context.newPage();
+  // Any window the landing page opens by itself (e.g. WhatsApp) would show up here.
+  shop.on('popup', (p) => openedPages.push(p.url()));
   const fillForm = async () => {
     await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/?utm_source=facebook&utm_campaign=e2e-oct`);
     await shop.click('text=Order Power Glow');
@@ -138,35 +145,25 @@ try {
     assert.equal(purchases().length, 0, 'a refused submission is not a Purchase');
   });
 
-  await step('Skyfly unreachable: order falls back to the Google Sheet (not lost), original success box shown', async () => {
+  await step('Skyfly unreachable: no success shown, nothing saved anywhere, details kept, the page never opens WhatsApp', async () => {
     await fillForm();
     await shop.route(`${SKYFLY}/api/public/orders`, (route) => route.abort('connectionrefused'));
     await shop.click('#sb');
-    await shop.waitForSelector('#sb2', { state: 'visible' });
-    assert.equal(sheetRows.length, 1);
-    assert.match(sheetRows[0].source, /NOT IN SKYFLY \(unreachable\)/);
-    assert.equal(sheetRows[0].fullName, 'Ngozi Adeyemi');
-    assert.match(sheetRows[0].package, /Power Glow.* x2$/);
-    assert.equal(sheetRows[0].address, '14 Admiralty Way, Lekki Phase 1, Lagos');
-    assert.match(await shop.getAttribute('#waFinal', 'href'), /^https:\/\/wa\.me\/2349049206695\?text=/);
-    await shop.screenshot({ path: path.join(shots, '2-landing-fallback-to-sheet.png') });
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
-    sheetRows.length = 0;
-  });
-
-  await step('Skyfly and the Sheet both down: error shown, details kept, retry possible', async () => {
-    await fillForm();
-    sheetDown = true;
-    await shop.click('#sb');
-    await shop.waitForSelector('#skyErr', { state: 'visible' });
-    assert.match(await shop.textContent('#skyErr'), /couldn't reach our order system/);
+    await shop.waitForSelector('#skyErr', { state: 'visible', timeout: 60000 });
+    assert.match(await shop.textContent('#skyErr'), /has not been placed yet/);
+    assert.equal(await shop.isVisible('#sb2'), false, 'no confirmation without a saved order');
+    assert.equal(sheetRows.length, 0, 'the page no longer writes to the Google Sheet');
     assert.equal(await shop.inputValue('#ph'), '08051234567');
     assert.equal(await shop.isEnabled('#sb'), true);
-    sheetDown = false;
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
+    assert.equal(purchases().length, 0, 'a failed submission is not a Purchase');
+    assert.equal(openedPages.length, 0, 'no WhatsApp (or any other) window was opened');
+    assert.ok(new URL(shop.url()).pathname.startsWith('/Larosenigeria/'), 'customer stays on the page');
+    await shop.screenshot({ path: path.join(shots, '2-landing-unreachable-error.png') });
   });
 
   let reference;
-  await step('retry with repeated clicks saves exactly one order and redirects', async () => {
+  await step('retry with repeated clicks saves exactly one order and shows the confirmation on the page', async () => {
     await shop.unroute(`${SKYFLY}/api/public/orders`);
     // Slow the API slightly so the extra clicks land while the first request is in flight.
     let calls = 0;
@@ -178,9 +175,10 @@ try {
     await shop.click('#sb');
     await shop.click('#sb', { force: true, noWaitAfter: true }).catch(() => {});
     await shop.click('#sb', { force: true, noWaitAfter: true }).catch(() => {});
-    await shop.waitForURL(/\/o\/LR-/);
+    await shop.waitForSelector('#sb2', { state: 'visible' });
     assert.equal(calls, 1, 'only one request should be sent');
-    reference = new URL(shop.url()).pathname.split('/').pop();
+    reference = (await shop.textContent('#skyRef')).trim();
+    assert.ok(new URL(shop.url()).pathname.startsWith('/Larosenigeria/'), 'stays on the landing page');
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     // Saved orders are copied to the Google Sheet by Skyfly's server (with retries), not by the page.
@@ -210,38 +208,43 @@ try {
     assert.deepEqual(items.map((i) => [i.product_code, i.quantity, i.unit_price_minor]), [['package-3', 2, 5150000]]);
   });
 
-  await step('confirmation page shows reference, items, total and WhatsApp link', async () => {
-    assert.equal(await shop.textContent('#ref'), reference);
-    assert.match(await shop.textContent('body'), /Package 3 – Power Glow\s*× 2/);
-    assert.equal((await shop.textContent('#total')).trim(), '₦103,000');
-    const wa = new URL(await shop.getAttribute('#wa', 'href'));
-    assert.equal(wa.host, 'wa.me');
-    assert.equal(wa.pathname, '/2349049206695');
-    assert.match(wa.searchParams.get('text'), new RegExp(`order ${reference}`));
+  await step('on-page confirmation: reference, package, quantity, confirmed total, next steps; WhatsApp only if the customer chooses', async () => {
+    const conf = await shop.textContent('#sb2');
+    assert.match(conf, /Thank you, Ngozi! Your order is confirmed\./);
+    assert.match(conf, new RegExp(`Order reference: ${reference}`));
+    assert.match(conf, /Package: Package 3 – Power Glow/);
+    assert.match(conf, /Quantity: 2/);
+    assert.match(conf, /Total \(pay on delivery\): ₦103,000/);
+    assert.match(conf, /What happens next: our team will call you within 1 hour/);
+    assert.match(await shop.getAttribute('#skyView', 'href'), new RegExp(`/o/${reference}\\?t=`));
+    assert.equal(openedPages.length, 0, 'WhatsApp is never opened automatically');
+    assert.equal(await shop.getAttribute('.wafbtn', 'href'), 'https://wa.me/2349049206695?text=Hi%20Larose!%20I%20have%20a%20question.');
+    assert.equal(await shop.isVisible('.wafbtn'), true, 'floating WhatsApp button still there');
     const width = await shop.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(width <= 390, `no horizontal scroll on mobile (got ${width})`);
-    await shop.screenshot({ path: path.join(shots, '3-confirmation-mobile.png'), fullPage: true });
+    await shop.screenshot({ path: path.join(shots, '3-confirmation-mobile.png'), fullPage: false });
+    // The order details link opens Skyfly's own confirmation (read from the database).
+    const details = await context.newPage();
+    await details.goto(await shop.getAttribute('#skyView', 'href'));
+    assert.equal(await details.textContent('#ref'), reference);
+    assert.equal((await details.textContent('#total')).trim(), '₦103,000');
+    await details.close();
   });
 
-  await step('going back and submitting again does not duplicate the order', async () => {
-    await shop.goBack();
-    await shop.waitForSelector('#sb');
-    // Browsers may restore the form; refill to be sure, then resubmit identical details.
-    await fillForm();
-    await shop.click('#sb');
-    await shop.waitForURL(/\/o\/LR-/);
-    assert.equal(new URL(shop.url()).pathname.split('/').pop(), reference);
+  await step('refreshing keeps the confirmation, creates no order and no second Purchase', async () => {
+    await shop.reload();
+    await shop.waitForSelector('#sb2', { state: 'visible' });
+    assert.match(await shop.textContent('#skyConf'), new RegExp(reference));
+    assert.equal(await shop.isVisible('#sb'), false, 'the form is not offered again for the same order');
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     assert.equal(sheetRows.length, 0);
-    assert.equal(purchases().length, 1, 'resubmitting the same order is not a second Purchase');
-    await shop.reload();
-    await shop.waitForSelector('#ref');
-    assert.equal(purchases().length, 1, 'refreshing the confirmation page is not a second Purchase');
+    assert.equal(purchases().length, 1, 'refreshing is not a second Purchase');
   });
 
   await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
-    await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);
+    await shop.click('#skyAgain');
+    await shop.waitForSelector('#sb', { state: 'visible' });
     await shop.click('text=Order Starter Glow Soap');
     await shop.fill('#fn', 'Lost Reply'); await shop.fill('#addr', '9 Retry Close, Yaba'); await shop.fill('#ph', '08099990000');
     await shop.selectOption('#st', 'Lagos');
@@ -253,7 +256,7 @@ try {
       return route.continue();
     });
     await shop.click('#sb');
-    await shop.waitForURL(/\/o\/LR-/);
+    await shop.waitForSelector('#sb2', { state: 'visible', timeout: 60000 });
     await shop.unroute(`${SKYFLY}/api/public/orders`);
     assert.equal(calls, 2);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");

@@ -105,7 +105,7 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
 
 let reference = null;
 let confirmationUrl = null;
-await step('C/H. A test order placed through the real checkout is saved and the confirmation page opens (not WhatsApp)', async () => {
+await step('C/H. A test order placed through the real checkout is saved; the confirmation appears only after Skyfly\'s reply (not WhatsApp)', async () => {
   await page.click('text=Order Power Glow');
   await page.fill('#fn', NAME);
   await page.fill('#ph', '08012345678');
@@ -117,19 +117,29 @@ await step('C/H. A test order placed through the real checkout is saved and the 
     const summary = await page.textContent('#skySum');
     assert(/Power Glow × 2/.test(summary) && /₦103,000/.test(summary), `order summary: ${summary}`);
   }
-  await Promise.all([page.waitForURL(/\/o\/LR-/, { timeout: 120000 }), page.click('#sb')]);
+  assert(await page.isVisible('.wafbtn'), 'floating WhatsApp button missing');
+  await page.click('#sb');
+  // On-page confirmation (current page) or Skyfly's confirmation page (older page version).
+  await Promise.race([page.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 120000 }), page.waitForURL(/\/o\/LR-/, { timeout: 120000 })]);
   assert(apiReply && apiReply.ok, `API reply ${JSON.stringify(apiReply)}`);
   reference = apiReply.reference;
-  confirmationUrl = page.url();
+  confirmationUrl = apiReply.confirmationUrl;
   mkdirSync('live-screenshots', { recursive: true });
-  await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: true });
+  await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: false });
   const text = await page.textContent('body');
-  assert(text.includes(reference) && /What happens next/.test(text), 'confirmation page content');
+  assert(text.includes(reference) && /What happens next/.test(text), 'confirmation content');
+  if (await page.$('#skyRef')) {
+    assert((await page.textContent('#skyRef')).trim() === reference, 'reference on the page differs from Skyfly\'s');
+    assert(/Total \(pay on delivery\): ₦103,000/.test(await page.textContent('#skyConf')), 'confirmed total');
+  }
   assert(!navigations.some((u) => /wa\.me|whatsapp\.com/.test(u)), 'navigated to WhatsApp');
   return `${reference}, total ₦${apiReply.total.toLocaleString('en-NG')}; page wrote ${sheetPosts.length} sheet row(s) itself`;
 });
 
 await step('D. The order persists: the confirmation page (read from the database) still shows it after a refresh', async () => {
+  await page.reload({ waitUntil: 'load' });
+  if (await page.$('#skyRef')) assert((await page.textContent('#skyRef')).trim() === reference, 'on-page confirmation lost on refresh');
+  await page.goto(confirmationUrl, { waitUntil: 'load' });
   await page.reload({ waitUntil: 'load' });
   const text = await page.textContent('body');
   assert(text.includes(reference) && text.includes('TEST ORDER Skyfly E2E'), 'order not shown after refresh');
@@ -207,25 +217,29 @@ if (process.env.RENDER_API_KEY) {
   });
 }
 
-await step('G. Fallback: with Skyfly unreachable the order still reaches the Google Sheet, marked NOT IN SKYFLY', async () => {
-  assert(sheetReady, 'skipped: the sheet cannot take rows (see the check above)');
+await step('G. With Skyfly unreachable the customer sees an honest error: no confirmation, no Sheet write, no WhatsApp', async () => {
   const p2 = await ctx.newPage();
-  let blocked = 0;
+  let blocked = 0; let sheetCalls = 0;
   await p2.route(`${SKYFLY}/api/public/orders`, (route) => { blocked += 1; return route.abort(); });
-  await p2.goto(`${PAGE}?skyfly_e2e=${RUN}-fallback`, { waitUntil: 'load' });
+  p2.on('request', (r) => { if (r.url().startsWith(SHEET)) sheetCalls += 1; });
+  const popups = []; p2.on('popup', (x) => popups.push(x.url()));
+  await p2.goto(`${PAGE}?skyfly_e2e=${RUN}-unreachable`, { waitUntil: 'load' });
   await p2.fill('#fn', FB_NAME);
   await p2.fill('#ph', '08012345678');
-  await p2.fill('#addr', 'TEST ORDER - do not deliver, automated fallback check');
+  await p2.fill('#addr', 'TEST ORDER - do not deliver, automated check');
   await p2.selectOption('#st', 'Lagos');
   await p2.selectOption('#pr', { index: 1 });
   await p2.click('#sb');
-  await p2.waitForSelector('#sb2', { state: 'visible', timeout: 90000 });
-  assert(blocked >= 1, 'Skyfly was not called');
-  const rows = await waitForSheetRows(`${RUN} fallback`, 1, 60);
+  await p2.waitForSelector('#skyErr', { state: 'visible', timeout: 120000 });
+  const err = await p2.textContent('#skyErr');
+  const confirmed = await p2.isVisible('#sb2');
+  await p2.screenshot({ path: 'live-screenshots/larose-unreachable-error.png', fullPage: false });
   await p2.close();
-  assert(rows.length === 1, `${rows.length} matching sheet rows`);
-  assert(/NOT IN SKYFLY/.test(rows[0].source), `source: ${rows[0].source}`);
-  return `Skyfly calls blocked: ${blocked}; sheet row "${rows[0].source}" (listed in Skyfly → Google Sheet backup for recovery)`;
+  assert(blocked >= 1, 'Skyfly was not called');
+  assert(!confirmed, 'a confirmation was shown without a saved order');
+  assert(sheetCalls === 0, `the page wrote to the Google Sheet (${sheetCalls})`);
+  assert(!popups.length, `opened ${popups.join(', ')}`);
+  return `error shown: "${err.trim().slice(0, 80)}…"`;
 });
 
 await browser.close();
