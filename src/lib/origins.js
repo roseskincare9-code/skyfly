@@ -14,6 +14,9 @@ export function originsForPage(page, config) {
   const own = page.url && originOf(page.url);
   if (own) origins.add(own);
   if (page.hosted && config.pagesBaseUrl) origins.add(originOf(config.pagesBaseUrl));
+  // Published pages at <Skyfly address>/p/<slug>/ run in a browser sandbox (no access to the
+  // dashboard), so the browser sends "Origin: null" for them.
+  if (page.hosted && config.publicBaseUrl) origins.add('null');
   if (page.custom_domain) origins.add(`https://${page.custom_domain}`);
   // Hosted pages are also served on the business's subdomain (when the platform domain is set).
   if (page.hosted && page.business_subdomain && config.platformDomain) origins.add(`https://${page.business_subdomain}.${config.platformDomain}`);

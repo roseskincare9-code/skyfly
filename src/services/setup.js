@@ -2,7 +2,11 @@
 // orders without a manual setup step. Only when exactly one account exists (the
 // owner, with sign-up limited to the first account) and Larose is not set up yet.
 // Uses the same idempotent setup as the "Set up Larose" button: never duplicates.
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { seedLarose } from '../scripts/seed-larose.js';
+import { saveVersion } from '../hosting/storage.js';
+import { analyzeFiles } from '../hosting/report.js';
 
 export async function ensureLaroseForOwner(pool, config, log = console) {
   if (!config.autoSetupLarose) return null;
@@ -16,5 +20,57 @@ export async function ensureLaroseForOwner(pool, config, log = console) {
     [users[0].id, businessId],
   );
   log.log(`Larose Natural Skincare Nigeria set up automatically for the owner account (business #${businessId}).`);
+  return businessId;
+}
+
+// A labelled demo site for checking Skyfly's own hosting end to end without touching any real
+// business: "Skyfly Demo Shop (test)" with a page published at /p/skyfly-demo/ in test mode
+// (its orders are test orders: never counted, never sent to Meta/TikTok, never emailed).
+// No pixel or Google Sheet is connected to it. Created once, for the platform owner.
+const DEMO_FILES = [['index.html', 'text/html; charset=utf-8'], ['style.css', 'text/css; charset=utf-8'], ['hero.jpg', 'image/jpeg'],
+  ['product-1.jpg', 'image/jpeg'], ['product-2.jpg', 'image/jpeg'], ['product-3.jpg', 'image/jpeg']];
+
+export async function ensureDemoSite(pool, config, log = console) {
+  if (!config.demoSite) return null;
+  const { rows: [admin] } = await pool.query('SELECT id FROM users WHERE is_platform_admin ORDER BY id LIMIT 1');
+  if (!admin) return null;
+  const { rows: [existing] } = await pool.query("SELECT 1 FROM landing_pages WHERE slug = 'skyfly-demo'");
+  if (existing) return null;
+  const files = DEMO_FILES.map(([name, contentType]) => {
+    const data = readFileSync(new URL(`../demo/${name}`, import.meta.url));
+    return { path: name, contentType, size: data.length, sha256: createHash('sha256').update(data).digest('hex'), data };
+  });
+  const client = await pool.connect();
+  let businessId; let pageId;
+  try {
+    await client.query('BEGIN');
+    const { rows: [b] } = await client.query(
+      `INSERT INTO businesses (owner_id, name, slug, currency, order_prefix, subscription_status)
+       VALUES ($1, 'Skyfly Demo Shop (test)', 'skyfly-demo', 'NGN', 'DM', 'internal') ON CONFLICT (slug) DO NOTHING RETURNING id`, [admin.id]);
+    if (!b) { await client.query('ROLLBACK'); return null; }
+    businessId = b.id;
+    await client.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [businessId, admin.id]);
+    const { rows: products } = await client.query(
+      `INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES
+         ($1, 'demo-serum', 'Glow Demo Serum', 1250000, 1), ($1, 'demo-duo', 'Glow Demo Duo (serum + cleanser)', 2200000, 2) RETURNING id`, [businessId]);
+    ({ rows: [{ id: pageId }] } = await client.query(
+      `INSERT INTO landing_pages (business_id, slug, name, status, test_mode, notes)
+       VALUES ($1, 'skyfly-demo', 'Skyfly demo page (test)', 'draft', true, 'Created automatically for testing Skyfly hosting. Orders are test orders.') RETURNING id`, [businessId]));
+    for (const p of products) await client.query('INSERT INTO landing_page_products (landing_page_id, product_id) VALUES ($1, $2)', [pageId, p.id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  const versionId = await saveVersion(pool, {
+    pageId, userId: admin.id,
+    upload: { sourceName: 'Skyfly demo page', entryPath: 'index.html', files, totalBytes: files.reduce((n, f) => n + f.size, 0), report: analyzeFiles(files, 'index.html') },
+  });
+  await pool.query("UPDATE landing_pages SET published_version_id = $1, status = 'active', updated_at = now() WHERE id = $2", [versionId, pageId]);
+  await pool.query(
+    "INSERT INTO audit_log (user_id, business_id, action, details) VALUES ($1, $2, 'business.demo_setup', '{\"automatic\":true}')", [admin.id, businessId]);
+  log.log(`Skyfly demo site published at /p/skyfly-demo/ (business #${businessId}, test mode).`);
   return businessId;
 }

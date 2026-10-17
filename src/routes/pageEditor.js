@@ -65,6 +65,40 @@ export function pageEditorRoutes({ pool, config }) {
     });
   }
 
+  // New version from an existing one: unchanged files keep their stored content; changed ones are added.
+  async function deriveVersion(v, entryHtml, replaced, sourceName, userId) {
+    const { rows: files } = await pool.query('SELECT path, content_type, size, sha256 FROM page_files WHERE version_id = $1 ORDER BY path', [v.id]);
+    const newFiles = [];
+    for (const f of files) {
+      let data = null;
+      if (f.path === v.entry_path) data = Buffer.from(entryHtml);
+      else if (replaced.has(f.path)) data = replaced.get(f.path);
+      else if (/\.(html?|css|m?js)$/i.test(f.path)) data = (await readFile(pool, v.id, f.path)).data;
+      const sha256 = data ? createHash('sha256').update(data).digest('hex') : f.sha256;
+      newFiles.push({ path: f.path, contentType: f.content_type, size: data ? data.length : f.size, sha256, data });
+    }
+    const upload = {
+      sourceName: sourceName.slice(0, 200), entryPath: v.entry_path, files: newFiles,
+      totalBytes: newFiles.reduce((n, f) => n + f.size, 0), report: analyzeFiles(newFiles.filter((f) => f.data), v.entry_path),
+    };
+    return saveVersion(pool, { pageId: v.page_id, userId, upload });
+  }
+
+  // Adds Skyfly's drop-in checkout to a page that has no connected order form, as a new version.
+  router.post('/:pageId/versions/:versionId/add-checkout', asyncHandler(async (req, res) => {
+    const v = await load(req);
+    if (!v) return res.status(404).render('error', { message: 'Version not found.' });
+    const html = (await readFile(pool, v.id, v.entry_path)).data.toString('utf8');
+    const base = `${res.locals.base}/landing-pages/${v.page_id}`;
+    if (/data-skyfly-checkout/.test(html)) return res.redirect(`${base}?error=${encodeURIComponent('This version already has the Skyfly checkout.')}#report`);
+    const section = '\n<section id="order" style="padding:32px 16px"><div data-skyfly-checkout></div></section>\n';
+    const end = html.match(/<\/body\s*>/i);
+    const updated = end ? html.slice(0, end.index) + section + html.slice(end.index) : html + section;
+    const versionId = await deriveVersion(v, updated, new Map(), `Skyfly checkout added (from ${v.source_name})`, req.session.userId);
+    await audit(pool, req, { action: 'page.checkout_added', businessId: req.business.id, entityType: 'landing_page', entityId: v.page_id, details: { from: v.id, versionId } });
+    res.redirect(`${base}?done=checkout`);
+  }));
+
   router.get('/:pageId/versions/:versionId/edit', asyncHandler(async (req, res) => {
     const v = await load(req);
     if (!v) return res.status(404).render('error', { message: 'Version not found.' });
@@ -111,22 +145,7 @@ export function pageEditorRoutes({ pool, config }) {
     }
     if (!result.changed.length) return renderEditor(req, res, v, { error: 'Nothing was changed.', status: 400 });
 
-    // New version: unchanged files keep their stored content; changed ones are added.
-    const { rows: files } = await pool.query('SELECT path, content_type, size, sha256 FROM page_files WHERE version_id = $1 ORDER BY path', [v.id]);
-    const newFiles = [];
-    for (const f of files) {
-      let data = null;
-      if (f.path === v.entry_path) data = Buffer.from(result.html);
-      else if (replaced.has(f.path)) data = replaced.get(f.path);
-      else if (/\.(html?|css|m?js)$/i.test(f.path)) data = (await readFile(pool, v.id, f.path)).data;
-      const sha256 = data ? createHash('sha256').update(data).digest('hex') : f.sha256;
-      newFiles.push({ path: f.path, contentType: f.content_type, size: data ? data.length : f.size, sha256, data });
-    }
-    const upload = {
-      sourceName: `Edited in Skyfly (from ${v.source_name})`.slice(0, 200), entryPath: v.entry_path, files: newFiles,
-      totalBytes: newFiles.reduce((n, f) => n + f.size, 0), report: analyzeFiles(newFiles.filter((f) => f.data), v.entry_path),
-    };
-    const versionId = await saveVersion(pool, { pageId: v.page_id, userId: req.session.userId, upload });
+    const versionId = await deriveVersion(v, result.html, replaced, `Edited in Skyfly (from ${v.source_name})`, req.session.userId);
 
     // Optionally keep Skyfly's product prices in step with the page.
     if (b.update_product_prices === 'on') {

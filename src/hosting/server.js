@@ -80,6 +80,29 @@ function makeSender(pool, transformHtml) {
   };
 }
 
+// Published pages on the Skyfly address itself: <publicBaseUrl>/p/<slug>/...
+// Used when there is no separate pages address. The page runs in a browser sandbox (an
+// opaque origin), so its scripts cannot read the dashboard, its cookies or other pages'
+// storage, even though it shares the address. Orders reach Skyfly with "Origin: null".
+export function pathPages({ pool, transformHtml = null }) {
+  const router = Router();
+  const send = makeSender(pool, transformHtml);
+  router.get(/^\/p\/([^/]+)(\/.*)?$/, asyncHandler(async (req, res) => {
+    const slug = req.params[0];
+    if (!SLUG_RE.test(slug)) return notFound(res);
+    if (req.params[1] === undefined) return res.redirect(301, `/p/${slug}/`);
+    const { rows: [page] } = await pool.query(
+      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE slug = $1', [slug]);
+    if (!page || page.status !== 'active' || !page.published_version_id) return notFound(res);
+    res.set('Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
+    // Files are loaded by the sandboxed (cross-origin) page.
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Access-Control-Allow-Origin', '*');
+    await send(req, res, { page, versionId: page.published_version_id, rest: req.params[1], preview: false });
+  }));
+  return router;
+}
+
 export function pageServer({ pool, config, transformHtml = null }) {
   const router = Router();
   const send = makeSender(pool, transformHtml);

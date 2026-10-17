@@ -1,6 +1,10 @@
 <% const latest = hosting.versions[0]; const live = page.status === 'active' && page.published_version_id; %>
 <div class="card">
   <h2>Hosting</h2>
+  <% if (hosting.enabled && hosting.pathHosting) { %>
+    <p class="muted" style="margin-top:0">Published pages open on the Skyfly address at <code>/p/<%= page.slug %>/</code>, in a secure browser sandbox that keeps page scripts away from your dashboard. A custom domain or business subdomain can be added below when you have one; this address keeps working.</p>
+  <% } %>
+  <% if (page.test_mode) { %><div class="warn-box">Test mode is on: orders from this page are saved as test orders.</div><% } %>
   <% if (!hosting.enabled) { %>
     <div class="warn-box">You can upload, edit and preview pages here. <strong>Publishing</strong> on Skyfly needs a pages address (<code>PAGES_BASE_URL</code>, e.g. pages.yourbrand.com), separate from the dashboard so page scripts can never read your dashboard. Until then, keep the page live where it is now (e.g. GitHub Pages). See docs/SETUP.md.</div>
   <% } %>
@@ -67,6 +71,10 @@
     <p class="muted" style="font-size:13px">Skyfly will not add a second copy of a pixel that is already in the page, to avoid counting events twice. To let Skyfly manage it from the Pixels screen, remove that code from your page and upload again.</p>
   <% } %>
   <p style="margin-bottom:0"><strong>Order form code:</strong> <%= r.connected ? 'Skyfly connection code found in this upload' : (r.hasForm ? 'a form was found, but no Skyfly connection code' : 'no form found') %></p>
+  <% if (!r.connected) { %>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/versions/<%= latest.id %>/add-checkout" style="margin-top:10px"><%- include('csrf') %>
+      <button type="submit">Add Skyfly checkout</button> <span class="muted">Adds the ready-made order form (package, quantity, details, review, confirmation) at the end of the page, as a new version you can preview first.</span></form>
+  <% } %>
 </div>
 <% } %>
 

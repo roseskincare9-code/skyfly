@@ -1,7 +1,7 @@
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
-import { ensureLaroseForOwner } from './services/setup.js';
+import { ensureLaroseForOwner, ensureDemoSite } from './services/setup.js';
 import { startSheetWorker } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
 
@@ -20,7 +20,8 @@ const app = createApp({
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);
-  ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
+  ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message))
+    .then(() => ensureDemoSite(pool, config)).catch((err) => console.error('Demo site setup failed:', err.message));
 });
 
 function shutdown() {

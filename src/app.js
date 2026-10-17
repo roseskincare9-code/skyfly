@@ -12,7 +12,7 @@ import { workspaceRoutes } from './routes/workspace.js';
 import { adminRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
-import { pageServer, sandboxPreview } from './hosting/server.js';
+import { pageServer, sandboxPreview, pathPages } from './hosting/server.js';
 import { injectSkyfly } from './hosting/inject.js';
 import { recordPurchase } from './services/pixels.js';
 import { formatMoney } from './lib/money.js';
@@ -73,8 +73,9 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   const pages = pageServer({ pool, config, transformHtml });
   app.use((req, res, next) => (isDashboardRequest(req, config) ? next() : pages(req, res, next)));
 
-  // Sandboxed previews on the dashboard address (before Helmet: they carry their own CSP).
+  // Sandboxed previews and published pages on the dashboard address (before Helmet: they carry their own CSP).
   app.use(sandboxPreview({ pool, config, transformHtml }));
+  app.use(pathPages({ pool, transformHtml }));
 
   app.use(helmet());
 

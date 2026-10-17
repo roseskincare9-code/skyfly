@@ -26,6 +26,7 @@
       <label style="color:var(--text)"><input type="checkbox" name="products" value="<%= p.id %>" <%= page.productIds.includes(String(p.id)) ? 'checked' : '' %>>
         <%= p.name %> — <%= formatMoney(p.price_minor, business.currency) %> <span class="muted">(<code><%= p.code %></code>)<%= p.active ? '' : ' · unavailable' %></span></label>
     <% }) %>
+    <label style="color:var(--text);margin-top:14px"><input type="checkbox" name="test_mode" <%= page.test_mode ? 'checked' : '' %>> Test mode: every order from this page is saved as a <strong>test order</strong> (not counted in sales, never sent to Meta/TikTok as a Purchase, never emailed)</label>
     <label for="notes">Notes</label>
     <textarea id="notes" name="notes" maxlength="2000"><%= page.notes || '' %></textarea>
     <p><button type="submit">Save</button></p>

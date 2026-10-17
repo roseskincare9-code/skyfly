@@ -106,7 +106,7 @@ function fingerprint(input) {
 
 async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
-    `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain,
+    `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode,
             (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
@@ -152,7 +152,7 @@ async function loadPricedItems(client, landingPageId, items) {
 
 async function findByIdempotencyKey(client, businessId, key) {
   const { rows } = await client.query(
-    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency
+    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test
        FROM orders WHERE business_id = $1 AND idempotency_key = $2`,
     [businessId, key],
   );
@@ -175,7 +175,7 @@ async function insertOrder(client, o) {
        status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
-     RETURNING id, reference, access_token, total_minor, currency`,
+     RETURNING id, reference, access_token, total_minor, currency, is_test`,
     [
       o.businessId, o.landingPageId, generateReference(o.prefix), generateToken(), o.idempotencyKey, o.fingerprint,
       o.customer.name, o.customer.phone, o.customer.email, o.customer.address, o.customer.state, o.customer.notes,
@@ -184,7 +184,7 @@ async function insertOrder(client, o) {
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
       o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
       o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
-      isTestName(o.customer.name), o.customer.marketingConsent === true,
+      isTestName(o.customer.name) || o.testMode === true, o.customer.marketingConsent === true,
     ],
   );
   const order = inserted.rows[0];
@@ -254,7 +254,7 @@ export async function createOrder(pool, input, auth, config) {
       idempotencyKey: input.idempotencyKey, fingerprint: print, customer: input.customer, attribution: input.attribution,
       items, total: items.reduce((sum, i) => sum + i.lineTotal, 0),
       status: 'pending', paymentStatus: 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
-      client: auth.client,
+      client: auth.client, testMode: page.test_mode,
     });
     if (!order) {
       // A concurrent request with the same key committed first.

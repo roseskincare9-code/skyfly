@@ -68,6 +68,7 @@ export function analyzeFiles(files, entryPath, { standalone = false } = {}) {
   const pixels = [];
   let connected = false;
   let hasForm = false;
+  let usesStorage = false;
 
   for (const file of files) {
     if (!isHtml(file.path) && !['css', 'js', 'mjs'].includes(extensionOf(file.path))) continue;
@@ -91,7 +92,8 @@ export function analyzeFiles(files, entryPath, { standalone = false } = {}) {
     if (isHtml(file.path)) {
       pixels.push(...pixelsIn(text).map((px) => ({ ...px, file: file.path })));
       if (/<form[\s>]/i.test(text) || /<(input|select|textarea)[\s>]/i.test(text)) hasForm = true;
-      if (/data-skyfly-form|\/sdk\/skyfly\.js|\/api\/public\/orders/.test(text)) connected = true;
+      if (/data-skyfly-form|data-skyfly-checkout|\/sdk\/skyfly\.js|\/api\/public\/orders/.test(text)) connected = true;
+      if (/\b(localStorage|sessionStorage|indexedDB)\b|document\.cookie/.test(text)) usesStorage = true;
     }
   }
 
@@ -105,7 +107,12 @@ export function analyzeFiles(files, entryPath, { standalone = false } = {}) {
     warnings.push('Some paths start with "/" (e.g. /css/style.css). They only work when the page is served on its own custom domain. Use relative paths (css/style.css) to make them work everywhere.');
   }
   if (hasForm && !connected) {
-    warnings.push('The page has a form, but it is not connected to Skyfly. Orders will NOT appear in Skyfly until the form is connected (see "Connect your order form").');
+    warnings.push('The page has a form, but it is not connected to Skyfly. Orders will NOT appear in Skyfly until the form is connected (see "Connect your order form"), or use "Add Skyfly checkout".');
+  } else if (!connected) {
+    warnings.push('The page has no order form. Use "Add Skyfly checkout" (or add <div data-skyfly-checkout></div> where the form should go) so customers can order.');
+  }
+  if (usesStorage) {
+    warnings.push('The page\'s own code uses browser storage or cookies. On the Skyfly address (/p/…) pages run in a secure sandbox where storage is blocked, so that code must handle errors (try/catch); on a custom domain or business subdomain it works normally.');
   }
 
   return {

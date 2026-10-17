@@ -1,0 +1,39 @@
+# Measures page speed (LCP, CLS, INP from one tap, TTFB, load, bytes) of the live pages on
+# mobile (throttled) and desktop, cold and warm cache. Read-only: places no orders, and
+# Meta/TikTok requests are blocked so no test visits reach the ad platforms. Manual only.
+name: Page speed
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per measurement (median is reported)
+        required: false
+        default: '3'
+permissions:
+  contents: read
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Wake the Skyfly service (free plan sleeps when idle)
+        run: curl -s -m 90 -o /dev/null -w 'wake: HTTP %{http_code}\n' https://skyfly-gybf.onrender.com/healthz || true
+      - run: >-
+          node scripts/perf.mjs
+          "Skyfly demo page (hosted)|https://skyfly-gybf.onrender.com/p/skyfly-demo/|.sky-opt >> nth=1"
+          "Larose page (GitHub Pages)|https://roseskincare9-code.github.io/Larosenigeria/|text=Order Power Glow"
+          "Skyfly dashboard sign-in|https://skyfly-gybf.onrender.com/login|#email"
+        env:
+          RUNS: ${{ inputs.runs }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-results
+          path: perf-results.json
+          retention-days: 30

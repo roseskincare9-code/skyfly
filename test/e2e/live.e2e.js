@@ -314,9 +314,9 @@ await step('L. The test order appears exactly once in the Larose Natural Skincar
   const href = await d.getAttribute('a:text-is("Larose Natural Skincare Nigeria")', 'href');
   assert(href, 'Larose business not in the dashboard');
   await d.goto(`${SKYFLY}${href}/orders?q=${encodeURIComponent(reference)}`);
-  const rows = await d.locator(`tbody a:text-is("${reference}")`).count();
+  const rows = await d.getByRole('link', { name: reference, exact: true }).count();
   assert(rows === 1, `${rows} rows for ${reference} in the Larose orders list`);
-  await d.click(`tbody a:text-is("${reference}")`);
+  await d.getByRole('link', { name: reference, exact: true }).click();
   const sheet = (await d.textContent('#sheet')).replace(/\s+/g, ' ').trim();
   await d.screenshot({ path: 'live-screenshots/dashboard-test-order.png', fullPage: true });
   await owner.close();

@@ -38,6 +38,13 @@ function safeUrl(input) {
   }
 }
 
+// Where a published page opens: the pages address when one is configured, else a stable
+// path on the Skyfly address (served in a browser sandbox, see hosting/server.js).
+export function publishedUrl(config, page) {
+  if (config.pagesBaseUrl) return `${config.pagesBaseUrl}/${page.slug}/`;
+  return config.publicBaseUrl ? `${config.publicBaseUrl}/p/${page.slug}/` : null;
+}
+
 function readPage(body) {
   const name = String(body.name ?? '').trim().slice(0, 200);
   const slug = slugify(String(body.slug ?? '') || name);
@@ -45,11 +52,12 @@ function readPage(body) {
   const status = LANDING_PAGE_STATUSES.includes(body.status) ? body.status : 'draft';
   const notes = String(body.notes ?? '').trim().slice(0, 2000) || null;
   const productIds = [].concat(body.products ?? []).filter((id) => /^\d+$/.test(id));
+  const testMode = body.test_mode === 'on';
   const errors = [];
   if (!name) errors.push('Name is required.');
   if (!slug) errors.push('Form key is required.');
   if (url === undefined) errors.push('Enter a valid http(s) URL.');
-  return { name, slug, url: url ?? null, status, notes, productIds, errors };
+  return { name, slug, url: url ?? null, status, notes, productIds, testMode, errors };
 }
 
 export function landingPageRoutes({ pool, config }) {
@@ -79,14 +87,14 @@ export function landingPageRoutes({ pool, config }) {
       let pageId = id;
       if (id) {
         await client.query(
-          'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, updated_at = now() WHERE id = $6 AND business_id = $7',
-          [page.name, page.slug, page.url, page.status, page.notes, id, businessId],
+          'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, test_mode = $8, updated_at = now() WHERE id = $6 AND business_id = $7',
+          [page.name, page.slug, page.url, page.status, page.notes, id, businessId, page.testMode === true],
         );
         await client.query('DELETE FROM landing_page_products WHERE landing_page_id = $1', [id]);
       } else {
         const { rows } = await client.query(
-          'INSERT INTO landing_pages (business_id, name, slug, url, status, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-          [businessId, page.name, page.slug, page.url, page.status, page.notes],
+          'INSERT INTO landing_pages (business_id, name, slug, url, status, notes, test_mode) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+          [businessId, page.name, page.slug, page.url, page.status, page.notes, page.testMode === true],
         );
         pageId = rows[0].id;
       }
@@ -179,12 +187,13 @@ export function landingPageRoutes({ pool, config }) {
       [page.id],
     );
     const hosting = {
-      enabled: Boolean(config.pagesBaseUrl),
+      enabled: Boolean(config.pagesBaseUrl || config.publicBaseUrl),
+      pathHosting: !config.pagesBaseUrl,
       versions: versions.map((v) => ({
         ...v,
         previewUrl: config.pagesBaseUrl ? `${config.pagesBaseUrl}/_preview/${v.id}/${previewToken(config.sessionSecret, v.id)}/` : null,
       })),
-      publishedUrl: config.pagesBaseUrl && page.published_version_id ? `${config.pagesBaseUrl}/${page.slug}/` : null,
+      publishedUrl: page.published_version_id ? publishedUrl(config, page) : null,
       domainUrl: page.custom_domain ? `https://${page.custom_domain}/` : null,
       cnameTarget: config.renderHost || (config.publicBaseUrl ? new URL(config.publicBaseUrl).hostname : ''),
       apiBase: config.publicBaseUrl || '',
@@ -202,8 +211,9 @@ export function landingPageRoutes({ pool, config }) {
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.' }[req.query.done] ?? null;
-    await renderPage(req, res, page, { notice });
+    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.' }[req.query.done] ?? null;
+    const error = typeof req.query.error === 'string' ? req.query.error.slice(0, 300) : null;
+    await renderPage(req, res, page, { notice, error });
   }));
 
   // Import a new page from a ZIP or HTML file (creates the page record too).

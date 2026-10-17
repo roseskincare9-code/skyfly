@@ -109,8 +109,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         currency: order.currency,
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,
         replayed,
-        // Test orders ("TEST ORDER …") are never counted as purchases by the page's pixels.
-        test: isTestName(input.customer.name),
+        // Test orders ("TEST ORDER …", or any order from a page in test mode) are never counted as purchases.
+        test: Boolean(order.is_test) || isTestName(input.customer.name),
       });
     } catch (err) {
       if (err instanceof OrderError) {
@@ -143,13 +143,33 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.json(await browserConfig(pool, page));
   }));
 
+  // Public catalog for the drop-in checkout: the page's active products and Skyfly's prices
+  // (shown to the customer; the order is priced again by Skyfly when it is saved).
+  router.get('/api/public/pages/:slug/catalog', asyncHandler(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Cache-Control', 'public, max-age=60');
+    const { rows: [page] } = await pool.query(
+      `SELECT lp.id, lp.slug, b.currency, b.whatsapp_number, b.slug AS business_slug
+         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND lp.status = 'active'`, [String(req.params.slug)]);
+    if (!page) return res.status(404).json({ page: req.params.slug, products: [] });
+    const { rows } = await pool.query(
+      `SELECT p.code, p.name, p.price_minor FROM products p JOIN landing_page_products lpp ON lpp.product_id = p.id
+        WHERE lpp.landing_page_id = $1 AND p.active ORDER BY p.sort_order, p.id`, [page.id]);
+    const number = page.whatsapp_number || (page.business_slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
+    res.json({
+      page: page.slug, currency: page.currency, whatsapp: number ? whatsappDigits(number) : null,
+      products: rows.map((p) => ({ code: p.code, name: p.name, price: Number(p.price_minor) / 100 })),
+    });
+  }));
+
   router.use('/api/public', api);
 
   // Customer confirmation page. The secret token in the link keeps orders private.
   router.get('/o/:reference', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT o.id, o.reference, o.access_token, o.customer_name, o.phone, o.state, o.address, o.currency,
-              o.total_minor, o.created_at, b.name AS business_name, b.whatsapp_number
+              o.total_minor, o.created_at, b.name AS business_name, b.whatsapp_number, b.slug AS business_slug
          FROM orders o JOIN businesses b ON b.id = o.business_id
         WHERE o.reference = $1`,
       [String(req.params.reference).toUpperCase()],
@@ -166,7 +186,9 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     );
     const firstName = order.customer_name.split(' ')[0];
     const waText = `Hi ${order.business_name}! I just placed order ${order.reference}. Please confirm my order. Thank you!`;
-    const waUrl = `https://wa.me/${whatsappDigits(order.whatsapp_number || DEFAULT_WHATSAPP)}?text=${encodeURIComponent(waText)}`;
+    // Each business's own number only; the Larose default applies to the Larose business alone.
+    const number = order.whatsapp_number || (order.business_slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
+    const waUrl = number ? `https://wa.me/${whatsappDigits(number)}?text=${encodeURIComponent(waText)}` : null;
 
     res.set('Cache-Control', 'no-store');
     res.set('Referrer-Policy', 'no-referrer');

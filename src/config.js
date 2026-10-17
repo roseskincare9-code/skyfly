@@ -51,6 +51,8 @@ export function loadConfig() {
     signupFirstOnly: process.env.ALLOW_SIGNUP === 'first',
     // Owner-only deployments set up the Larose business automatically (AUTO_SETUP_LAROSE=false turns it off).
     autoSetupLarose: process.env.ALLOW_SIGNUP === 'first' && process.env.AUTO_SETUP_LAROSE !== 'false',
+    // Labelled test-mode demo site (/p/skyfly-demo/): on in production unless DEMO_SITE=off.
+    demoSite: process.env.DEMO_SITE ? process.env.DEMO_SITE === 'on' : isProduction,
     // Websites allowed to submit orders from the browser, e.g. https://roseskincare9-code.github.io
     allowedOrigins: list('ALLOWED_ORIGINS'),
     publicBaseUrl,
