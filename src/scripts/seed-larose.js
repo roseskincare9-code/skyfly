@@ -59,7 +59,7 @@ export async function seedLarose(pool, ownerEmail) {
     // The Meta Pixel already on the live page (public ID). Its access token is added by the owner on the Pixels screen.
     await client.query(
       `INSERT INTO pixel_settings (business_id, provider, enabled, pixel_id, events)
-       VALUES ($1, 'meta', true, $2, ARRAY['PageView', 'ViewContent', 'InitiateCheckout', 'Lead'])
+       VALUES ($1, 'meta', true, $2, ARRAY['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'])
        ON CONFLICT (business_id, provider) WHERE landing_page_id IS NULL DO NOTHING`,
       [businessId, LAROSE_META_PIXEL_ID],
     );

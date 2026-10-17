@@ -20,8 +20,8 @@ const shots = path.join(root, 'test/e2e/screenshots');
 mkdirSync(shots, { recursive: true });
 const SKYFLY = 'http://localhost:3100';
 const LANDING_ORIGIN = 'http://127.0.0.1:3200';
-const landingSource = process.env.LANDING_SOURCE;
-if (!landingSource) throw new Error('Set LANDING_SOURCE to the original Larosenigeria index.html');
+// The original, unpatched Larose page (Larosenigeria commit c7423d0), as the input to patch.py.
+const landingSource = process.env.LANDING_SOURCE || path.join(root, 'test/fixtures/larosenigeria-original.html');
 
 const pool = createPool(testDatabaseUrl(), false);
 await resetDatabase(pool);
@@ -73,6 +73,15 @@ try {
     sheetRows.push(JSON.parse(route.request().postData()).data);
     return route.fulfill({ status: 201, contentType: 'application/json', body: '{"created":1}' });
   });
+  // Stand-in for Meta's pixel script: records every fbq call instead of sending it to Meta.
+  const fbCalls = [];
+  await context.exposeBinding('recordFb', (_src, args) => fbCalls.push(args));
+  await context.route('https://connect.facebook.net/**', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'fbq.callMethod=function(){window.recordFb(Array.prototype.slice.call(arguments));};'
+      + 'var q=fbq.queue.splice(0);q.forEach(function(a){fbq.callMethod.apply(null,a);});',
+  }));
+  const purchases = () => fbCalls.filter((a) => (a[0] === 'track' && a[1] === 'Purchase') || (a[0] === 'trackSingle' && a[2] === 'Purchase'));
   const page = await context.newPage();
 
   await step('admin pages redirect to login when signed out', async () => {
@@ -112,6 +121,8 @@ try {
     await shop.click('#sb');
     await shop.waitForSelector('#skyErr', { state: 'visible' });
     assert.match(await shop.textContent('#skyErr'), /Please fill in all required fields/);
+    assert.ok(fbCalls.some((a) => a.includes('PageView')), 'PageView fired on load');
+    assert.equal(purchases().length, 0, 'viewing the page and clicking Order is not a Purchase');
     await shop.screenshot({ path: path.join(shots, '1-landing-validation-error.png') });
   });
 
@@ -124,6 +135,7 @@ try {
     assert.equal(await shop.inputValue('#fn'), 'Ngozi Adeyemi');
     assert.equal(sheetRows.length, 0);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
+    assert.equal(purchases().length, 0, 'a refused submission is not a Purchase');
   });
 
   await step('Skyfly unreachable: order falls back to the Google Sheet (not lost), original success box shown', async () => {
@@ -175,6 +187,13 @@ try {
     assert.equal(sheetRows.length, 0);
     const { rows: [o] } = await pool.query('SELECT sheet_sync_status FROM orders WHERE reference = $1', [reference]);
     assert.equal(o.sheet_sync_status, 'pending', 'queued for the server-side Google Sheet copy');
+    // Exactly one Purchase, after the save, for the saved order's value, keyed by its reference.
+    const p = purchases();
+    assert.equal(p.length, 1, `one Purchase (got ${JSON.stringify(p)}; all calls: ${JSON.stringify(fbCalls.map((a) => a.slice(0, 3)))})`);
+    assert.deepEqual([p[0][0], p[0][1], p[0][2]], ['trackSingle', '1357015185691765', 'Purchase']);
+    assert.equal(p[0][3].value, 103000);
+    assert.equal(p[0][3].currency, 'NGN');
+    assert.equal(p[0][4].eventID, `purchase_${reference}`);
   });
 
   await step('the saved order has trusted product, quantity, price and attribution', async () => {
@@ -215,6 +234,10 @@ try {
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     assert.equal(sheetRows.length, 0);
+    assert.equal(purchases().length, 1, 'resubmitting the same order is not a second Purchase');
+    await shop.reload();
+    await shop.waitForSelector('#ref');
+    assert.equal(purchases().length, 1, 'refreshing the confirmation page is not a second Purchase');
   });
 
   await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
@@ -235,6 +258,8 @@ try {
     assert.equal(calls, 2);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");
     assert.equal(rows[0].n, 1, 'exactly one order');
+    const lost = (await pool.query("SELECT reference FROM orders WHERE customer_name = 'Lost Reply'")).rows[0].reference;
+    assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, 1, 'one Purchase for the order whose reply was lost');
     assert.equal(sheetRows.length, before, 'no fallback row: the order was saved in Skyfly');
     await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
     sheetRows.splice(before);

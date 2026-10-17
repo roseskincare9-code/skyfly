@@ -57,6 +57,8 @@ export function loadConfig() {
     // Where Skyfly-hosted landing pages are served, on a different host from the dashboard.
     pagesBaseUrl,
     platformDomain,
+    // Shown on Platform admin → System status (e.g. a free Render database's expiry date).
+    databaseExpiresAt: process.env.DATABASE_EXPIRES_AT || null,
     pagesHost: hostOf(pagesBaseUrl),
     dashboardHost: hostOf(publicBaseUrl),
     // Set automatically by Render; the CNAME target for custom domains.

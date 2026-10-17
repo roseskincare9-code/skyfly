@@ -2,7 +2,8 @@ import express, { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { timingSafeEqual } from 'node:crypto';
 import { asyncHandler } from '../lib/http.js';
-import { createOrder, OrderError, validateOrderInput } from '../services/orders.js';
+import { createOrder, OrderError, validateOrderInput, isTestName } from '../services/orders.js';
+import { recordPurchase } from '../services/pixels.js';
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
 import { allKnownOrigins } from '../lib/origins.js';
 import { hashApiKey } from '../lib/apiKeys.js';
@@ -91,7 +92,10 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
       const input = validateOrderInput(req.body);
       const client = { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 400) };
       const { order, replayed } = await createOrder(pool, input, { ...(key || { origin: req.headers.origin }), client }, config);
-      if (!replayed) onOrderSaved(order.id);
+      if (!replayed) {
+        onOrderSaved(order.id);
+        recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));
+      }
       res.status(replayed ? 200 : 201).json({
         ok: true,
         reference: order.reference,
@@ -99,6 +103,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         currency: order.currency,
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,
         replayed,
+        // Test orders ("TEST ORDER …") are never counted as purchases by the page's pixels.
+        test: isTestName(input.customer.name),
       });
     } catch (err) {
       if (err instanceof OrderError) {

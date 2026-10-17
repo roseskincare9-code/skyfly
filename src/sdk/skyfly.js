@@ -73,7 +73,7 @@
         if (p.provider === 'meta' && window.fbq) {
           window.fbq('trackSingle', p.id, event, params && params.data || {}, params && params.eventId ? { eventID: params.eventId } : undefined);
         } else if (p.provider === 'tiktok' && window.ttq) {
-          var ev = { PageView: null, ViewContent: 'ViewContent', InitiateCheckout: 'InitiateCheckout', Lead: 'SubmitForm' }[event];
+          var ev = { PageView: null, ViewContent: 'ViewContent', InitiateCheckout: 'InitiateCheckout', Lead: 'SubmitForm', Purchase: 'CompletePayment' }[event];
           var inst = window.ttq.instance(p.id);
           if (event === 'PageView') inst.page();
           else if (ev) inst.track(ev, params && params.data || {}, params && params.eventId ? { event_id: params.eventId } : undefined);
@@ -107,6 +107,19 @@
     };
   }
 
+  // Purchase: only after Skyfly has saved the order and given it a reference; once per order on
+  // this browser (a refresh, a retry or a second tab never counts it again); never for test
+  // orders. The event ID matches Skyfly's server-side Purchase, so the platform counts it once.
+  function purchase(data) {
+    if (!data || !data.reference || data.test) return;
+    var key = 'skyfly_purchase_' + data.reference;
+    var seen = false;
+    try { seen = Boolean(localStorage.getItem(key)); localStorage.setItem(key, '1'); } catch (e) { /* storage blocked */ }
+    if (seen || store(key)) return;
+    store(key, '1');
+    track('Purchase', { data: { value: data.total, currency: data.currency, content_type: 'product' }, eventId: 'purchase_' + data.reference }, data.reference);
+  }
+
   // Same details => same key, so retries and double clicks never create a second order.
   function keyFor(order) {
     var text = JSON.stringify([order.landingPage, order.customer, order.items]);
@@ -127,6 +140,7 @@
       return res.json().catch(function () { return null; }).then(function (data) {
         if (res.ok && data && data.ok) {
           track('Lead', { data: { value: data.total, currency: data.currency }, eventId: 'lead_' + data.reference }, data.reference);
+          purchase(data);
           return data;
         }
         return data || { ok: false, message: 'We could not save your order. Please try again.' };
@@ -202,6 +216,9 @@
     trackInitiateCheckout: function () { track('InitiateCheckout'); },
     // For pages that save orders themselves and already fire Lead for their own pixel code:
     // sends Lead only to the pixels Skyfly loaded, once per order reference.
+    // For pages that save orders themselves: call with Skyfly's reply after a successful save.
+    // Fires Purchase once per order (never for test orders, never twice on retries or refreshes).
+    trackPurchase: function (data) { purchase(data); },
     trackLead: function (value, currency, reference) {
       track('Lead', { data: { value: value, currency: currency }, eventId: 'lead_' + reference }, reference, true);
     },

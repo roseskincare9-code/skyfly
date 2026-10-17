@@ -91,7 +91,7 @@
       <label class="toggle"><input type="checkbox" name="enabled" <%= s.enabled ? 'checked' : '' %>> Tracking on (load this pixel on your pages)</label>
 
       <label>Browser events</label>
-      <% const help = { PageView: 'every visit', ViewContent: 'visit to a product page', InitiateCheckout: 'visitor starts filling in the order form', Lead: 'order saved by Skyfly' }; %>
+      <% const help = { PageView: 'every visit', ViewContent: 'visit to a product page', InitiateCheckout: 'visitor starts filling in the order form', Lead: 'order saved by Skyfly', Purchase: 'order saved by Skyfly and given its order number (once per order, never for test orders). Off: Purchase is counted when you mark the order Paid' }; %>
       <% BROWSER_EVENTS.forEach((e) => { %>
         <label style="color:var(--text)"><input type="checkbox" name="events" value="<%= e %>" <%= s.events.includes(e) ? 'checked' : '' %>> <strong><%= e %></strong> <span class="muted">· <%= help[e] %></span></label>
       <% }) %>

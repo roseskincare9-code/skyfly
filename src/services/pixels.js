@@ -5,7 +5,10 @@ import { createHash } from 'node:crypto';
 import { decrypt } from '../lib/secrets.js';
 
 export const PROVIDERS = ['meta', 'tiktok'];
-export const BROWSER_EVENTS = ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead'];
+// Purchase (browser) fires once per order, only after Skyfly has saved it (never for test orders).
+export const BROWSER_EVENTS = ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'];
+// With browser Purchase on, Purchase means "order saved"; otherwise it means "marked Paid".
+export const purchaseOnSave = (s) => Array.isArray(s?.events) && s.events.includes('Purchase');
 export const PIXEL_ID_RULES = {
   meta: { re: /^\d{10,20}$/, hint: 'a number of 10–20 digits, e.g. 123456789012345' },
   tiktok: { re: /^[A-Z0-9]{10,40}$/, hint: '10–40 letters and digits, e.g. C4ABCDEFGH1234567890' },
@@ -139,15 +142,18 @@ function serverReady(config, s) {
   return Boolean(s?.enabled && s.server_purchase && s.pixel_id && s.access_token_enc && config.encryptionKey);
 }
 
-// Called after an order's payment status changes to Paid.
-export async function recordPurchase(pool, config, orderId) {
+// Server-side Purchase: when an order is saved (pixels counting Purchase at save) or when it is
+// marked Paid (the others). Same event_id as the browser event, so the platform counts it once.
+export async function recordPurchase(pool, config, orderId, { trigger = 'paid' } = {}) {
   const { order, items } = await loadOrder(pool, orderId);
-  if (!order || order.payment_status !== 'paid' || order.is_test) return [];
+  if (!order || order.is_test) return [];
+  if (trigger === 'paid' && order.payment_status !== 'paid') return [];
   const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id);
   const results = [];
   for (const provider of PROVIDERS) {
     const s = settings[provider];
     if (!serverReady(config, s)) continue;
+    if ((trigger === 'saved') !== purchaseOnSave(s)) continue;
     const eventId = `purchase_${order.reference}`;
     // The unique key (order, provider, event) means a second "Paid" never sends twice.
     const { rows: [event] } = await pool.query(

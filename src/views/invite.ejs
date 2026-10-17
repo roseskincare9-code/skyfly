@@ -1,6 +1,6 @@
 <%- include('partials/head', { title: 'Invitation' }) %>
 <main class="auth">
-  <div class="auth-brand"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span>Skyfly</div>
+  <div class="auth-brand"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></div>
   <div class="card">
     <h1 style="margin-top:0">Join <%= invite.business_name %></h1>
     <p class="muted">You were invited as <strong><%= { owner: 'Owner', manager: 'Manager', staff: 'Staff' }[invite.role] %></strong> (<%= invite.email %>).</p>

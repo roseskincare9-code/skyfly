@@ -1,0 +1,23 @@
+<%- include('../partials/head', { title: 'System status' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main style="max-width:900px">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>System status &amp; backup</h1>
+  <div class="card">
+    <h2>Backup</h2>
+    <p style="margin-top:0">Download a full copy of all businesses, orders, customers, pages, settings and history (one JSON file). <strong>Keep it private</strong>: it contains customer names, phone numbers and addresses, and the hashed sign-in passwords.</p>
+    <% if (dbExpiresAt) { %><div class="warn-box">The database plan expires on <strong><%= formatDate(dbExpiresAt) %></strong> unless it is upgraded. Download a backup before then.</div><% } %>
+    <p><a class="btn" href="/admin/backup.json">Download full backup</a></p>
+    <p class="muted" style="margin-bottom:0">Last backup downloaded: <%= lastBackup ? formatDate(lastBackup.created_at) + ' by ' + lastBackup.email : 'never' %>. To restore into a new, empty database: <code>DATABASE_URL=… node scripts/restore-backup.mjs backup.json</code> (see docs/MIGRATIONS.md). Restoring never overwrites a database that already has data.</p>
+    <% if (uncovered.length) { %><p class="error">Not in the backup yet: <%= uncovered.join(', ') %></p><% } %>
+  </div>
+  <div class="card">
+    <h2>Database</h2>
+    <dl class="kv"><dt>Size</dt><dd><%= db.size %></dd><dt>Server</dt><dd><%= db.version.split(' on ')[0] %></dd>
+      <dt>Migrations</dt><dd><%= migrations.length %> applied, latest <%= migrations.at(-1).name %> (<%= formatDate(migrations.at(-1).applied_at) %>)</dd></dl>
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Table</th><th>Rows</th></tr></thead><tbody>
+      <% counts.forEach(([t, n]) => { %><tr><td><code><%= t %></code></td><td><%= n %></td></tr><% }) %>
+    </tbody></table></div>
+  </div>
+</main>
+</body></html>

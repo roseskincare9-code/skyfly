@@ -165,8 +165,10 @@ async function doSub(){
     btn.textContent='Order saved ✓';
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
     try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
+    // One Purchase per saved order (never for test orders); Skyfly keeps it from repeating on retries or refreshes.
+    try{if(window.Skyfly&&Skyfly.trackPurchase)Skyfly.trackPurchase(data);}catch(e){}
     // Skyfly copies saved orders to the Google Sheet itself (with retries), so the page doesn't.
-    location.href=data.confirmationUrl;
+    setTimeout(()=>{location.href=data.confirmationUrl;},300);
     return;
   }
   // The customer's details need fixing: show what to change and let them retry.

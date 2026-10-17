@@ -131,7 +131,13 @@ describe('pixel settings', () => {
     const res = await request(app).get('/sdk/skyfly.js').expect(200).expect('Content-Type', /javascript/);
     assert.equal(res.headers['cross-origin-resource-policy'], 'cross-origin');
     assert.match(res.text, /trackSingle/);
-    assert.doesNotMatch(res.text, /track\('Purchase'|'Purchase'/, 'the browser SDK never fires Purchase');
+    // Purchase is fired from exactly one place: after a saved order (not a test), once per reference.
+    assert.equal(res.text.match(/track\('Purchase'/g).length, 1);
+    const fn = res.text.match(/function purchase\(data\) \{[\s\S]*?\n  \}/)[0];
+    assert.match(fn, /data\.test\) return/);
+    assert.match(fn, /localStorage/);
+    assert.match(fn, /eventId: 'purchase_' \+ data\.reference/);
+    assert.match(res.text, /if \(res\.ok && data && data\.ok\) \{[\s\S]*?purchase\(data\)/);
   });
 });
 
@@ -254,5 +260,68 @@ describe('hosted page injection', () => {
     assert.deepEqual(cfg.pixels.map((p) => p.id), ['123456789012345', 'C4ABCDEFGH1234567890']);
     assert.match(live.text, /<script src="http:\/\/skyfly\.test\/sdk\/skyfly\.js" defer><\/script><\/head>/);
     assert.ok(!live.text.includes(META_TOKEN));
+  });
+});
+
+describe('Purchase when the order is saved (pixels set to count Purchase at save)', () => {
+  const waitCalls = async (want) => { for (let i = 0; i < 50 && calls.length < want; i += 1) await new Promise((r) => setTimeout(r, 20)); };
+  before(async () => {
+    await pool.query("UPDATE pixel_settings SET events = ARRAY['PageView', 'Lead', 'Purchase'] WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+  });
+  after(async () => {
+    await pool.query("UPDATE pixel_settings SET events = ARRAY['PageView', 'Lead'] WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+  });
+
+  test('one server Purchase per saved order, with the browser\'s event ID; replays, Paid and test orders add none', async () => {
+    calls.length = 0;
+    const key = `purchase-on-save-${Date.now()}`;
+    const order = await placeOrder({ idempotencyKey: key });
+    assert.equal(order.test, false);
+    await waitCalls(1);
+    assert.equal(calls.length, 1, 'only Meta (TikTok still counts at Paid)');
+    const ev = calls[0].body.data[0];
+    assert.equal(calls[0].url.startsWith('/meta'), true);
+    assert.equal(ev.event_name, 'Purchase');
+    assert.equal(ev.event_id, `purchase_${order.reference}`, 'same ID as the browser event, so Meta counts one');
+    assert.equal(ev.custom_data.value, 103000);
+    assert.equal(ev.custom_data.currency, 'NGN');
+
+    // The same submission again (retry, double tap): same order, no new event.
+    const again = await request(app).post('/api/public/orders').set('Origin', ORIGIN).send({
+      landingPage: 'larosenigeria', idempotencyKey: key,
+      customer: { name: 'Amaka Nwosu', phone: '0803 555 0101', email: 'Amaka@Example.com', address: '7 Pixel Lane, Lagos', state: 'Lagos' },
+      items: [{ product: 'package-3', quantity: 2 }],
+      attribution: { pageUrl: 'https://roseskincare9-code.github.io/Larosenigeria/?fbclid=abc', fbp: 'fb.1.1700000000.111', fbc: 'fb.1.1700000000.abc', ttp: 'ttp-cookie', ttclid: 'tt-click' },
+    }).expect(200);
+    assert.equal(again.body.replayed, true);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(calls.length, 1);
+
+    // Marking it Paid later: Meta already counted it; only TikTok (Purchase at Paid) sends.
+    await setPayment(order.id, 'paid');
+    assert.equal(calls.filter((c) => c.url.startsWith('/meta')).length, 1);
+    assert.equal(calls.filter((c) => c.url.startsWith('/tiktok')).length, 1);
+  });
+
+  test('a test order is never sent as a Purchase', async () => {
+    calls.length = 0;
+    const order = await placeOrder({ customer: { name: 'TEST ORDER pixel check', phone: '0803 555 0101', address: '7 Pixel Lane, Lagos' } });
+    assert.equal(order.test, true, 'the page is told it is a test order');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(calls.length, 0);
+    await setPayment(order.id, 'paid');
+    assert.equal(calls.length, 0);
+  });
+
+  test('a refused submission creates no order and no Purchase', async () => {
+    calls.length = 0;
+    const before = (await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n;
+    const res = await request(app).post('/api/public/orders').set('Origin', ORIGIN).send({
+      landingPage: 'larosenigeria', idempotencyKey: `refused-${Date.now()}`, customer: { name: 'A', phone: '1', address: 'x' }, items: [{ product: 'package-3', quantity: 1 }],
+    });
+    assert.equal(res.status, 400);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(calls.length, 0);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, before);
   });
 });

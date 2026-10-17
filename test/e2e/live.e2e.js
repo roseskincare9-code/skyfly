@@ -6,6 +6,7 @@
 //
 // Meta/TikTok pixel calls are intercepted and counted, never sent, so no test data reaches the ad platforms.
 // With RENDER_API_KEY, the Skyfly service is restarted to prove the order survives a restart.
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
@@ -120,6 +121,8 @@ await step('C/H. A test order placed through the real checkout is saved and the 
   assert(apiReply && apiReply.ok, `API reply ${JSON.stringify(apiReply)}`);
   reference = apiReply.reference;
   confirmationUrl = page.url();
+  mkdirSync('live-screenshots', { recursive: true });
+  await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: true });
   const text = await page.textContent('body');
   assert(text.includes(reference) && /What happens next/.test(text), 'confirmation page content');
   assert(!navigations.some((u) => /wa\.me|whatsapp\.com/.test(u)), 'navigated to WhatsApp');
@@ -172,7 +175,10 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
   return `1 row in ${again[0].tab}: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
 });
 
-await step('I. Meta Pixel: PageView once, Lead once for the order, no browser Purchase', async () => {
+await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configured; this TEST ORDER sends PageView once, Lead once and no Purchase (test orders never count)', async () => {
+  const cfg = await (await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`)).json();
+  const metaCfg = (cfg.pixels || []).find((p) => p.provider === 'meta');
+  assert(metaCfg?.id === '1357015185691765' && metaCfg.events.includes('Purchase'), `live config: ${JSON.stringify(cfg.pixels)}`);
   const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === '1357015185691765');
   const count = (ev) => meta.filter((e) => e.ev === ev).length;
   const summary = [...new Set(meta.map((e) => e.ev))].map((ev) => `${ev}×${count(ev)}`).join(', ');

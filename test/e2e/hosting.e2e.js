@@ -218,7 +218,7 @@ try {
   });
 
   let reference;
-  await step('form: InitiateCheckout once, errors keep details, Lead once after save, no Purchase', async () => {
+  await step('form: InitiateCheckout once, errors keep details, Lead and Purchase once each after the save', async () => {
     await shop.click('input[name=name]');
     await shop.click('input[name=phone]');
     await shop.click('input[name=address]');
@@ -244,7 +244,10 @@ try {
     const leads = fbCalls.filter((c) => c[2] === 'Lead');
     assert.equal(leads.length, 1);
     assert.deepEqual(leads[0][4], { eventID: `lead_${reference}` });
-    assert.equal(fbCalls.filter((c) => JSON.stringify(c).includes('Purchase')).length, 0, 'browser never sends Purchase');
+    // One Purchase after the save (double click included), keyed by the order reference.
+    const purchases = fbCalls.filter((c) => c[2] === 'Purchase');
+    assert.equal(purchases.length, 1, `one Purchase (got ${purchases.length})`);
+    assert.deepEqual(purchases[0][4], { eventID: `purchase_${reference}` });
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
   });
@@ -265,10 +268,13 @@ try {
     const meta = await dash.textContent('[data-status=meta]');
     assert.match(meta, /Configured\s*Yes/);
     assert.match(meta, /Browser events\s*Not verified/);
-    assert.match(meta, /Server Purchase\s*Not verified/);
+    // Purchase is counted when the order is saved: the server event went out then, with the browser's event ID.
+    assert.equal(apiCalls.length, 1, 'one server Purchase, at save');
+    assert.equal(apiCalls[0].body.data[0].event_id, `purchase_${reference}`);
+    assert.match(meta, /Server Purchase\s*Verified/);
   });
 
-  await step('dashboard shows the order; marking Paid sends one server Purchase', async () => {
+  await step('dashboard shows the order; marking Paid later sends no second Purchase', async () => {
     await dash.goto(`${DASH}/businesses/1/orders`);
     assert.match(await dash.textContent('body'), new RegExp(reference));
     await noSideScroll(dash, 'orders');
@@ -278,9 +284,8 @@ try {
     await payment.locator('select').selectOption('paid');
     await payment.locator('button').click();
     await dash.waitForSelector('.notice');
-    assert.equal(apiCalls.length, 1, 'only Meta has server Purchase enabled');
+    assert.equal(apiCalls.length, 1, 'still the one Purchase sent at save');
     assert.equal(apiCalls[0].body.data[0].event_name, 'Purchase');
-    assert.equal(apiCalls[0].body.data[0].event_id, `purchase_${reference}`);
     assert.match(await dash.textContent('body'), /Purchase to Meta[\s\S]*sent/);
     await noSideScroll(dash, 'order detail');
     await dash.screenshot({ path: path.join(shots, 'h5-order-paid-mobile.png'), fullPage: true });

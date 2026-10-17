@@ -165,6 +165,18 @@ describe('A. order still processing', () => {
     assert.equal(sentTo('ada@customer.test').length, 1, 'no further emails');
   });
 
+  test('changing the order to Cancelled in the dashboard stops its follow-ups at once', async () => {
+    const o = await placeOrder(B.one, 'Cancel Me', 'cancel@customer.test');
+    await setStatus(owner, B.one, o.id, 'processing');
+    await jobs();
+    assert.equal((await messagesFor(o.id)).filter((m) => m.status === 'queued').length, 3);
+    await setStatus(owner, B.one, o.id, 'cancelled');
+    assert.ok((await messagesFor(o.id)).every((m) => m.status === 'cancelled' && m.reason === 'Order is now cancelled'));
+    await makeDue('order_id = $1', [o.id]);
+    await jobs();
+    assert.equal(sentTo('cancel@customer.test').length, 0);
+  });
+
   test('the latest status is checked again right before sending', async () => {
     const o = await placeOrder(B.one, 'Bisi Recheck', 'bisi@customer.test');
     await setStatus(owner, B.one, o.id, 'processing');

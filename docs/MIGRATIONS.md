@@ -47,11 +47,31 @@ DELETE FROM schema_migrations WHERE name IN ('012_tenancy_subscriptions.sql', '0
 
 Orders placed after the upgrade stay in `orders` either way.
 
-### Off-site backup
+### Backups (do this regularly)
 
-Render's free Postgres plan has no automatic backups. Before large changes, export the
-database from the Render dashboard (skyfly-db → Backups / "Export"), or run
-`pg_dump "$EXTERNAL_DATABASE_URL" > skyfly-YYYY-MM-DD.sql` from a trusted computer and keep
-the file private (it contains customer names, phones and addresses). The free database
-also expires 30 days after creation unless upgraded; that needs the owner's approval
-because it costs money.
+Verified with the Render API on 2026-10-17: the database `skyfly-db` is on the **free plan**,
+was created **2026-10-15 13:40 UTC** and **expires 2026-11-14 13:40 UTC**. Point-in-time
+recovery is **not available** on this plan, and no exports exist. Outside connections are
+blocked (only the Skyfly service can connect), which is good for security.
+
+So the backup is made from inside Skyfly:
+
+1. Platform admin → **System status & backup** → **Download full backup**. One JSON file with
+   every business, order, customer, page, setting and history row (the download is logged).
+   Keep it private: it contains customer names, phones, addresses and hashed passwords.
+2. To restore, create a **new, empty** Postgres database and run:
+   `DATABASE_URL=<new database URL> node scripts/restore-backup.mjs skyfly-backup-….json`
+   It applies the migrations, inserts every row with its original id, and continues the
+   numbering after them. It refuses to run on a database that already has businesses, so it
+   can never overwrite live data. Then point the service's `DATABASE_URL` at it.
+
+The round trip (download → restore into a separate database → every table identical) is
+covered by `test/backup.test.js`.
+
+### Expiry
+
+Render deletes a free database after its expiry plus a short grace period, with all data.
+Keeping it requires upgrading `skyfly-db` to a paid instance in the Render dashboard
+(skyfly-db → Upgrade). The smallest paid instance (Basic-256mb) is listed by Render at
+**$6/month plus $0.30 per GB of storage per month**; check render.com/pricing before upgrading.
+Upgrading keeps the same database and data. This needs the owner's approval.

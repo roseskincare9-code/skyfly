@@ -12,6 +12,7 @@ import {
 import { inviteOrAdd, readInvite } from './team.js';
 import { normalizeSubdomain, subdomainHost, subdomainState } from '../services/subdomains.js';
 import { clearOriginCache } from '../lib/origins.js';
+import { TABLE_ORDER, exportBackup, uncoveredTables } from '../services/backup.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
@@ -227,6 +228,38 @@ export function adminRoutes({ pool, config }) {
     const result = await subdomainState(b, config, { check: true });
     await pool.query('UPDATE businesses SET subdomain_status = $2, subdomain_checked_at = now() WHERE id = $1', [b.id, `${result.state}: ${result.message}`]);
     res.redirect(`/admin/businesses/${b.id}?done=checked`);
+  }));
+
+  // System status: what the database holds, and a full backup download (the free Render
+  // database has no automatic backups).
+  router.get('/admin/system', asyncHandler(async (req, res) => {
+    const counts = [];
+    for (const t of TABLE_ORDER) counts.push([t, (await pool.query(`SELECT count(*)::int AS n FROM ${t}`)).rows[0].n]);
+    const [{ rows: [db] }, { rows: migrations }, { rows: last }] = await Promise.all([
+      pool.query("SELECT pg_size_pretty(pg_database_size(current_database())) AS size, version() AS version"),
+      pool.query('SELECT name, applied_at FROM schema_migrations ORDER BY name'),
+      pool.query("SELECT a.created_at, u.email FROM audit_log a LEFT JOIN users u ON u.id = a.user_id WHERE a.action = 'admin.backup_downloaded' ORDER BY a.id DESC LIMIT 1"),
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.render('admin/system', { counts, db, migrations, lastBackup: last[0] ?? null, uncovered: await uncoveredTables(pool), dbExpiresAt: config.databaseExpiresAt });
+  }));
+
+  router.get('/admin/backup.json', asyncHandler(async (req, res) => {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    res.set('Content-Type', 'application/json; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="skyfly-backup-${stamp}.json"`);
+    res.set('Cache-Control', 'no-store');
+    // One read-only snapshot, so every table is from the same moment.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const counts = await exportBackup(client, (chunk) => res.write(chunk));
+      await client.query('COMMIT');
+      await audit(pool, req, { action: 'admin.backup_downloaded', details: { rows: Object.values(counts).reduce((a, b) => a + b, 0) } });
+    } finally {
+      client.release();
+    }
+    res.end();
   }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
