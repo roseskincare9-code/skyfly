@@ -89,7 +89,8 @@ page.on('request', (r) => {
   if (r.url().startsWith(`${SKYFLY}/api/public/orders`) && r.method() === 'POST') apiBody = r.postData();
   if (r.url().startsWith(SHEET) && r.method() === 'POST') sheetPosts.push(r.postData());
 });
-page.on('framenavigated', (f) => { if (f === page.mainFrame()) navigations.push(f.url()); });
+let landingLoads = 0;
+page.on('framenavigated', (f) => { if (f === page.mainFrame()) { navigations.push(f.url()); if (f.url().startsWith(PAGE)) landingLoads += 1; } });
 page.on('response', async (r) => {
   if (r.url().startsWith(`${SKYFLY}/api/public/orders`) && r.request().method() === 'POST') apiReply = await r.json().catch(() => null);
 });
@@ -185,14 +186,15 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
   return `1 row in ${again[0].tab}: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
 });
 
-await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configured; this TEST ORDER sends PageView once, Lead once and no Purchase (test orders never count)', async () => {
+await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configured; this TEST ORDER sends PageView once per page load, Lead once and no Purchase (test orders never count)', async () => {
   const cfg = await (await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`)).json();
   const metaCfg = (cfg.pixels || []).find((p) => p.provider === 'meta');
   assert(metaCfg?.id === '1357015185691765' && metaCfg.events.includes('Purchase'), `live config: ${JSON.stringify(cfg.pixels)}`);
   const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === '1357015185691765');
   const count = (ev) => meta.filter((e) => e.ev === ev).length;
   const summary = [...new Set(meta.map((e) => e.ev))].map((ev) => `${ev}×${count(ev)}`).join(', ');
-  assert(count('PageView') === 1, `PageView ${count('PageView')} (${summary}); requests seen: ${pixelSeen.slice(0, 8).join(', ') || 'none'}`);
+  // One PageView per load of the landing page (the refresh check reloads it once).
+  assert(count('PageView') === landingLoads, `PageView ${count('PageView')} for ${landingLoads} page loads (${summary}); requests seen: ${pixelSeen.slice(0, 8).join(', ') || 'none'}`);
   assert(count('Lead') === 1, `Lead ${count('Lead')} (${summary})`);
   assert(count('Purchase') === 0, `Purchase ${count('Purchase')} (${summary})`);
   return `${summary} (intercepted, not sent to Meta)`;
