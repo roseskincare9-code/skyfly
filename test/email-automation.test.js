@@ -394,3 +394,30 @@ describe('templates and isolation', () => {
     assert.deepEqual(rows.map((r) => r.business_id), [B.two.id]);
   });
 });
+
+describe('follow-ups counted from the order date (customers who ordered 7, 10 or 30 days ago)', () => {
+  let automationId;
+  before(async () => {
+    const created = await post(owner, B.one, '/email/automations', { preset: 'post_purchase' });
+    automationId = created.headers.location.match(/automations\/(\d+)/)[1];
+    await post(owner, B.one, `/email/automations/${automationId}`, { name: 'After ordering', anchor: 'order_date' });
+    await post(owner, B.one, `/email/automations/${automationId}/status`, { action: 'activate' });
+    await pool.query("UPDATE email_automations SET activated_at = now() - interval '60 days' WHERE id = $1", [automationId]);
+  });
+  const planned = async (orderId) => (await pool.query(
+    `SELECT s.delay_days, (m.scheduled_for AT TIME ZONE 'Africa/Lagos')::date - (o.created_at AT TIME ZONE 'Africa/Lagos')::date AS days
+       FROM email_messages m JOIN email_automation_steps s ON s.id = m.step_id JOIN orders o ON o.id = m.order_id
+      WHERE m.order_id = $1 AND m.automation_id = $2 ORDER BY s.delay_days`, [orderId, automationId])).rows;
+
+  test('days are counted from the order\'s real timestamp; planning again never duplicates; stale steps are not sent late', async () => {
+    const recent = await placeOrder(B.one, 'Ola Seven', 'ola@customer.test');
+    const old = await placeOrder(B.one, 'Ada Forty', 'ada@customer.test');
+    await pool.query("UPDATE orders SET created_at = now() - interval '7 days 1 hour' WHERE id = $1", [recent.id]);
+    await pool.query("UPDATE orders SET created_at = now() - interval '40 days' WHERE id = $1", [old.id]);
+    await jobs();
+    await jobs();
+    const r = await planned(recent.id);
+    assert.deepEqual(r.map((m) => [m.delay_days, m.days]), [[7, 7], [10, 10], [30, 30]], 'one message per step, on order date + N days');
+    assert.deepEqual(await planned(old.id), [], 'an order from 40 days ago gets no late day-7/10/30 emails');
+  });
+});

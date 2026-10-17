@@ -254,15 +254,22 @@ export async function runEmailJobs(pool, config) {
 
 export function startEmailWorker(pool, config, { intervalMs = 60000, log = console } = {}) {
   let running = false;
+  // Last run, shown on /healthz so production runs can be checked from outside.
+  const status = { lastRunAt: null, lastOkAt: null, lastError: null, last: null };
   const run = async () => {
     if (running) return;
     running = true;
-    try { await runEmailJobs(pool, config); } catch (err) { log.error('Email automation error:', err.message); } finally { running = false; }
+    status.lastRunAt = new Date().toISOString();
+    try {
+      status.last = await runEmailJobs(pool, config);
+      status.lastOkAt = status.lastRunAt;
+      status.lastError = null;
+    } catch (err) { status.lastError = String(err.message).slice(0, 200); log.error('Email automation error:', err.message); } finally { running = false; }
   };
   const timer = setInterval(run, intervalMs);
   timer.unref?.();
   setTimeout(run, 5000).unref?.();
-  return { kick: () => setImmediate(run), stop: () => clearInterval(timer) };
+  return { kick: () => setImmediate(run), stop: () => clearInterval(timer), status };
 }
 
 export { PROVIDERS };

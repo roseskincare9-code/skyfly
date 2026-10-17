@@ -37,7 +37,7 @@ function isDashboardRequest(req, config) {
   return !config.dashboardHost;
 }
 
-export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {} }) {
+export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {}, workers = null }) {
   // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
   transformHtml ??= (html, ctx) => injectSkyfly(pool, config, html, ctx);
   // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
@@ -63,7 +63,8 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.get('/healthz', async (req, res) => {
     try {
       await pool.query('SELECT 1');
-      res.json({ status: 'ok' });
+      // Background jobs' last runs (times and counts only, no business data).
+      res.json(workers ? { status: 'ok', workers } : { status: 'ok' });
     } catch {
       res.status(503).json({ status: 'database_unavailable' });
     }

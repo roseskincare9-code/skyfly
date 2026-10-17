@@ -262,7 +262,9 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     // Remember sheet-wide problems so the other waiting orders don't each spend requests on them.
     if (err.status === 429) await pool.query("UPDATE sheet_connections SET quota_until = now() + make_interval(mins => $2) WHERE id = $1", [conn.id, HOLD_MINUTES]);
     else if (isEmptySheetError(err)) await pool.query("UPDATE sheet_connections SET check_status = 'needs_columns', checked_at = now(), check_detail = 'The sheet is empty: row 1 has no column names, so SheetDB refuses every new row.' WHERE id = $1", [conn.id]);
-    const attempts = o.sheet_sync_attempts + 1;
+    // A used-up quota is a pause, not a failed attempt: SheetDB's quota resets monthly, so orders
+    // waiting weeks for it must not run out of attempts.
+    const attempts = err.status === 429 ? o.sheet_sync_attempts : o.sheet_sync_attempts + 1;
     const wait = err.status === 429 ? HOLD_MINUTES : RETRY_MINUTES[Math.min(attempts - 1, RETRY_MINUTES.length - 1)];
     const message = String(err.message || err).slice(0, 300);
     await pool.query(
@@ -309,13 +311,19 @@ export const FIRST_COPY_DELAY_MINUTES = 3;
 export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = console } = {}) {
   let running = false;
   let again = false;
+  // Last run, shown on /healthz so production runs can be checked from outside.
+  const status = { lastRunAt: null, lastOkAt: null, lastError: null };
   const run = async () => {
     if (running) { again = true; return; }
     running = true;
+    status.lastRunAt = new Date().toISOString();
     try {
       await recheckConnections(pool, key);
       do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
+      status.lastOkAt = status.lastRunAt;
+      status.lastError = null;
     } catch (err) {
+      status.lastError = String(err.message).slice(0, 200);
       log.error('Google Sheet sync error:', err.message);
     } finally {
       running = false;
@@ -324,7 +332,7 @@ export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = c
   const timer = setInterval(run, intervalMs);
   timer.unref?.();
   setTimeout(run, 2000).unref?.();
-  return { kick: () => { setImmediate(run); }, stop: () => clearInterval(timer) };
+  return { kick: () => { setImmediate(run); }, stop: () => clearInterval(timer), status };
 }
 
 // Makes failed (or, for one order, skipped) copies eligible for an immediate retry, with a

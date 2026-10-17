@@ -225,6 +225,27 @@ describe('saving SheetDB requests (free plans have a small monthly quota)', () =
     }
   });
 
+  test('an order waiting weeks for the monthly quota never runs out of attempts', async () => {
+    mock.state.quota = true;
+    await pool.query("UPDATE sheet_connections SET quota_until = NULL WHERE name = 'Quota sheet'");
+    const a = await order('larosenigeria', 'Quota Long Wait');
+    // 30 pauses (about a week of 6-hour holds), each ending with another 429.
+    for (let i = 0; i < 30; i += 1) {
+      await pool.query("UPDATE sheet_connections SET quota_until = NULL WHERE name = 'Quota sheet'");
+      await pool.query('UPDATE orders SET sheet_sync_next_at = now() WHERE reference = $1', [a.body.reference]);
+      await sync();
+    }
+    const waiting = await orderRow(a.body.reference);
+    assert.equal(waiting.sheet_sync_status, 'failed');
+    assert.equal(waiting.sheet_sync_attempts, 0, 'quota pauses are not counted as attempts');
+    mock.state.quota = false;
+    await pool.query("UPDATE sheet_connections SET quota_until = NULL WHERE name = 'Quota sheet'");
+    await pool.query('UPDATE orders SET sheet_sync_next_at = now() WHERE reference = $1', [a.body.reference]);
+    await sync();
+    assert.equal((await orderRow(a.body.reference)).sheet_sync_status, 'synced', 'copied once the quota is back');
+    assert.equal(mock.rows('quotasheet1').filter((r) => r.source.includes(a.body.reference)).length, 1);
+  });
+
   test('a sheet known to lack its column row is not called for each waiting order', async () => {
     const before = callsTo('emptysheet2');
     mock.makeEmpty('emptysheet3');

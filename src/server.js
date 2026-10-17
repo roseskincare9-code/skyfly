@@ -13,7 +13,10 @@ const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startShe
 // Subscription expiry, email contacts, automation planning and sending (every minute).
 // Only in production (or EMAIL_WORKER=on), so local servers never email anyone.
 const jobs = config.isProduction || process.env.EMAIL_WORKER === 'on' ? startEmailWorker(pool, config) : { kick() {}, stop() {} };
-const app = createApp({ pool, config, onOrderSaved: (id) => { sheets.kick(id); jobs.kick(); } });
+const app = createApp({
+  pool, config, onOrderSaved: (id) => { sheets.kick(id); jobs.kick(); },
+  workers: { email: jobs.status ?? null, sheets: sheets.status ?? null, startedAt: new Date().toISOString() },
+});
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);

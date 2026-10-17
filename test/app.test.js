@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp } from './helpers.js';
+import { setup, resetDatabase, csrfToken, signUp, makeConfig } from './helpers.js';
 
 const { pool, app } = setup();
 
@@ -73,4 +73,11 @@ test('one-click Larose setup creates the business, packages and landing page onc
   const other = await signUp(app, { name: 'Other', email: 'not-larose@example.com' });
   const otherCsrf = await csrfToken(other, '/');
   await other.post('/setup/larose').type('form').send({ _csrf: otherCsrf }).expect(404);
+});
+
+test('health check shows the background jobs\' last runs (times and counts only)', async () => {
+  const { createApp } = await import('../src/app.js');
+  const workers = { email: { lastRunAt: '2026-10-17T10:00:00.000Z', lastOkAt: '2026-10-17T10:00:00.000Z', lastError: null, last: { planned: 0, cancelled: 0, sent: 0 } }, sheets: null, startedAt: '2026-10-17T09:59:00.000Z' };
+  const res = await request(createApp({ pool, config: makeConfig(), workers })).get('/healthz').expect(200);
+  assert.deepEqual(res.body, { status: 'ok', workers });
 });

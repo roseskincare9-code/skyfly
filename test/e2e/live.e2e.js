@@ -20,9 +20,15 @@ if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrend
 }
 
 let failed = 0;
+let blockedSteps = 0;
+// BLOCKED: the check could not run for a reason outside the code (a provider limit or a missing credential).
+class Blocked extends Error {}
 async function step(name, fn) {
   try { const info = await fn(); console.log(`PASS  ${name}${info ? ` — ${info}` : ''}`); return true; }
-  catch (err) { failed += 1; console.log(`FAIL  ${name} — ${err.message}`); return false; }
+  catch (err) {
+    if (err instanceof Blocked) { blockedSteps += 1; console.log(`BLOCKED  ${name} — ${err.message}`); return false; }
+    failed += 1; console.log(`FAIL  ${name} — ${err.message}`); return false;
+  }
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -78,9 +84,13 @@ await ctx.route(/https:\/\/([a-z0-9-]+\.)*(facebook\.com|tiktok\.com|tiktokw\.us
   pixelSeen.push(`${r.method()} ${u.host}${u.pathname}`);
   if (!/\/tr\/?$|\/api\/v2\/pixel/.test(u.pathname)) return route.continue(); // pixel scripts and config load normally
   // Event hits (query string, urlencoded or multipart body): counted, never sent.
-  const text = `${u.search} ${r.postData() || ''}`;
-  const field = (name) => text.match(new RegExp(`[?&\\s]${name}=([^&\\s]+)`))?.[1] ?? text.match(new RegExp(`name="${name}"\\r?\\n\\r?\\n([^\\r\\n]+)`))?.[1] ?? null;
-  pixelEvents.push({ host: u.host, id: field('id'), ev: field('ev') || field('event') || '?' });
+  let text = `${u.search} ${r.postData() || ''}`;
+  try { text = decodeURIComponent(text.replace(/\+/g, ' ')); } catch { /* keep as is */ }
+  const field = (name) => {
+    const n = name.replace(/[[\]]/g, '\\$&');
+    return text.match(new RegExp(`[?&\\s]${n}=([^&\\s]+)`))?.[1] ?? text.match(new RegExp(`name="${n}"\\r?\\n\\r?\\n([^\\r\\n]+)`))?.[1] ?? null;
+  };
+  pixelEvents.push({ host: u.host, id: field('id'), ev: field('ev') || field('event') || '?', eid: field('eid'), value: field('cd[value]'), currency: field('cd[currency]') });
   return route.fulfill({ status: 200, contentType: 'image/gif', body: '' });
 });
 const page = await ctx.newPage();
@@ -169,6 +179,8 @@ await step('G. The Google Sheet (SheetDB) accepts rows: a tab has Skyfly\'s colu
   for (const tab of TABS) {
     const res = await fetch(tabUrl('/keys', tab));
     const body = await res.json().catch(() => ({}));
+    // Quota used up: stop here rather than spend more requests that cannot succeed.
+    if (res.status === 429) throw new Blocked(`SheetDB HTTP 429 ${JSON.stringify(body).slice(0, 120)} (monthly request quota used up)`);
     if (res.ok && Array.isArray(body) && ['fullName', 'phone', 'package', 'source'].every((c) => body.includes(c))) found.push(`${tab || 'first tab'}: ${body.join(', ')}`);
     else problems.push(`${tab || 'first tab'}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 120)}`);
     if (found.length) break;
@@ -179,7 +191,7 @@ await step('G. The Google Sheet (SheetDB) accepts rows: a tab has Skyfly\'s colu
 });
 
 await step('G. The order is in the Google Sheet exactly once, even after Skyfly\'s own delayed copy has run', async () => {
-  assert(sheetReady, 'skipped: the sheet cannot take rows (see the check above)');
+  if (!sheetReady) throw new Blocked('not checked: the sheet cannot take rows (see the check above); the order stays saved in Skyfly and is copied when the sheet accepts rows');
   const rows = await waitForSheetRows(reference, 1, 300);
   assert(rows.length >= 1, `no sheet row for ${reference}`);
   // Skyfly's server copy runs ~3 minutes after the order and must find the page's row instead of adding one.
@@ -247,6 +259,71 @@ await step('G. With Skyfly unreachable the customer sees an honest error: no con
   return `error shown: "${err.trim().slice(0, 80)}…"`;
 });
 
+await step('J. Purchase fires only for a saved-order reply, once, with the order\'s value and currency (live page + live SDK; SIMULATED reply: no order is created and nothing is sent to Meta)', async () => {
+  const p3 = await ctx.newPage();
+  const start = pixelEvents.length;
+  const purchases = () => pixelEvents.slice(start).filter((e) => e.host.endsWith('facebook.com') && e.ev === 'Purchase');
+  const ref = `LR-SIM${String(RUN).replace(/\D/g, '').slice(-5).padStart(5, '0')}`;
+  let mode = 'fail';
+  await p3.route(`${SKYFLY}/api/public/orders`, (route) => (mode === 'fail'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
+    : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': 'https://roseskincare9-code.github.io' },
+      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: false, test: false }) })));
+  await p3.goto(`${PAGE}?skyfly_e2e=${RUN}-purchase`, { waitUntil: 'load' });
+  await p3.click('text=Order Power Glow');
+  await p3.fill('#fn', 'Simulated Reply Check');
+  await p3.fill('#ph', '08012345678');
+  await p3.fill('#addr', 'TEST - simulated reply, no order is created');
+  await p3.selectOption('#st', 'Lagos');
+  await sleep(1500);
+  assert(purchases().length === 0, `Purchase after a visit and clicks: ${purchases().length}`);
+  await p3.click('#sb');
+  await p3.waitForSelector('#skyErr', { state: 'visible', timeout: 60000 });
+  await sleep(1500);
+  assert(purchases().length === 0, `Purchase after a failed order: ${purchases().length}`);
+  assert(!(await p3.isVisible('#sb2')), 'confirmation shown for a failed order');
+  mode = 'saved';
+  await p3.click('#sb');
+  await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 });
+  for (let i = 0; i < 20 && purchases().length === 0; i += 1) await sleep(500);
+  const p = purchases();
+  assert(p.length === 1, `${p.length} Purchase event(s) after the saved reply`);
+  assert(p[0].id === '1357015185691765' && p[0].eid === `purchase_${ref}` && Number(p[0].value) === 51500 && p[0].currency === 'NGN', `Purchase sent ${JSON.stringify(p[0])}`);
+  await p3.reload({ waitUntil: 'load' });
+  await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 30000 });
+  // The same reply again (a repeated submission or a network retry returns the same order).
+  await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+  await sleep(3000);
+  assert(purchases().length === 1, `${purchases().length} Purchase events after a refresh and a repeated reply`);
+  await p3.screenshot({ path: 'live-screenshots/larose-simulated-purchase.png', fullPage: false });
+  await p3.close();
+  return `failed order → 0; saved reply → 1 Purchase (pixel ${p[0].id}, eventID ${p[0].eid}, value ${p[0].value} ${p[0].currency}); refresh + repeated reply → still 1 (intercepted, not sent to Meta)`;
+});
+
+await step('L. The test order appears exactly once in the Larose Natural Skincare Nigeria dashboard, with its Google Sheet status', async () => {
+  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in to the dashboard');
+  assert(reference, 'no test order was placed');
+  const owner = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const d = await owner.newPage();
+  await d.goto(`${SKYFLY}/login`);
+  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL);
+  await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
+  assert(!d.url().endsWith('/login'), 'sign-in refused');
+  await d.goto(`${SKYFLY}/`);
+  const href = await d.getAttribute('a:text-is("Larose Natural Skincare Nigeria")', 'href');
+  assert(href, 'Larose business not in the dashboard');
+  await d.goto(`${SKYFLY}${href}/orders?q=${encodeURIComponent(reference)}`);
+  const rows = await d.locator(`tbody a:text-is("${reference}")`).count();
+  assert(rows === 1, `${rows} rows for ${reference} in the Larose orders list`);
+  await d.click(`tbody a:text-is("${reference}")`);
+  const sheet = (await d.textContent('#sheet')).replace(/\s+/g, ' ').trim();
+  await d.screenshot({ path: 'live-screenshots/dashboard-test-order.png', fullPage: true });
+  await owner.close();
+  return `1 row in ${href}/orders; sheet copy: ${sheet.slice(0, 220)}`;
+});
+
 await browser.close();
-console.log(failed ? `\n${failed} check(s) failed` : '\nAll live checks passed');
+if (blockedSteps) console.log(`\n${blockedSteps} check(s) BLOCKED (provider limit or missing credential, see above)`);
+console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks that could run passed');
 process.exit(failed ? 1 : 0);
