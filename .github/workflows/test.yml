@@ -27,4 +27,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: echo "DATABASE_URL=postgres://skyfly:skyfly@localhost:5432/skyfly_test" > .env.test
+      # Separate empty database for the backup-restore test.
+      - run: PGPASSWORD=skyfly psql -h localhost -U skyfly -d skyfly_test -c "CREATE DATABASE skyfly_restore_test"
       - run: npm test
