@@ -89,3 +89,17 @@ describe('served pages', () => {
     assert.match(font.headers['cache-control'], /max-age=31536000, immutable/);
   });
 });
+
+describe('image safety', () => {
+  test('files named .png/.jpg that are not real JPEG or PNG images are never given to the image library', async () => {
+    const { rows: [{ landing_page_id: pageId }] } = await pool.query('SELECT landing_page_id FROM page_versions WHERE id = $1', [demoVersion]);
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="4000"><rect width="100%" height="100%"/></svg>'.padEnd(30000, ' '));
+    const { createHash } = await import('node:crypto');
+    const sha = createHash('sha256').update(svg).digest('hex');
+    const { rows: [v] } = await pool.query("INSERT INTO page_versions (landing_page_id, source_name, entry_path, file_count, total_bytes) VALUES ($1, 'fake', 'index.html', 1, $2) RETURNING id", [pageId, svg.length]);
+    await pool.query('INSERT INTO page_blobs (sha256, size, data) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [sha, svg.length, svg]);
+    await pool.query("INSERT INTO page_files (version_id, path, content_type, size, sha256) VALUES ($1, 'fake.png', 'image/png', $2, $3)", [v.id, svg.length, sha]);
+    const meta = await optimizeVersion(pool, v.id, { error() {} });
+    assert.deepEqual(meta, {}, 'skipped');
+  });
+});

@@ -31,7 +31,12 @@ export async function optimizeVersion(pool, versionId, log = console) {
   for (const f of files) {
     try {
       const { data } = await readFile(pool, versionId, f.path);
+      // Only real JPEG or PNG bytes reach the image library (a renamed SVG/HEIF file is skipped).
+      const isJpeg = data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+      const isPng = data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      if (!isJpeg && !isPng) continue;
       const info = await s(data, { limitInputPixels: MAX_PIXELS }).metadata();
+      if (!['jpeg', 'png'].includes(info.format)) continue;
       if (!info.width || !info.height) continue;
       const entry = { w: info.width, h: info.height, variants: [] };
       if (f.size >= MIN_BYTES) {

@@ -22,7 +22,7 @@
     "test:e2e:compat": "node --env-file-if-exists=.env.test test/e2e/sandbox-compat.e2e.js"
   },
   "dependencies": {
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "connect-pg-simple": "^10.0.0",
     "ejs": "^7.0.1",
     "express": "^4.22.3",
@@ -32,7 +32,7 @@
     "multer": "^2.4.0",
     "parse5": "^7.2.1",
     "pg": "^8.23.1",
-    "sharp": "^0.34.4",
+    "sharp": "^0.35.5",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {

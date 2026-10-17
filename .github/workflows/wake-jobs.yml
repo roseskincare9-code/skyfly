@@ -6,7 +6,7 @@
 name: Wake background jobs
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '4,14,24,34,44,54 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,6 +19,6 @@ jobs:
         run: |
           U=https://skyfly-gybf.onrender.com/healthz
           curl -s -m 90 -o /dev/null -w 'wake: HTTP %{http_code} in %{time_total}s\n' "$U" || true
-          if [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%M)" -ge 10 ]; then exit 0; fi
+          if [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%M)" -ge 14 ]; then exit 0; fi
           sleep 75
           curl -s -m 30 "$U" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const h=JSON.parse(d);console.log(JSON.stringify(h,null,1));const w=h.workers||{};const ok=(j)=>j&&j.lastOkAt&&Date.now()-Date.parse(j.lastOkAt)<5*60000;if(!ok(w.email)||!ok(w.sheets)){console.log('A background job has not completed a run in the last 5 minutes');process.exit(1)}})"
