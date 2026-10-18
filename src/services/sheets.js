@@ -9,7 +9,7 @@ import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
 export { SKYFLY_TAB };
 import { STATUS_LABELS } from '../lib/statuses.js';
-import { listTabs, ensureTab, findOrderRows, appendOrder, matchOrders } from './googleSheetsApi.js';
+import { ensureTab, findOrderRows, appendOrder, matchOrders, inspect } from './googleSheetsApi.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -160,16 +160,22 @@ export async function checkConnection(pool, conn) {
     status = 'error'; detail = conn.urlError;
   } else {
     try {
-      // Apps Script: first a read-only look at every tab, reported to the owner.
-      // Google Sheets API: Skyfly's tab is prepared first, so the summary lists it too.
-      if (isGoogleApi(conn)) columns = await sheetKeys(conn);
-      const tabs = isGoogleApi(conn) ? await listTabs(sheetIdOf(conn))
-        : isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'tabs' } })).tabs : null;
-      if (!isGoogleApi(conn)) columns = await sheetKeys(conn);
+      // A read-only look at every tab, reported to the owner. Google Sheets API: nothing is written
+      // here; Skyfly's tab (and any column it lacks) is added when the first order is copied.
+      let tabs = null;
+      const target = conn.sheet_tab || SKYFLY_TAB;
+      if (isGoogleApi(conn)) {
+        const seen = await inspect(sheetIdOf(conn), target);
+        tabs = seen.tabs;
+        columns = seen.header && seen.header.some(Boolean) ? [...seen.header, ...SHEET_COLUMNS.filter((c) => !seen.header.includes(c))] : [...SHEET_COLUMNS];
+      } else {
+        if (isAppsScript(conn)) tabs = (await scriptCall(conn, { params: { action: 'tabs' } })).tabs;
+        columns = await sheetKeys(conn);
+      }
       if (!Array.isArray(columns)) throw new SheetError('The sheet did not return its column names.');
       if (tabs) {
-        const target = conn.sheet_tab || SKYFLY_TAB;
         tabSummary = `Tabs: ${tabs.map((t) => (t.name === target ? `${t.name} (Skyfly writes here)` : `${t.name} (${Math.max(t.rows - 1, 0)} rows below row 1, not changed)`)).join('; ')}.`;
+        if (isGoogleApi(conn) && !tabs.some((t) => t.name === target)) tabSummary += ` "${target}" does not exist yet: Skyfly adds it when the first order is copied (nothing has been written).`;
       }
       const missingRequired = REQUIRED_COLUMNS.filter((c) => !columns.includes(c));
       const missing = SHEET_COLUMNS.filter((c) => !columns.includes(c));

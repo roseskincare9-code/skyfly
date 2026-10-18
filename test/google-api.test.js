@@ -125,9 +125,18 @@ describe('connecting by sharing the sheet with Skyfly (no Apps Script)', () => {
     ({ rows: [c] } = await pool.query('SELECT * FROM sheet_connections WHERE id = $1', [c.id]));
     assert.equal(c.check_status, 'ok', c.check_detail);
     assert.equal(c.sheet_tab, 'Skyfly Orders');
+    assert.match(c.check_detail, /Tabs: Laroseorders \(40 rows below row 1, not changed\)\. "Skyfly Orders" does not exist yet: Skyfly adds it when the first order is copied \(nothing has been written\)\./);
+    assert.deepEqual(google.tabs, [{ title: 'Laroseorders', values: HISTORY }], 'connecting and checking write nothing');
+    // Checking again once Skyfly's tab exists lists it.
+    const first = await order('First Copy');
+    await sync();
+    assert.deepEqual(skyflyTab().values[0], SHEET_COLUMNS);
+    assert.equal(skyflyTab().values.length, 2, (await orderRow(first.body.reference)).sheet_sync_error);
+    _csrf = await csrfToken(owner, `${base}/google-sheets`);
+    await owner.post(`${base}/google-sheets/connections/${c.id}/check`).type('form').send({ _csrf }).expect(302);
+    ({ rows: [c] } = await pool.query('SELECT * FROM sheet_connections WHERE id = $1', [c.id]));
     assert.match(c.check_detail, /Tabs: Laroseorders \(40 rows below row 1, not changed\); Skyfly Orders \(Skyfly writes here\)\./);
     assert.deepEqual(google.tabs[0], { title: 'Laroseorders', values: HISTORY }, 'the historical tab is exactly as it was');
-    assert.deepEqual(skyflyTab().values, [SHEET_COLUMNS]);
   });
 
   test('an order is copied once to Skyfly\'s tab, text stays text, and retrying never adds a second row', async () => {

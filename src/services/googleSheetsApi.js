@@ -125,6 +125,14 @@ export async function ensureTab(id, tab) {
   return [...header, ...missing];
 }
 
+// Read-only: the tabs, and the column row of Skyfly's tab if it exists yet (null when it does not:
+// it is created when the first order is copied). Nothing is written.
+export async function inspect(id, tab) {
+  const tabs = await readAll(id);
+  const target = tabs.find((t) => t.title === tab);
+  return { tabs: tabs.map((t) => ({ name: t.title, rows: t.values.length })), header: target ? (target.values[0] ?? []).map(String) : null };
+}
+
 // Rows anywhere in the spreadsheet that belong to this order.
 export async function findOrderRows(id, { ref, skyflyId = null }) {
   const found = [];

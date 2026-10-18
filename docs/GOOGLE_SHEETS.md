@@ -28,7 +28,8 @@ in Skyfly first; if Google is unavailable they wait and are copied later.
 2. Open the spreadsheet (e.g. Laroseorders) → **Share** → add that email as **Editor** → untick
    "Notify people" → **Share**.
 3. Copy the spreadsheet's link (or just its ID) from the address bar into Skyfly → **Connect**. Skyfly
-   lists your tabs ("not changed") and adds its own "Skyfly Orders" tab. The link can be saved before
+   lists your tabs ("not changed") without writing anything; its own "Skyfly Orders" tab is added when
+   the first order is copied. The link can be saved before
    the server's key works; it is checked again automatically at the next start-up.
 4. Orders that were already waiting are **held**: click "Compare waiting orders with the spreadsheet"
    (read-only: every tab is searched by order ID) to see how many are already there and how many are
