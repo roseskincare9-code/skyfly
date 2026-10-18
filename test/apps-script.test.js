@@ -76,6 +76,8 @@ describe('Apps Script spreadsheet connection', () => {
     const page = await owner.get(`${base}/google-sheets`).expect(200);
     const scriptKey = page.text.match(/name="script_key" value="([A-Za-z0-9_-]{32})"/)[1];
     assert.ok(page.text.includes(`var KEY = &#39;${scriptKey}&#39;;`), 'the script shown contains the same key');
+    const reloaded = await owner.get(`${base}/google-sheets`).expect(200);
+    assert.ok(reloaded.text.includes(`name="script_key" value="${scriptKey}"`), 'reloading the page keeps the key of a script already copied');
     assert.match(page.text, /Deploy → New deployment/);
     script.key = scriptKey;
     const _csrf = await csrfToken(owner, `${base}/google-sheets`);

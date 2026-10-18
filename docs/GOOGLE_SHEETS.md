@@ -12,7 +12,9 @@ and is copied later; nothing is lost.
 
 1. In Skyfly: your business → **Google Sheets** → **Connect a spreadsheet directly**. Skyfly shows
    the script below **with a private key already filled in**. Copy it from there (the key in this
-   file is a placeholder and will not work).
+   file is a placeholder and will not work). The key stays the same if you reload the page, until
+   you connect. A script in "No projects" on script.google.com is normal before this step: the
+   script is created inside the spreadsheet in step 2.
 2. Open the Google Sheet → **Extensions → Apps Script**. Delete everything in `Code.gs`, paste the
    script, click **Save**.
 3. **Deploy → New deployment** → gear icon → **Web app**:
@@ -25,7 +27,7 @@ and is copied later; nothing is lost.
      **Go to Skyfly orders (unsafe)** → **Allow**. It asks for access to spreadsheets only.
 4. Copy the **Web app URL** (`https://script.google.com/macros/s/…/exec`).
 5. In Skyfly, paste it into **Web app URL**, optionally a tab name, tick **Make it the default
-   spreadsheet**, and click **Connect**. Skyfly checks it at once ("All 12 of Skyfly's 12 columns match").
+   spreadsheet**, and click **Connect**. Skyfly checks it at once and lists your tabs (existing ones "not changed").
 6. Place a test order (a name starting with `TEST ORDER`, or on a page in test mode) and look at the
    sheet: one row, with `TEST ORDER` in the source column.
 

@@ -47,8 +47,10 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
 
   async function render(req, res, { error = null, notice = null, status = 200, form = {} } = {}) {
     const b = req.business;
-    // A fresh secret for a new Apps Script connection (kept when the form is shown again after an error).
-    const scriptKey = /^[A-Za-z0-9_-]{32}$/.test(String(form.script_key ?? '')) ? form.script_key : newScriptKey();
+    // The secret for a new Apps Script connection: kept for this sign-in until a connection is made,
+    // so reloading the page never changes the key in a script the owner has already copied.
+    const keys = (req.session.scriptKeys ??= {});
+    const scriptKey = /^[A-Za-z0-9_-]{32}$/.test(String(form.script_key ?? '')) ? form.script_key : (keys[b.id] ??= newScriptKey());
     await adoptLegacyUrls(pool, key);
     const { rows: [biz] } = await pool.query('SELECT default_sheet_connection_id FROM businesses WHERE id = $1', [b.id]);
     const defaultId = biz.default_sheet_connection_id;
@@ -126,6 +128,8 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     }
     const conn = await loadConnection(pool, key, req.business.id, id);
     const { status } = await checkConnection(pool, conn);
+    // Connected with this key: the next new connection gets a fresh one.
+    if (req.body.kind === 'apps_script' && req.session.scriptKeys) delete req.session.scriptKeys[req.business.id];
     await sendWaitingTo(req.business.id, conn.id, status);
     await audit(pool, req, { action: 'google_sheets.connected', businessId: req.business.id, entityType: 'sheet_connection', entityId: id, details: { name: f.name, tab: f.tab } });
     done(res, 'added', `#sheet-${id}`);
