@@ -155,5 +155,14 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.get('/integrations', need('integrations'), (req, res) => res.render('integrations', { active: 'integrations' }));
 
   router.use('/businesses/:businessId', scoped);
+  // Readable address by business name, e.g. /b/larose-nigeria/google-sheets → /businesses/<id>/google-sheets.
+  // Only for businesses this account can open; anything else is "not found".
+  router.get(['/b/:slug', '/b/:slug/*'], asyncHandler(async (req, res) => {
+    const { rows: [b] } = await pool.query('SELECT id FROM businesses WHERE slug = $1', [String(req.params.slug)]);
+    if (!b || !(await workspaceAccess(pool, req.session.userId, b.id))) return res.status(404).render('error', { message: 'Business not found.' });
+    const rest = req.params[0] ? `/${req.params[0]}` : '';
+    const q = req.originalUrl.indexOf('?');
+    res.redirect(302, `/businesses/${b.id}${rest}${q >= 0 ? req.originalUrl.slice(q) : ''}`);
+  }));
   return router;
 }

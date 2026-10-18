@@ -73,7 +73,11 @@ after(async () => { await pool.end(); server.close(); });
 
 describe('Apps Script spreadsheet connection', () => {
   test('the page gives a script with a private key; connecting with its web app URL checks the sheet', async () => {
+    // A readable address by business name leads to the same page; other accounts get "not found".
+    const short = await owner.get('/b/larose-nigeria/google-sheets').expect(302);
+    assert.equal(short.headers.location, `${base}/google-sheets`);
     const page = await owner.get(`${base}/google-sheets`).expect(200);
+    assert.match(page.text, /<button type="button" class="secondary" data-copy="script-code">Copy script<\/button>/);
     const scriptKey = page.text.match(/name="script_key" value="([A-Za-z0-9_-]{32})"/)[1];
     assert.ok(page.text.includes(`var KEY = &#39;${scriptKey}&#39;;`), 'the script shown contains the same key');
     // Not set up yet: the direct connection is offered at the top, before the existing connections.
@@ -126,6 +130,7 @@ describe('Apps Script spreadsheet connection', () => {
     assert.match(shown.text, new RegExp(`The spreadsheet Direct \\(Skyfly Orders\\) has 1 row for ${o.body.reference}\\.`));
     assert.equal(script.rows.length, before, 'checking adds nothing');
     const stranger = await signUp(app, { email: 'stranger@other.test' });
+    await stranger.get('/b/larose-nigeria/google-sheets').expect(404);
     const sc = await csrfToken(stranger, '/');
     const denied = await stranger.post(`${base}/orders/${row.id}/sheet-check`).type('form').send({ _csrf: sc });
     assert.ok([403, 404].includes(denied.status), `another account gets ${denied.status}`);
