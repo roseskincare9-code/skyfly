@@ -90,7 +90,7 @@ if (process.env.RENDER_API_KEY) {
             files = (detail.secretFiles || []).map((f) => f.secretFile ?? f);
             keys = vars.map((v) => v.key).join(', ') || 'no settings';
           } catch { /* names unavailable */ }
-          report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}; secret files: ${files.map((f) => f.name).join(', ') || 'none'}`);
+          report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}; secret files: ${files.map((f) => f.name).join(', ') || 'none'}; last changed ${g.updatedAt ?? '?'}`);
           const { readServiceAccount } = await import('../src/services/googleSheetsApi.js');
           for (const f of files) {
             const { account, problem } = readServiceAccount(f.content || '');
@@ -112,6 +112,25 @@ if (process.env.RENDER_API_KEY) {
           }
         }
       } catch (err) { report(null, 'Render: environment groups', err.message); }
+      // A Google key saved in another workspace cannot reach this service: names and validity only.
+      try {
+        const { readServiceAccount } = await import('../src/services/googleSheetsApi.js');
+        for (const o of owners.filter((x) => x.id !== svc.ownerId)) {
+          for (const g of (await render(`/env-groups?ownerId=${encodeURIComponent(o.id)}&limit=50`)).map((x) => x.envGroup ?? x)) {
+            const detail = await render(`/env-groups/${g.id}`).catch(() => ({}));
+            const items = [...(detail.envVars || []).map((v) => v.envVar ?? v).map((v) => ({ name: v.key, text: v.value })),
+              ...(detail.secretFiles || []).map((f) => f.secretFile ?? f).map((f) => ({ name: f.name, text: f.content }))];
+            for (const it of items.filter((x) => /google|service.?account/i.test(x.name))) {
+              const { account, problem } = readServiceAccount(it.text || '');
+              report(null, `Render: "${it.name}" in group "${g.name}" of OTHER workspace "${o.name}"`, `${String(it.text || '').length} characters; ${account ? 'valid key file' : problem}; cannot reach skyfly (different workspace)`);
+            }
+          }
+        }
+      } catch (err) { report(null, 'Render: environment groups in other workspaces', err.message); }
+      try {
+        const deploys = (await render(`/services/${svc.id}/deploys?limit=5`)).map((x) => x.deploy ?? x);
+        report(null, 'Render: recent deploys', deploys.map((x) => `${x.status} ${x.commit?.id?.slice(0, 7) ?? ''} ${x.trigger ?? ''} ${x.createdAt}`).join(' | '));
+      } catch (err) { report(null, 'Render: recent deploys', err.message); }
       if (d && d.status !== 'live') {
         try {
           const logs = await render(`/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&limit=60&direction=backward`);
