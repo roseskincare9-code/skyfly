@@ -19,14 +19,19 @@ export const SPREADSHEET_ID_RE = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,100})/;
 
 // Reads GOOGLE_SERVICE_ACCOUNT_JSON (the key file's JSON, or the same base64-encoded).
 export function parseServiceAccount(raw) {
-  if (!raw) return null;
+  return readServiceAccount(raw).account;
+}
+// Same, with the reason when it cannot be used (never includes any part of the key).
+export function readServiceAccount(raw) {
+  if (!raw) return { account: null, problem: 'not set' };
   let text = String(raw).trim();
-  if (!text.startsWith('{')) { try { text = Buffer.from(text, 'base64').toString('utf8'); } catch { return null; } }
-  try {
-    const j = JSON.parse(text);
-    if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(j.client_email || '') || !/BEGIN PRIVATE KEY/.test(j.private_key || '')) return null;
-    return { client_email: j.client_email, private_key: j.private_key };
-  } catch { return null; }
+  if (!text.startsWith('{')) { try { text = Buffer.from(text, 'base64').toString('utf8'); } catch { return { account: null, problem: 'not JSON' }; } }
+  let j;
+  try { j = JSON.parse(text); } catch { return { account: null, problem: 'not valid JSON (paste the whole key file, from { to })' }; }
+  if (j.type && j.type !== 'service_account') return { account: null, problem: `a "${String(j.type).slice(0, 30)}" key, not a service account key` };
+  if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(j.client_email || '')) return { account: null, problem: 'no service account email (client_email)' };
+  if (!/BEGIN PRIVATE KEY/.test(j.private_key || '')) return { account: null, problem: 'no private key (private_key)' };
+  return { account: { client_email: j.client_email, private_key: j.private_key, project_id: j.project_id || null }, problem: null };
 }
 
 export class GoogleApiError extends Error {
@@ -145,4 +150,22 @@ export async function appendOrder(id, tab, row, { ref, skyflyId }) {
     method: 'POST', query: { valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS' }, body: { values: [values] },
   });
   return 'created';
+}
+
+// Startup check, reported (yes/no only) on /healthz: can Skyfly sign in to Google, and is the
+// Sheets API enabled for the service account's project? Uses a spreadsheet ID that cannot exist:
+// Google answers 404 when the API is enabled, 403 "has not been used / is disabled" when it is not.
+export async function googleSelfCheck() {
+  if (!access) return { configured: false };
+  const out = { configured: true, project: access.serviceAccount.project_id, auth: null, sheetsApi: null, checkedAt: new Date().toISOString() };
+  try { await accessToken(); out.auth = 'ok'; } catch (err) { out.auth = `failed: ${err.message.slice(0, 160)}`; return out; }
+  try {
+    await api('0000000000000000000000000000skyfly-check', '', { query: { fields: 'spreadsheetId' } });
+    out.sheetsApi = 'enabled';
+  } catch (err) {
+    if (err.status !== 403) out.sheetsApi = `unexpected: ${err.message.slice(0, 120)}`;
+    else if (/has not been used|disabled|SERVICE_DISABLED|not been enabled/i.test(err.message)) out.sheetsApi = 'disabled: enable the Google Sheets API for this project';
+    else out.sheetsApi = 'enabled';
+  }
+  return out;
 }

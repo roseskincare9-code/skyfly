@@ -309,7 +309,9 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
     if (!conn.url) throw new SheetError(conn.urlError);
     // Google Sheets API: looks for the order in every tab, then adds it to Skyfly's tab.
     if (isGoogleApi(conn)) {
-      await appendOrder(sheetIdOf(conn), conn.sheet_tab || SKYFLY_TAB, sheetRow(o, items, o.page_name), { ref: o.reference, skyflyId: o.idempotency_key });
+      const result = await appendOrder(sheetIdOf(conn), conn.sheet_tab || SKYFLY_TAB, sheetRow(o, items, o.page_name), { ref: o.reference, skyflyId: o.idempotency_key });
+      // Reference and outcome only (no customer details), so copies can be reconciled from the logs.
+      console.log(`Google Sheets: ${o.reference} ${result === 'created' ? 'copied' : 'already present, not added again'} (connection ${conn.id}, tab "${conn.sheet_tab || SKYFLY_TAB}")`);
       return;
     }
     // Apps Script checks for the order and adds it in one locked step.

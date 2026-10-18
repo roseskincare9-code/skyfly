@@ -106,7 +106,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.status(status).render('google-sheets', {
       active: 'sheet', error, notice, count, connections, defaultId, pages, lastSync: last.at, form,
       rows, fetchError, checked: Boolean(checkId), markers: FALLBACK_MARKERS, columns: SHEET_COLUMNS, skyflyTab: SKYFLY_TAB,
-      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey), googleEmail: googleAccountEmail(),
+      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey), googleEmail: googleAccountEmail(), googleProblem: config.google?.setting ? config.google.problem : null,
     });
   }
 

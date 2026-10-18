@@ -52,7 +52,7 @@
       <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
       <p><button type="submit">Connect</button></p>
     <% } else { %>
-      <p class="muted" style="margin:0" data-google-missing>Not available yet: Skyfly's Google service account has not been added to the server (setting <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>; see docs/GOOGLE_SHEETS.md). Once it is, this box shows the email to share your sheet with.</p>
+      <p class="muted" style="margin:0" data-google-missing><% if (googleProblem) { %>The server's Google service account setting cannot be used: <%= googleProblem %>. Paste the whole key file into <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> again (see docs/GOOGLE_SHEETS.md).<% } else { %>Not available yet: Skyfly's Google service account has not been added to the server (setting <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>; see docs/GOOGLE_SHEETS.md). Once it is, this box shows the email to share your sheet with.<% } %></p>
     <% } %>
   </form>
   <% } %>

@@ -71,6 +71,25 @@ if (process.env.RENDER_API_KEY) {
         const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY'];
         report(null, 'Render: optional settings present (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
       } catch (err) { report(null, 'Render: optional settings', err.message); }
+      // Environment groups (names, setting names and links only; values are never read or printed).
+      try {
+        const groups = (await render(`/env-groups?ownerId=${encodeURIComponent(svc.ownerId)}&limit=50`)).map((g) => g.envGroup ?? g);
+        if (!groups.length) report(null, 'Render: environment groups', 'none');
+        for (const g of groups) {
+          const linked = (g.serviceLinks || []).some((l) => l.id === svc.id);
+          let keys = '?';
+          try { keys = ((await render(`/env-groups/${g.id}`)).envVars || []).map((v) => (v.envVar ?? v).key).join(', ') || 'no settings'; } catch { /* names unavailable */ }
+          report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}`);
+          if (!linked && process.env.LINK_ENV_GROUP && g.name === process.env.LINK_ENV_GROUP) {
+            const r = await fetch(`${RENDER}/env-groups/${g.id}/services/${svc.id}`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json' } });
+            report(r.ok, `Render: link environment group "${g.name}" to skyfly`, `HTTP ${r.status}`);
+            if (r.ok) {
+              const d2 = await fetch(`${RENDER}/services/${svc.id}/deploys`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json', 'Content-Type': 'application/json' }, body: '{"clearCache":"do_not_clear"}' });
+              report(d2.ok, 'Render: redeploy so the running app gets the group\'s settings', `HTTP ${d2.status}`);
+            }
+          }
+        }
+      } catch (err) { report(null, 'Render: environment groups', err.message); }
       if (d && d.status !== 'live') {
         try {
           const logs = await render(`/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&limit=60&direction=backward`);
@@ -89,6 +108,10 @@ if (process.env.RENDER_API_KEY) {
         report(null, 'Render logs: server errors (HTTP 5xx, latest 100 requests)', failed.length ? failed.slice(0, 5).map(mask).join(' | ') : 'none');
         const app = ((await render(`${base}&type=app`)).logs || []).map((l) => l.message || '').filter((m) => /error/i.test(m));
         report(null, 'Render logs: recent app errors', app.length ? app.slice(0, 5).map((m) => mask(m.split('\n')[0])).join(' | ') : 'none');
+        // Google Sheets API: startup check and copies (references and outcomes only).
+        const appAll = ((await render(`${base}&type=app`)).logs || []).map((l) => l.message || '');
+        const g = appAll.filter((m) => /^Google Sheets( API)?:/.test(m));
+        report(null, 'Render logs: Google Sheets lines (latest 100 app lines)', g.length ? g.slice(0, 30).map((m) => mask(m)).join(' | ') : 'none');
       } catch (err) { report(null, 'Render logs', err.message); }
     }
     report(db ? db.status === 'available' : false, 'Render: skyfly-db database', db ? `${db.status}, plan ${db.plan}, region ${db.region}` : 'not found in any workspace');
@@ -114,6 +137,9 @@ if (!url) {
     const line = (j) => (j ? `last run ${j.lastRunAt ?? 'never'}, last OK ${j.lastOkAt ?? 'never'}${j.lastError ? `, error: ${j.lastError}` : ''}${j.last ? `, ${JSON.stringify(j.last)}` : ''}` : 'not running');
     report(fresh(w.email), 'Background job: email automations / subscriptions', line(w.email));
     report(fresh(w.sheets), 'Background job: Google Sheet copies', line(w.sheets));
+    if (w.google) report(null, 'Google Sheets API (service account)', w.google.configured
+      ? `configured (setting ${w.google.setting}, project ${w.google.project ?? '?'}); sign-in: ${w.google.auth ?? 'checking'}; Sheets API: ${w.google.sheetsApi ?? 'checking'}`
+      : `not available to the app${w.google.setting ? ` (${w.google.setting} is set but ${w.google.problem})` : ' (no GOOGLE_SERVICE_ACCOUNT_JSON in its environment)'}`);
   } else report(null, 'Background jobs', 'not reported by this version');
 
   const sdk = await get(`${url}/sdk/skyfly.js`);

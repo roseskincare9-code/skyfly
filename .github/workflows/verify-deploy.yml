@@ -7,6 +7,10 @@ on:
         description: Skyfly service URL (leave empty to find it via the RENDER_API_KEY secret)
         required: false
         default: ''
+      link_env_group:
+        description: Name of an existing Render environment group to link to the skyfly service if it is not linked (empty = only report)
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -29,3 +33,4 @@ jobs:
       - run: node scripts/verify-deploy.mjs "${{ inputs.url }}"
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          LINK_ENV_GROUP: ${{ inputs.link_env_group }}

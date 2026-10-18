@@ -5,6 +5,7 @@ import { ensureLaroseForOwner, ensureDemoSite } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
 import { startSheetWorker } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
+import { googleSelfCheck } from './services/googleSheetsApi.js';
 
 const config = loadConfig();
 const pool = createPool(config.databaseUrl, config.databaseSsl);
@@ -14,10 +15,20 @@ const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startShe
 // Subscription expiry, email contacts, automation planning and sending (every minute).
 // Only in production (or EMAIL_WORKER=on), so local servers never email anyone.
 const jobs = config.isProduction || process.env.EMAIL_WORKER === 'on' ? startEmailWorker(pool, config) : { kick() {}, stop() {} };
+// Google Sheets API (service account): yes/no results only, shown on /healthz. Never the key.
+const google = { configured: Boolean(config.google.serviceAccount), setting: config.google.setting, problem: config.google.problem };
 const app = createApp({
   pool, config, onOrderSaved: (id) => { sheets.kick(id); jobs.kick(); },
-  workers: { email: jobs.status ?? null, sheets: sheets.status ?? null, startedAt: new Date().toISOString() },
+  workers: { email: jobs.status ?? null, sheets: sheets.status ?? null, google, startedAt: new Date().toISOString() },
 });
+if (google.configured) {
+  googleSelfCheck().then((r) => {
+    Object.assign(google, r);
+    console.log(`Google Sheets API: service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
+  }).catch((err) => { google.auth = `check failed: ${err.message}`; });
+} else if (google.setting) {
+  console.error(`Google Sheets API: ${google.setting} is set but cannot be used: ${google.problem}`);
+}
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);

@@ -12,6 +12,7 @@ import request from 'supertest';
 import { setup, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
 import { syncDue, SHEET_COLUMNS } from '../src/services/sheets.js';
+import { googleSelfCheck, readServiceAccount } from '../src/services/googleSheetsApi.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const EMAIL = 'skyfly-sheets@skyfly-test.iam.gserviceaccount.com';
@@ -19,7 +20,7 @@ const SHEET_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
 const HISTORY = [['Date', 'Name', 'Phone', 'source'], ...Array.from({ length: 40 }, (_, i) => [`2026-09-${String((i % 28) + 1).padStart(2, '0')}`, `Customer ${i}`, `+23480${i}`, `Website | old order ${i}`])];
 
 // ---- stand-in for Google ----
-const google = { shared: true, quota: false, tabs: null, tokens: 0, calls: 0 };
+const google = { shared: true, quota: false, disabled: false, tabs: null, tokens: 0, calls: 0 };
 const reset = () => { google.tabs = [{ title: 'Laroseorders', values: HISTORY.map((r) => [...r]) }]; };
 reset();
 const tabOf = (range) => {
@@ -45,6 +46,7 @@ const server = createServer((req, res) => {
     google.calls += 1;
     if (req.headers.authorization !== 'Bearer test-access-token') return send(401, { error: { message: 'no token' } });
     if (google.quota) return send(429, { error: { message: 'Quota exceeded' } });
+    if (google.disabled) return send(403, { error: { message: 'Google Sheets API has not been used in project skyfly-test before or it is disabled.' } });
     const m = u.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(.*)$/);
     if (!m || m[1] !== SHEET_ID || !google.shared) return send(403, { error: { message: 'The caller does not have permission' } });
     const rest = m[2];
@@ -193,5 +195,29 @@ describe('connecting by sharing the sheet with Skyfly (no Apps Script)', () => {
     const res = await other.post(`/businesses/${b.id}/google-sheets/connections`).type('form').send({ _csrf, kind: 'google_api', spreadsheet_url: LINK });
     assert.equal(res.status, 409);
     assert.match(res.text, /already connected to another business/);
+  });
+});
+
+describe('server setting and startup check (yes/no only, never the key)', () => {
+  test('the key file is read safely, with a reason when it cannot be used', () => {
+    const file = JSON.stringify({ type: 'service_account', project_id: 'skyfly-test', client_email: EMAIL, private_key: serviceAccount.private_key });
+    assert.equal(readServiceAccount(file).account.client_email, EMAIL);
+    assert.equal(readServiceAccount(Buffer.from(file).toString('base64')).account.project_id, 'skyfly-test');
+    assert.match(readServiceAccount('{"client_email": ').problem, /not valid JSON/);
+    assert.match(readServiceAccount(JSON.stringify({ type: 'authorized_user' })).problem, /not a service account key/);
+    assert.match(readServiceAccount(JSON.stringify({ client_email: EMAIL })).problem, /no private key/);
+    for (const r of [readServiceAccount('{"client_email": '), readServiceAccount(JSON.stringify({ client_email: EMAIL }))]) assert.ok(!JSON.stringify(r).includes('PRIVATE'));
+  });
+
+  test('startup check: sign-in works and the Sheets API is reported enabled, or disabled with what to do', async () => {
+    let r = await googleSelfCheck();
+    assert.equal(r.configured, true);
+    assert.equal(r.auth, 'ok');
+    assert.equal(r.sheetsApi, 'enabled');
+    assert.ok(!JSON.stringify(r).includes('PRIVATE KEY'));
+    google.disabled = true;
+    r = await googleSelfCheck();
+    assert.match(r.sheetsApi, /^disabled: enable the Google Sheets API/);
+    google.disabled = false;
   });
 });

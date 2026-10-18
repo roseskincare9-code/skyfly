@@ -1,7 +1,7 @@
 // Reads and validates Skyfly's environment. Fails fast with a clear message
 // so a misconfigured deploy never starts half-working.
 import { parseKey } from './lib/secrets.js';
-import { parseServiceAccount } from './services/googleSheetsApi.js';
+import { readServiceAccount } from './services/googleSheetsApi.js';
 
 function required(name) {
   const value = process.env[name];
@@ -79,7 +79,12 @@ export function loadConfig() {
     },
     // Google Sheets API (service account): its key file's JSON in GOOGLE_SERVICE_ACCOUNT_JSON (server only).
     google: {
-      serviceAccount: parseServiceAccount(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+      ...(() => {
+        // The usual name, or the same with hyphens (as typed in some Render environment groups).
+        const name = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE-SERVICE-ACCOUNT-JSON'].find((k) => process.env[k]) ?? null;
+        const { account, problem } = readServiceAccount(name ? process.env[name] : '');
+        return { serviceAccount: account, setting: name, problem };
+      })(),
       apiBase: process.env.GOOGLE_SHEETS_API_BASE || 'https://sheets.googleapis.com',
       tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
