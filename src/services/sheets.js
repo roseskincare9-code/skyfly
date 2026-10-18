@@ -254,6 +254,21 @@ async function targetFor(pool, key, o) {
   return id ? loadConnection(pool, key, o.business_id, id) : null;
 }
 
+// Read-only: how many rows the order's spreadsheet holds for this order (searched by its
+// reference), so the owner can confirm "exactly one row" without opening the sheet.
+export async function countOrderRows(pool, key, businessId, orderId) {
+  const { rows: [o] } = await pool.query(
+    `SELECT o.business_id, o.reference, lp.sheet_connection_id AS page_sheet_id, b.default_sheet_connection_id AS default_sheet_id
+       FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+      WHERE o.id = $1 AND o.business_id = $2`, [orderId, businessId]);
+  if (!o) return null;
+  const conn = await targetFor(pool, key, o);
+  if (!conn) throw new SheetError('No spreadsheet is set for this order.');
+  if (!conn.url) throw new SheetError(conn.urlError);
+  const rows = await sheetSearch(conn, o.reference);
+  return { count: Array.isArray(rows) ? rows.length : 0, sheet: conn.name, tab: conn.sheet_tab || 'first tab' };
+}
+
 // Sends one order to its sheet (or confirms it is already there) and records the result.
 export async function syncOrder(pool, orderId, { key = null } = {}) {
   const { rows: [o] } = await pool.query(

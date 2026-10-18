@@ -5,7 +5,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES, STATUS_LABELS, STATUS_VALUES, PAYMENT
 import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
 import { retryEvent } from '../services/pixels.js';
-import { requeue } from '../services/sheets.js';
+import { requeue, countOrderRows } from '../services/sheets.js';
 import { cancelIneligible } from '../services/emailAutomation.js';
 import { whatsappDigits } from '../lib/phone.js';
 
@@ -135,6 +135,20 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
     res.redirect(`${res.locals.base}/orders/${req.params.orderId}?sheet=retrying`);
   }));
 
+  // Counts this order's rows in the real spreadsheet (read-only).
+  router.post('/:orderId/sheet-check', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.orderId)) return res.status(404).render('error', { message: 'Order not found.' });
+    let q;
+    try {
+      const r = await countOrderRows(pool, config.encryptionKey, req.business.id, req.params.orderId);
+      if (!r) return res.status(404).render('error', { message: 'Order not found.' });
+      q = new URLSearchParams({ sheetrows: String(r.count), sheetname: `${r.sheet} (${r.tab})` });
+    } catch (err) {
+      q = new URLSearchParams({ sheetcheckerror: String(err.message).slice(0, 200) });
+    }
+    res.redirect(`${res.locals.base}/orders/${req.params.orderId}?${q}#sheet`);
+  }));
+
   router.get('/export.csv', asyncHandler(async (req, res) => {
     const { sql, params } = orderFilters(req.business.id, req.query);
     const { rows } = await pool.query(
@@ -199,6 +213,8 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
       waUrl: `https://wa.me/${whatsappDigits(order.phone)}?text=${encodeURIComponent(waText)}`,
       saved: req.query.saved === '1',
       sheetNotice: req.query.sheet === 'retrying',
+      sheetCheck: /^\d+$/.test(String(req.query.sheetrows ?? '')) ? { count: Number(req.query.sheetrows), name: String(req.query.sheetname ?? '').slice(0, 200) }
+        : req.query.sheetcheckerror ? { error: String(req.query.sheetcheckerror).slice(0, 200) } : null,
     });
   }));
 

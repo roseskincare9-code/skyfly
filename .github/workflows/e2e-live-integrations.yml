@@ -1,0 +1,39 @@
+# Reads Larose's and the Skyfly demo shop's integration results through the owner's dashboard:
+# Google Sheets (exact row count in the real spreadsheet), Meta server-side test Purchase, email
+# setup and (optional) one test email to the owner's own address. Run after the live order tests.
+name: Live integrations check (Sheets, Meta, email)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com)
+        required: true
+      send_test_email:
+        description: Send one test email to the owner's own address (yes/no)
+        required: false
+        default: 'no'
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: node test/e2e/live-integrations.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
+          SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
+          SEND_TEST_EMAIL: ${{ inputs.send_test_email }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-integrations-screenshots
+          path: live-screenshots/
+          retention-days: 7

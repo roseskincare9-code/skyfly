@@ -83,6 +83,8 @@
     <p style="margin:0"><span class="pill <%= { synced: 'delivered', pending: 'pending', failed: 'cancelled', skipped: '' }[order.sheet_sync_status] %>"><%= sheetText[order.sheet_sync_status] %></span>
       <% if (order.sheet_synced_at) { %><span class="muted"> on <%= formatDate(order.sheet_synced_at) %></span><% } %>
       <% if (order.sheet_sync_status === 'failed') { %><br><span class="muted">Attempt <%= order.sheet_sync_attempts %>: <%= order.sheet_sync_error %>. Next try <%= formatDate(order.sheet_sync_next_at) %>.</span><% } %></p>
+    <% if (sheetCheck) { %><p data-sheet-check style="margin:8px 0 0"><%= sheetCheck.error ? 'Could not check the spreadsheet: ' + sheetCheck.error : `The spreadsheet ${sheetCheck.name} has ${sheetCheck.count} row${sheetCheck.count === 1 ? '' : 's'} for ${order.reference}.` %></p><% } %>
+    <% if (order.sheet_name) { %><form method="post" action="<%= base %>/orders/<%= order.id %>/sheet-check" style="margin-top:8px"><%- include('partials/csrf') %><button class="secondary" type="submit">Check the spreadsheet</button> <span class="muted">(counts this order's rows; changes nothing)</span></form><% } %>
     <% if (['failed', 'skipped'].includes(order.sheet_sync_status)) { %>
       <form method="post" action="<%= base %>/orders/<%= order.id %>/sheet-retry" style="margin-top:8px"><%- include('partials/csrf') %><button class="secondary" type="submit"><%= order.sheet_sync_status === 'failed' ? 'Retry now' : 'Copy to the Google Sheet now' %></button></form>
     <% } %>

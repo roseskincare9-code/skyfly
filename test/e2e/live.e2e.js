@@ -183,7 +183,7 @@ await step('G. The Google Sheet (SheetDB) accepts rows: a tab has Skyfly\'s colu
     const res = await fetch(tabUrl('/keys', tab));
     const body = await res.json().catch(() => ({}));
     // Quota used up: stop here rather than spend more requests that cannot succeed.
-    if (res.status === 429) throw new Blocked(`SheetDB HTTP 429 ${JSON.stringify(body).slice(0, 120)} (monthly request quota used up)`);
+    if (res.status === 429) throw new Blocked(`SheetDB HTTP 429 ${JSON.stringify(body).slice(0, 120)} (monthly request quota used up). This is Larose's old SheetDB link; the direct Laroseorders link is checked by the "Live integrations check" workflow`);
     if (res.ok && Array.isArray(body) && ['fullName', 'phone', 'package', 'source'].every((c) => body.includes(c))) found.push(`${tab || 'first tab'}: ${body.join(', ')}`);
     else problems.push(`${tab || 'first tab'}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 120)}`);
     if (found.length) break;

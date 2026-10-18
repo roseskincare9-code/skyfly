@@ -110,6 +110,18 @@ describe('Apps Script spreadsheet connection', () => {
     await pool.query("UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_attempts = 1 WHERE id = $1", [row.id]);
     await sync();
     assert.equal(script.rows.filter((r) => r.source.includes(o.body.reference)).length, 1, 'still one row');
+
+    // The owner can count the order's rows in the real spreadsheet from the order page (read-only).
+    const _csrf = await csrfToken(owner, `${base}/orders/${row.id}`);
+    const before = script.rows.length;
+    const check = await owner.post(`${base}/orders/${row.id}/sheet-check`).type('form').send({ _csrf }).expect(302);
+    const shown = await owner.get(check.headers.location.replace(/#.*/, '')).expect(200);
+    assert.match(shown.text, new RegExp(`The spreadsheet Direct \\(Skyfly Orders\\) has 1 row for ${o.body.reference}\\.`));
+    assert.equal(script.rows.length, before, 'checking adds nothing');
+    const stranger = await signUp(app, { email: 'stranger@other.test' });
+    const sc = await csrfToken(stranger, '/');
+    const denied = await stranger.post(`${base}/orders/${row.id}/sheet-check`).type('form').send({ _csrf: sc });
+    assert.ok([403, 404].includes(denied.status), `another account gets ${denied.status}`);
   });
 
   test('a Google quota error pauses the sheet (the order waits safely); a wrong key is reported', async () => {
