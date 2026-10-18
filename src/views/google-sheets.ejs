@@ -7,6 +7,7 @@
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
   <% const statusPill = { ok: ['delivered', 'Connected'], needs_columns: ['cancelled', 'Needs column names'], error: ['cancelled', 'Not reachable'], unchecked: ['pending', 'Not checked yet'] }; %>
   <% const defaultConn = connections.find((c) => String(c.id) === String(defaultId)); %>
+  <% const hasDirect = connections.some((c) => c.provider === 'apps_script'); %>
 
   <div class="card">
     <h2>Copy status</h2>
@@ -23,7 +24,41 @@
       <a class="btn secondary" href="<%= base %>/orders/export.csv">Download all orders (CSV)</a>
       <a class="btn secondary" href="<%= base %>/google-sheets/export.csv">Download in sheet columns (CSV)</a>
     </div>
+    <% if (!hasDirect) { %>
+      <div class="warn-box" style="margin-top:12px" data-direct-cta><strong>Recommended:</strong> connect your spreadsheet directly with Google Apps Script: free, no SheetDB request limit, and every waiting order is sent once it is connected. Your existing tabs and history are not changed.
+        <p style="margin:8px 0 0"><a class="btn" href="#add-script">Set up the direct connection ↓</a></p></div>
+    <% } %>
   </div>
+
+  <% function directForm() { %>
+  <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add-script">
+    <%- include('partials/csrf') %>
+    <input type="hidden" name="kind" value="apps_script"><input type="hidden" name="script_key" value="<%= scriptKey %>">
+    <h2>Connect a spreadsheet directly (free, recommended)</h2>
+    <p class="muted" style="margin-top:0">Orders go straight from Skyfly to your Google Sheet through a small script that lives in your own spreadsheet. No SheetDB account and no SheetDB request limit. Takes about 3 minutes:</p>
+    <ol style="padding-left:18px;font-size:14px">
+      <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
+      <li>Delete what is there, paste the script below, and click <strong>Save</strong>.</li>
+      <li>Click <strong>Deploy → New deployment</strong> → type <strong>Web app</strong>. Execute as: <strong>Me</strong>. Who has access: <strong>Anyone</strong>. Click <strong>Deploy</strong> and allow access when Google asks.</li>
+      <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) into the box below and click Connect. Skyfly checks it at once, adds any missing columns to row 1 (existing rows are kept), and sends the orders that were waiting.</li>
+    </ol>
+    <label for="script-code">Script (contains this connection's private key: don't share it)</label>
+    <textarea id="script-code" readonly rows="8" style="font-family:ui-monospace,monospace;font-size:12px"><%= appsScript %></textarea>
+    <p style="margin:6px 0 0"><button type="button" class="secondary" data-copy="script-code">Copy script</button></p>
+    <script src="/static/copy.js" defer></script>
+    <label for="script-name">Name</label>
+    <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
+    <label for="script-url">Web app URL</label>
+    <input id="script-url" name="api_url" required autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
+    <label for="script-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”; your existing tabs and their history are never changed)</label>
+    <input id="script-tab" name="sheet_tab" maxlength="100" placeholder="<%= skyflyTab %>">
+    <label for="script-link">Google Sheets link (optional, for “Open spreadsheet”)</label>
+    <input id="script-link" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/…">
+    <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
+    <p><button type="submit">Connect</button></p>
+  </form>
+  <% } %>
+  <% if (!hasDirect) directForm(); %>
 
   <h2 style="margin-top:28px">Connected spreadsheets</h2>
   <% if (!connections.length) { %><div class="card empty"><p>No spreadsheet connected yet. Add one below.</p></div><% } %>
@@ -42,6 +77,7 @@
       <dt>Columns</dt><dd><%= c.check_detail || 'Not checked yet.' %><% if (c.checked_at) { %> <span class="muted">Checked <%= formatDate(c.checked_at) %>.</span><% } %></dd>
       <dt>Last successful copy</dt><dd><%= c.last_success_at ? formatDate(c.last_success_at) : 'None yet' %></dd>
       <% if (c.last_error && (!c.last_success_at || c.last_error_at > c.last_success_at)) { %><dt>Last error</dt><dd class="error" style="margin:0"><%= c.last_error %> <span class="muted">(<%= formatDate(c.last_error_at) %>)</span></dd><% } %>
+      <% if (c.provider !== 'apps_script' && /429|limit/i.test(c.last_error || '')) { %><dt>What to do</dt><dd>SheetDB's request limit is used up. <a href="#add-script">Connect the same spreadsheet directly instead (free)</a>; this connection and its orders are kept.</dd><% } %>
       <dt>Orders</dt><dd><%= c.synced %> copied<% if (c.failed) { %>, <a href="<%= base %>/orders?sheet=failed"><strong><%= c.failed %> failed</strong></a><% } %></dd>
     </dl>
     <% if (c.check_status === 'needs_columns') { %>
@@ -95,32 +131,7 @@
     </tbody></table></div><% } %>
   </div>
 
-  <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add-script">
-    <%- include('partials/csrf') %>
-    <input type="hidden" name="kind" value="apps_script"><input type="hidden" name="script_key" value="<%= scriptKey %>">
-    <h2>Connect a spreadsheet directly (free, recommended)</h2>
-    <p class="muted" style="margin-top:0">Orders go straight from Skyfly to your Google Sheet through a small script that lives in your own spreadsheet. No SheetDB account and no SheetDB request limit. Takes about 3 minutes:</p>
-    <ol style="padding-left:18px;font-size:14px">
-      <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
-      <li>Delete what is there, paste the script below, and click <strong>Save</strong>.</li>
-      <li>Click <strong>Deploy → New deployment</strong> → type <strong>Web app</strong>. Execute as: <strong>Me</strong>. Who has access: <strong>Anyone</strong>. Click <strong>Deploy</strong> and allow access when Google asks.</li>
-      <li>Copy the <strong>Web app URL</strong> (ends with <code>/exec</code>) into the box below and click Connect. Skyfly checks it at once, adds any missing columns to row 1 (existing rows are kept), and sends the orders that were waiting.</li>
-    </ol>
-    <label for="script-code">Script (contains this connection's private key: don't share it)</label>
-    <textarea id="script-code" readonly rows="8" style="font-family:ui-monospace,monospace;font-size:12px"><%= appsScript %></textarea>
-    <p style="margin:6px 0 0"><button type="button" class="secondary" data-copy="script-code">Copy script</button></p>
-    <script src="/static/copy.js" defer></script>
-    <label for="script-name">Name</label>
-    <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
-    <label for="script-url">Web app URL</label>
-    <input id="script-url" name="api_url" required autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
-    <label for="script-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”; your existing tabs and their history are never changed)</label>
-    <input id="script-tab" name="sheet_tab" maxlength="100" placeholder="<%= skyflyTab %>">
-    <label for="script-link">Google Sheets link (optional, for “Open spreadsheet”)</label>
-    <input id="script-link" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/…">
-    <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
-    <p><button type="submit">Connect</button></p>
-  </form>
+  <% if (hasDirect) directForm(); %>
 
   <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add">
     <%- include('partials/csrf') %>

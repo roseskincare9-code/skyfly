@@ -76,6 +76,9 @@ describe('Apps Script spreadsheet connection', () => {
     const page = await owner.get(`${base}/google-sheets`).expect(200);
     const scriptKey = page.text.match(/name="script_key" value="([A-Za-z0-9_-]{32})"/)[1];
     assert.ok(page.text.includes(`var KEY = &#39;${scriptKey}&#39;;`), 'the script shown contains the same key');
+    // Not set up yet: the direct connection is offered at the top, before the existing connections.
+    assert.match(page.text, /data-direct-cta/);
+    assert.ok(page.text.indexOf('id="add-script"') < page.text.indexOf('Connected spreadsheets'), 'the direct connection form comes first');
     const reloaded = await owner.get(`${base}/google-sheets`).expect(200);
     assert.ok(reloaded.text.includes(`name="script_key" value="${scriptKey}"`), 'reloading the page keeps the key of a script already copied');
     assert.match(page.text, /Deploy → New deployment/);
@@ -96,6 +99,8 @@ describe('Apps Script spreadsheet connection', () => {
     assert.ok(!scriptKey.endsWith(c.api_hint), 'the hint never shows part of the key');
     const after = await owner.get(`${base}/google-sheets`).expect(200);
     assert.match(after.text, /Google Apps Script<\/dt>/);
+    assert.doesNotMatch(after.text, /data-direct-cta/, 'no prompt once it is connected');
+    assert.ok(after.text.indexOf('id="add-script"') > after.text.indexOf('Connected spreadsheets'), 'adding another one stays at the bottom');
   });
 
   test('an order is copied once with Skyfly\'s columns; retrying never adds a second row', async () => {
