@@ -78,8 +78,16 @@ if (process.env.RENDER_API_KEY) {
         for (const g of groups) {
           const linked = (g.serviceLinks || []).some((l) => l.id === svc.id);
           let keys = '?';
-          try { keys = ((await render(`/env-groups/${g.id}`)).envVars || []).map((v) => (v.envVar ?? v).key).join(', ') || 'no settings'; } catch { /* names unavailable */ }
+          let vars = [];
+          try { vars = ((await render(`/env-groups/${g.id}`)).envVars || []).map((v) => v.envVar ?? v); keys = vars.map((v) => v.key).join(', ') || 'no settings'; } catch { /* names unavailable */ }
           report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}`);
+          // A Google key in the group: checked in memory only (present? valid key file? which project?). Never printed.
+          for (const v of vars.filter((x) => x.key.toUpperCase().replace(/-/g, '_') === 'GOOGLE_SERVICE_ACCOUNT_JSON')) {
+            const { readServiceAccount } = await import('../src/services/googleSheetsApi.js');
+            const { account, problem } = readServiceAccount(v.value || '');
+            const posix = /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.key);
+            report(null, `Render: "${v.key}" in group "${g.name}"`, `${v.value ? `${String(v.value).length} characters` : 'EMPTY'}; ${account ? `valid service account key file (project ${account.project_id ?? '?'})` : `cannot be used: ${problem}`}; name ${posix ? 'is a standard setting name' : 'contains characters (such as -) that the start-up shell drops, so the app never receives it'}`);
+          }
           if (!linked && process.env.LINK_ENV_GROUP && g.name === process.env.LINK_ENV_GROUP) {
             const r = await fetch(`${RENDER}/env-groups/${g.id}/services/${svc.id}`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json' } });
             report(r.ok, `Render: link environment group "${g.name}" to skyfly`, `HTTP ${r.status}`);
