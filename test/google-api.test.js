@@ -221,3 +221,23 @@ describe('server setting and startup check (yes/no only, never the key)', () => 
     google.disabled = false;
   });
 });
+
+describe('key file uploaded as a Render secret file', () => {
+  test('Skyfly finds a service account key among the secret files when no setting holds it', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(`${tmpdir()}/secrets-`);
+    writeFileSync(`${dir}/notes.txt`, 'not a key');
+    writeFileSync(`${dir}/skyfly-sheets-key.json`, JSON.stringify({ type: 'service_account', project_id: 'skyfly-test', client_email: EMAIL, private_key: serviceAccount.private_key }));
+    const saved = { ...process.env };
+    for (const k of Object.keys(process.env)) if (k.toUpperCase().replace(/-/g, '_') === 'GOOGLE_SERVICE_ACCOUNT_JSON') delete process.env[k];
+    process.env.SECRET_FILES_DIR = dir;
+    process.env.SESSION_SECRET ||= 'test-secret';
+    try {
+      const { loadConfig } = await import('../src/config.js');
+      const c = loadConfig();
+      assert.equal(c.google.serviceAccount.client_email, EMAIL);
+      assert.equal(c.google.setting, 'secret file skyfly-sheets-key.json');
+    } finally { process.env = saved; }
+  });
+});

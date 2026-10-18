@@ -1,5 +1,6 @@
 // Reads and validates Skyfly's environment. Fails fast with a clear message
 // so a misconfigured deploy never starts half-working.
+import { readdirSync, readFileSync } from 'node:fs';
 import { parseKey } from './lib/secrets.js';
 import { readServiceAccount } from './services/googleSheetsApi.js';
 
@@ -85,8 +86,22 @@ export function loadConfig() {
         const norm = (k) => k.toUpperCase().replace(/-/g, '_');
         const name = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'GOOGLE_SERVICE_ACCOUNT_JSON' : null)
           ?? Object.keys(process.env).find((k) => norm(k) === 'GOOGLE_SERVICE_ACCOUNT_JSON' && process.env[k]) ?? null;
-        const { account, problem } = readServiceAccount(name ? process.env[name] : '');
-        return { serviceAccount: account, setting: name, problem };
+        if (name) {
+          const { account, problem } = readServiceAccount(process.env[name]);
+          return { serviceAccount: account, setting: name, problem };
+        }
+        // Or a key file uploaded as a Render "secret file" (mounted in /etc/secrets): the first service account key found.
+        for (const dir of [process.env.SECRET_FILES_DIR || '/etc/secrets']) {
+          let files = [];
+          try { files = readdirSync(dir); } catch { continue; }
+          for (const f of files.sort()) {
+            let text = '';
+            try { text = readFileSync(`${dir}/${f}`, 'utf8'); } catch { continue; }
+            const { account } = readServiceAccount(text);
+            if (account) return { serviceAccount: account, setting: `secret file ${f}`, problem: null };
+          }
+        }
+        return { serviceAccount: null, setting: null, problem: 'not set' };
       })(),
       apiBase: process.env.GOOGLE_SHEETS_API_BASE || 'https://sheets.googleapis.com',
       tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',

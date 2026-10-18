@@ -70,6 +70,10 @@ if (process.env.RENDER_API_KEY) {
         const names = new Set((await render(`/services/${svc.id}/env-vars?limit=100`)).map((e) => (e.envVar ?? e).key));
         const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY'];
         report(null, 'Render: optional settings on the service itself (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
+        try {
+          const sf = (await render(`/services/${svc.id}/secret-files?limit=50`)).map((f) => f.secretFile ?? f);
+          report(null, 'Render: secret files on the service itself (names only)', sf.map((f) => f.name).join(', ') || 'none');
+        } catch (err) { report(null, 'Render: secret files on the service', err.message); }
       } catch (err) { report(null, 'Render: optional settings', err.message); }
       // Environment groups (names, setting names and links only; values are never read or printed).
       try {
@@ -79,11 +83,21 @@ if (process.env.RENDER_API_KEY) {
           const linked = (g.serviceLinks || []).some((l) => l.id === svc.id);
           let keys = '?';
           let vars = [];
-          try { vars = ((await render(`/env-groups/${g.id}`)).envVars || []).map((v) => v.envVar ?? v); keys = vars.map((v) => v.key).join(', ') || 'no settings'; } catch { /* names unavailable */ }
-          report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}`);
+          let files = [];
+          try {
+            const detail = await render(`/env-groups/${g.id}`);
+            vars = (detail.envVars || []).map((v) => v.envVar ?? v);
+            files = (detail.secretFiles || []).map((f) => f.secretFile ?? f);
+            keys = vars.map((v) => v.key).join(', ') || 'no settings';
+          } catch { /* names unavailable */ }
+          report(null, `Render: environment group "${g.name}"`, `${linked ? 'LINKED to skyfly' : 'NOT linked to skyfly'}; setting names: ${keys}; secret files: ${files.map((f) => f.name).join(', ') || 'none'}`);
+          const { readServiceAccount } = await import('../src/services/googleSheetsApi.js');
+          for (const f of files) {
+            const { account, problem } = readServiceAccount(f.content || '');
+            report(null, `Render: secret file "${f.name}" in group "${g.name}"`, `${f.content ? `${String(f.content).length} characters` : 'EMPTY'}; ${account ? `valid service account key file (project ${account.project_id ?? '?'}); Skyfly reads it from /etc/secrets/${f.name}` : `not a usable key file: ${problem}`}`);
+          }
           // A Google key in the group: checked in memory only (present? valid key file? which project?). Never printed.
           for (const v of vars.filter((x) => x.key.toUpperCase().replace(/-/g, '_') === 'GOOGLE_SERVICE_ACCOUNT_JSON')) {
-            const { readServiceAccount } = await import('../src/services/googleSheetsApi.js');
             const { account, problem } = readServiceAccount(v.value || '');
             const posix = /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.key);
             report(null, `Render: "${v.key}" in group "${g.name}"`, `${v.value ? `${String(v.value).length} characters` : 'EMPTY'}; ${account ? `valid service account key file (project ${account.project_id ?? '?'})` : `cannot be used: ${problem}`}; name ${posix ? 'is a standard setting name' : 'contains characters (such as -) that start-up shells may drop before the app starts'}`);
