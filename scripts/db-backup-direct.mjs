@@ -103,7 +103,8 @@ await client.end();
 // ---------- pg_dump ----------
 const takenAt = new Date().toISOString();
 const sh = (cmd, args, env = process.env) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, maxBuffer: 64 * 1024 * 1024 }).toString();
-sh('docker', ['run', '--rm', '--network', 'host', '-e', 'PGURL', '-e', 'PGSSLMODE=require', '-v', `${process.cwd()}:/w`, `postgres:${major}`,
+const asMe = ['--user', `${process.getuid()}:${process.getgid()}`]; // files stay owned by the runner user
+sh('docker', ['run', '--rm', ...asMe, '--network', 'host', '-e', 'PGURL', '-e', 'PGSSLMODE=require', '-v', `${process.cwd()}:/w`, `postgres:${major}`,
   'sh', '-c', 'pg_dump "$PGURL" --format=custom --no-owner --no-acl --file=/w/skyfly.dump'], { ...process.env, PGURL: conn });
 await setAllow(db, original);
 const after = await allowNow(db);
@@ -130,10 +131,11 @@ await rc.connect();
 let differ = 0;
 for (const t of tables) {
   const n = (await rc.query(`SELECT count(*)::int AS n FROM ${t.split('.').map((p) => `"${p}"`).join('.')}`)).rows[0].n;
-  if (n !== live[t]) { differ += 1; line(`  differs: ${t}`, `live ${live[t]}, restored ${n} (rows added while the dump ran?)`); }
+  // Sign-in sessions change with every visit to the live site; they are not business data.
+  if (n !== live[t] && t !== 'public.user_sessions') { differ += 1; line(`  differs: ${t}`, `live ${live[t]}, restored ${n} (rows added while the dump ran?)`); }
 }
 await rc.end();
-line('restore check', `${tables.length} tables restored into an empty database; ${differ ? `${differ} differ (see above)` : 'every table\'s row count matches the live database'}`);
+line('restore check', `${tables.length} tables restored into an empty database; ${differ ? `${differ} differ (see above)` : 'every table\'s row count matches the live database (sign-in sessions excluded)'}`);
 const mig = sh('node', ['-e', "Promise.all([import('./src/db.js'),import('./src/migrate.js')]).then(async([{createPool},{migrate}])=>{const p=createPool(process.env.DATABASE_URL,false);await migrate(p);await p.end();console.log('nothing left to apply')})"], { ...process.env, DATABASE_URL: local });
 line('Skyfly migration runner on the copy', mig.trim().split('\n').at(-1));
 if (differ) process.exitCode = 1;
