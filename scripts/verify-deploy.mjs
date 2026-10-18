@@ -69,7 +69,7 @@ if (process.env.RENDER_API_KEY) {
       try {
         const names = new Set((await render(`/services/${svc.id}/env-vars?limit=100`)).map((e) => (e.envVar ?? e).key));
         const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY'];
-        report(null, 'Render: optional settings present (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
+        report(null, 'Render: optional settings on the service itself (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
       } catch (err) { report(null, 'Render: optional settings', err.message); }
       // Environment groups (names, setting names and links only; values are never read or printed).
       try {

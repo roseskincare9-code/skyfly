@@ -80,8 +80,11 @@ export function loadConfig() {
     // Google Sheets API (service account): its key file's JSON in GOOGLE_SERVICE_ACCOUNT_JSON (server only).
     google: {
       ...(() => {
-        // The usual name, or the same with hyphens (as typed in some Render environment groups).
-        const name = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE-SERVICE-ACCOUNT-JSON'].find((k) => process.env[k]) ?? null;
+        // GOOGLE_SERVICE_ACCOUNT_JSON, also when typed with hyphens or other capitals
+        // (e.g. "Google-service-account-json" in a Render environment group).
+        const norm = (k) => k.toUpperCase().replace(/-/g, '_');
+        const name = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'GOOGLE_SERVICE_ACCOUNT_JSON' : null)
+          ?? Object.keys(process.env).find((k) => norm(k) === 'GOOGLE_SERVICE_ACCOUNT_JSON' && process.env[k]) ?? null;
         const { account, problem } = readServiceAccount(name ? process.env[name] : '');
         return { serviceAccount: account, setting: name, problem };
       })(),
