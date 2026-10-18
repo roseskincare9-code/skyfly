@@ -65,6 +65,12 @@ if (process.env.RENDER_API_KEY) {
       const deploys = (await render(`/services/${svc.id}/deploys?limit=3`)).map((d) => d.deploy ?? d);
       const d = deploys[0];
       report(d?.status === 'live', 'Render: latest deploy', d ? `${d.status} (commit ${d.commit?.id?.slice(0, 7) || '?'}, ${d.finishedAt || d.createdAt})` : 'no deploys');
+      // Which optional integration settings exist (names only; values are never read).
+      try {
+        const names = new Set((await render(`/services/${svc.id}/env-vars?limit=100`)).map((e) => (e.envVar ?? e).key));
+        const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY'];
+        report(null, 'Render: optional settings present (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
+      } catch (err) { report(null, 'Render: optional settings', err.message); }
       if (d && d.status !== 'live') {
         try {
           const logs = await render(`/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&limit=60&direction=backward`);
