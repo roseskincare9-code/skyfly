@@ -1,6 +1,7 @@
 // Reads and validates Skyfly's environment. Fails fast with a clear message
 // so a misconfigured deploy never starts half-working.
 import { parseKey } from './lib/secrets.js';
+import { parseServiceAccount } from './services/googleSheetsApi.js';
 
 function required(name) {
   const value = process.env[name];
@@ -75,6 +76,12 @@ export function loadConfig() {
       businesses: (process.env.SKYFLY_PIXEL_BUSINESSES ?? 'skyfly-demo').split(',').map((v) => v.trim()).filter(Boolean),
       accessToken: process.env.SKYFLY_META_ACCESS_TOKEN || null,
       testEventCode: process.env.SKYFLY_META_TEST_EVENT_CODE || null,
+    },
+    // Google Sheets API (service account): its key file's JSON in GOOGLE_SERVICE_ACCOUNT_JSON (server only).
+    google: {
+      serviceAccount: parseServiceAccount(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+      apiBase: process.env.GOOGLE_SHEETS_API_BASE || 'https://sheets.googleapis.com',
+      tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
     metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',

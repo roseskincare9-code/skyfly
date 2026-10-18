@@ -9,6 +9,7 @@ import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
 export { SKYFLY_TAB };
 import { STATUS_LABELS } from '../lib/statuses.js';
+import { listTabs, ensureTab, findOrderRows, appendOrder } from './googleSheetsApi.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -41,6 +42,10 @@ async function call(url, options = {}) {
 // ---- Google Apps Script connections ("<web app URL>?key=<secret>"): the business's own script in
 // its spreadsheet (services/appsScript.js) answers keys/search/append, straight from Google.
 export const isAppsScript = (conn) => /\/macros\/s\/[A-Za-z0-9_-]+\/exec\?key=/.test(conn?.url || '');
+// Google Sheets API with Skyfly's service account: stored as "gsheets:<spreadsheet ID>".
+export const isGoogleApi = (conn) => /^gsheets:[A-Za-z0-9_-]{20,100}$/.test(conn?.url || '');
+const sheetIdOf = (conn) => conn.url.slice('gsheets:'.length);
+export const providerOf = (url) => (isGoogleApi({ url }) ? 'google_api' : isAppsScript({ url }) ? 'apps_script' : 'sheetdb');
 
 async function scriptCall(conn, { params = {}, body = null }) {
   const u = new URL(conn.url);
@@ -72,9 +77,11 @@ async function scriptCall(conn, { params = {}, body = null }) {
 
 // The same three operations for either kind of connection.
 async function sheetKeys(conn) {
+  if (isGoogleApi(conn)) return ensureTab(sheetIdOf(conn), conn.sheet_tab || SKYFLY_TAB);
   return isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'keys' } })).columns : call(endpoint(conn, '/keys'));
 }
 async function sheetSearch(conn, text) {
+  if (isGoogleApi(conn)) return findOrderRows(sheetIdOf(conn), { ref: text });
   return isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'search', field: 'source', q: text } })).rows : call(endpoint(conn, '/search', { source: `*${text}*` }));
 }
 
@@ -111,7 +118,7 @@ export async function addConnection(db, key, businessId, { name, apiUrl, tab = n
     `INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint, sheet_tab, spreadsheet_url, provider)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [businessId, name, sealUrl(key, apiUrl), urlHash(apiUrl), urlHint(apiUrl), tab || null, spreadsheetUrl || null,
-      isAppsScript({ url: apiUrl }) ? 'apps_script' : 'sheetdb']);
+      providerOf(apiUrl)]);
   await db.query(
     'UPDATE businesses SET default_sheet_connection_id = $1 WHERE id = $2 AND ($3 OR default_sheet_connection_id IS NULL)',
     [conn.id, businessId, makeDefault]);
@@ -154,8 +161,11 @@ export async function checkConnection(pool, conn) {
   } else {
     try {
       // Apps Script: first a read-only look at every tab, reported to the owner.
-      const tabs = isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'tabs' } })).tabs : null;
-      columns = await sheetKeys(conn);
+      // Google Sheets API: Skyfly's tab is prepared first, so the summary lists it too.
+      if (isGoogleApi(conn)) columns = await sheetKeys(conn);
+      const tabs = isGoogleApi(conn) ? await listTabs(sheetIdOf(conn))
+        : isAppsScript(conn) ? (await scriptCall(conn, { params: { action: 'tabs' } })).tabs : null;
+      if (!isGoogleApi(conn)) columns = await sheetKeys(conn);
       if (!Array.isArray(columns)) throw new SheetError('The sheet did not return its column names.');
       if (tabs) {
         const target = conn.sheet_tab || SKYFLY_TAB;
@@ -191,7 +201,7 @@ export async function checkConnection(pool, conn) {
 // For a spreadsheet with no column row: adds a "Skyfly Orders" tab whose first row holds
 // Skyfly's columns, and points the connection at it. Existing tabs are not touched.
 export async function setupColumns(pool, conn, { auto = false } = {}) {
-  if (isAppsScript(conn)) return checkConnection(pool, conn); // the script writes its own column row
+  if (isAppsScript(conn) || isGoogleApi(conn)) return checkConnection(pool, conn); // these write their own column row
   if (auto) await pool.query('UPDATE sheet_connections SET auto_setup_at = now() WHERE id = $1', [conn.id]);
   const tabConn = { ...conn, sheet_tab: SKYFLY_TAB };
   try {
@@ -243,7 +253,7 @@ async function alreadyInSheet(conn, reference) {
 }
 
 async function sheetIsEmpty(conn) {
-  if (isAppsScript(conn)) return false;
+  if (isAppsScript(conn) || isGoogleApi(conn)) return false;
   try { await call(endpoint(conn, '/keys')); return false; } catch (err) { return isEmptySheetError(err); }
 }
 
@@ -297,6 +307,11 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
   const attempt = async () => {
     if (!conn.url) throw new SheetError(conn.urlError);
+    // Google Sheets API: looks for the order in every tab, then adds it to Skyfly's tab.
+    if (isGoogleApi(conn)) {
+      await appendOrder(sheetIdOf(conn), conn.sheet_tab || SKYFLY_TAB, sheetRow(o, items, o.page_name), { ref: o.reference, skyflyId: o.idempotency_key });
+      return;
+    }
     // Apps Script checks for the order and adds it in one locked step.
     if (isAppsScript(conn)) {
       await scriptCall(conn, { body: { action: 'append', id: o.idempotency_key, ref: o.reference, row: sheetRow(o, items, o.page_name) } });

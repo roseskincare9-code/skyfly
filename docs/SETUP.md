@@ -111,6 +111,7 @@ screen, never in chat.
 | `SKYFLY_PIXEL_BUSINESSES` | no | business slugs that use Skyfly's pixel, comma-separated; default `skyfly-demo`. Customer businesses (e.g. `larose-nigeria`) keep their own pixels |
 | `SKYFLY_META_ACCESS_TOKEN` | for Skyfly's server Purchase | Conversions API token for the Skyfly pixel (Events Manager → Skyfly → Settings → Generate access token). Add it in Render → skyfly → Environment as a secret; never in chat or code |
 | `SKYFLY_META_TEST_EVENT_CODE` | no | Events Manager → Skyfly → Test events code; test orders then send their Purchase only to Test events. Remove when testing is done |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | for "Connect by sharing" | the JSON key file of Skyfly's Google service account (docs/GOOGLE_SHEETS.md). Secret; server only, never shown in pages |
 | `META_GRAPH_BASE` / `TIKTOK_API_BASE` / `TIKTOK_PURCHASE_EVENT` | no | override ad-platform API versions/names if the platforms change them |
 | `ALLOW_SIGNUP` | no | `first` = only the first account (the owner); `false` = closed; `true` = open (avoid in production) |
 | `ORDER_RATE_LIMIT` | no | submissions per IP per 10 minutes, default 20 |

@@ -18,6 +18,7 @@ import { injectSkyfly } from './hosting/inject.js';
 import { optimizeHtml } from './hosting/speed.js';
 import { imageMeta } from './hosting/images.js';
 import { recordPurchase } from './services/pixels.js';
+import { setGoogleAccess } from './services/googleSheetsApi.js';
 import { formatMoney } from './lib/money.js';
 import { lineChart, donut, shortMoney } from './lib/charts.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from './lib/statuses.js';
@@ -41,6 +42,7 @@ function isDashboardRequest(req, config) {
 }
 
 export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {}, workers = null }) {
+  setGoogleAccess(config.google);
   // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
   transformHtml ??= async (html, ctx) => optimizeHtml(await injectSkyfly(pool, config, html, ctx), {
     meta: await imageMeta(pool, ctx.versionId), filePath: ctx.filePath, versionId: ctx.versionId,

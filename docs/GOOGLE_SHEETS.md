@@ -1,3 +1,37 @@
+# Google Sheets: connect by sharing (Google Sheets API, no Apps Script)
+
+Use this when the Apps Script editor will not open. Skyfly writes through Google's own Sheets API
+with **its own Google service account**: you share the spreadsheet with that account's email, the
+same way you share with a person. Free; no Apps Script, no SheetDB. Existing tabs and their history
+are never changed: Skyfly writes only to its own tab ("Skyfly Orders", created automatically) and,
+before adding an order, checks every tab so an order is never added twice. Orders are always saved
+in Skyfly first; if Google is unavailable they wait and are copied later.
+
+## One-time: create Skyfly's service account (platform owner, about 5 minutes, free)
+
+1. Open https://console.cloud.google.com/projectcreate (any Google account you control) →
+   Project name `skyfly` → **Create**. No billing account is needed.
+2. Open https://console.cloud.google.com/apis/library/sheets.googleapis.com (project `skyfly`
+   selected at the top) → **Enable**.
+3. Open https://console.cloud.google.com/iam-admin/serviceaccounts → **Create service account** →
+   name `skyfly-sheets` → **Create and continue** → skip the optional steps → **Done**. No roles are needed.
+4. Click the new account → **Keys** → **Add key** → **Create new key** → **JSON** → **Create**.
+   A `.json` file downloads. Treat it like a password; never send it in chat or email.
+5. Render → workspace **skyfly** → service **skyfly** → **Environment** → **Add Environment Variable**:
+   key `GOOGLE_SERVICE_ACCOUNT_JSON`, value = the whole content of the `.json` file (open it in a text
+   editor, select all, copy, paste) → **Save, rebuild and deploy**.
+
+## Per spreadsheet (business owner, 1 minute)
+
+1. Skyfly → the business → **Google Sheets** → "Connect by sharing your sheet". It shows an email
+   ending in `.iam.gserviceaccount.com`.
+2. Open the spreadsheet (e.g. Laroseorders) → **Share** → add that email as **Editor** → untick
+   "Notify people" → **Share**.
+3. Copy the spreadsheet's link from the address bar into Skyfly → **Connect**. Skyfly lists your tabs
+   ("not changed") and sends the orders that were waiting.
+
+---
+
 # Google Sheets: direct connection (Google Apps Script)
 
 Free, and independent of SheetDB and its monthly request limit. **Existing data is safe:** Skyfly

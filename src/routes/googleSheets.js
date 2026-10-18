@@ -8,9 +8,10 @@ import { toCsv } from '../lib/csv.js';
 import {
   SHEETDB_URL_RE, GOOGLE_SHEET_URL_RE, SHEET_COLUMNS, SKYFLY_TAB, FALLBACK_MARKERS,
   addConnection, adoptLegacyUrls, checkConnection, loadConnection, setupColumns, sheetRow,
-  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey, isAppsScript,
+  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey, isAppsScript, providerOf,
 } from '../services/sheets.js';
 import { APPS_SCRIPT_URL_RE, appsScriptSource, newScriptKey } from '../services/appsScript.js';
+import { googleAccountEmail, SPREADSHEET_ID_RE } from '../services/googleSheetsApi.js';
 
 const NOTICES = {
   added: 'Spreadsheet connected.', saved: 'Saved.', default: 'Default spreadsheet changed. Pages without their own sheet now use it.',
@@ -29,7 +30,13 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     const errors = [];
     const name = String(body.name ?? '').trim().slice(0, 120) || 'Orders sheet';
     let apiUrl = String(body.api_url ?? '').trim().replace(/\/+$/, '');
-    if (body.kind === 'apps_script') {
+    if (body.kind === 'google_api') {
+      // Skyfly's service account writes through Google's Sheets API: only the spreadsheet link is needed.
+      const id = String(body.spreadsheet_url ?? '').trim().match(SPREADSHEET_ID_RE)?.[1];
+      if (!googleAccountEmail()) errors.push('The Google service account is not set up on the server yet.');
+      else if (!id) errors.push('Paste the link of your Google Sheet (https://docs.google.com/spreadsheets/d/…).');
+      else apiUrl = `gsheets:${id}`;
+    } else if (body.kind === 'apps_script') {
       // The web app URL plus the secret key written into the script shown on this page.
       const scriptKey = String(body.script_key ?? '');
       if (!validScriptUrl(apiUrl)) errors.push('Enter the Web app URL from Apps Script (Deploy → Manage deployments), like https://script.google.com/macros/s/…/exec.');
@@ -41,7 +48,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     }
     const spreadsheetUrl = String(body.spreadsheet_url ?? '').trim();
     if (spreadsheetUrl && !GOOGLE_SHEET_URL_RE.test(spreadsheetUrl)) errors.push('The spreadsheet link must be a Google Sheets link (https://docs.google.com/spreadsheets/d/…).');
-    const tab = readTab(body.sheet_tab) || (body.kind === 'apps_script' ? SKYFLY_TAB : null);
+    const tab = readTab(body.sheet_tab) || (['apps_script', 'google_api'].includes(body.kind) ? SKYFLY_TAB : null);
     return { name, apiUrl, tab, spreadsheetUrl: spreadsheetUrl || null, errors };
   }
 
@@ -99,7 +106,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.status(status).render('google-sheets', {
       active: 'sheet', error, notice, count, connections, defaultId, pages, lastSync: last.at, form,
       rows, fetchError, checked: Boolean(checkId), markers: FALLBACK_MARKERS, columns: SHEET_COLUMNS, skyflyTab: SKYFLY_TAB,
-      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey),
+      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey), googleEmail: googleAccountEmail(),
     });
   }
 
@@ -119,6 +126,11 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
   router.post('/connections', asyncHandler(async (req, res) => {
     const f = readForm(req.body, { requireUrl: true });
     if (f.errors.length) return render(req, res, { error: f.errors.join(' '), status: 400, form: { ...req.body, api_url: '' } });
+    // A spreadsheet reached through Skyfly's shared service account belongs to one business only.
+    if (providerOf(f.apiUrl) === 'google_api') {
+      const { rows: [taken] } = await pool.query('SELECT 1 FROM sheet_connections WHERE api_url_hash = $1 AND business_id <> $2', [urlHash(f.apiUrl), req.business.id]);
+      if (taken) return render(req, res, { error: 'This spreadsheet is already connected to another business.', status: 409 });
+    }
     let id;
     try {
       id = await addConnection(pool, key, req.business.id, { ...f, makeDefault: req.body.make_default === 'on' });
@@ -149,7 +161,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
                 provider = coalesce($9, provider)
           WHERE id = $1 AND business_id = $8`,
         [conn.id, f.name, f.tab, f.spreadsheetUrl, f.apiUrl ? sealUrl(key, f.apiUrl) : null, f.apiUrl ? urlHash(f.apiUrl) : null, f.apiUrl ? urlHint(f.apiUrl) : null, req.business.id,
-          f.apiUrl ? (isAppsScript({ url: f.apiUrl }) ? 'apps_script' : 'sheetdb') : null]);
+          f.apiUrl ? providerOf(f.apiUrl) : null]);
     } catch (err) {
       if (err.code === '23505') return render(req, res, { error: 'This spreadsheet (and tab) is already connected.', status: 409 });
       throw err;

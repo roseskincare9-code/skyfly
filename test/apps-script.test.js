@@ -82,6 +82,7 @@ describe('Apps Script spreadsheet connection', () => {
     assert.ok(page.text.includes(`var KEY = &#39;${scriptKey}&#39;;`), 'the script shown contains the same key');
     // Not set up yet: the direct connection is offered at the top, before the existing connections.
     assert.match(page.text, /data-direct-cta/);
+    assert.match(page.text, /data-google-missing/, 'without a service account on the server, the share option explains what is missing');
     assert.ok(page.text.indexOf('id="add-script"') < page.text.indexOf('Connected spreadsheets'), 'the direct connection form comes first');
     const reloaded = await owner.get(`${base}/google-sheets`).expect(200);
     assert.ok(reloaded.text.includes(`name="script_key" value="${scriptKey}"`), 'reloading the page keeps the key of a script already copied');
