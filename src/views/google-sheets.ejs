@@ -8,6 +8,7 @@
   <% const statusPill = { ok: ['delivered', 'Connected'], needs_columns: ['cancelled', 'Needs column names'], error: ['cancelled', 'Not reachable'], unchecked: ['pending', 'Not checked yet'] }; %>
   <% const defaultConn = connections.find((c) => String(c.id) === String(defaultId)); %>
   <% const hasDirect = connections.some((c) => ['apps_script', 'google_api'].includes(c.provider)); %>
+  <% const hasGoogle = connections.some((c) => c.provider === 'google_api'); %>
 
   <div class="card">
     <h2>Copy status</h2>
@@ -26,7 +27,7 @@
     </div>
     <% if (!hasDirect) { %>
       <div class="warn-box" style="margin-top:12px" data-direct-cta><strong>Recommended:</strong> connect your spreadsheet directly: free, no SheetDB request limit, and every waiting order is sent once it is connected. Your existing tabs and history are not changed.
-        <p style="margin:8px 0 0"><% if (googleEmail) { %><a class="btn" href="#add-google">Connect by sharing your sheet ↓</a> <% } %><a class="btn<%= googleEmail ? ' secondary' : '' %>" href="#add-script">Connect with Apps Script ↓</a></p></div>
+        <p style="margin:8px 0 0"><a class="btn" href="#add-google">Connect by sharing your sheet ↓</a> <a class="btn secondary" href="#add-script">Connect with Apps Script ↓</a></p></div>
     <% } %>
   </div>
 
@@ -34,33 +35,34 @@
   <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add-google">
     <%- include('partials/csrf') %>
     <input type="hidden" name="kind" value="google_api">
-    <h2>Connect by sharing your sheet (no Apps Script)</h2>
+    <h2>Connect by sharing your sheet (recommended, no Apps Script)</h2>
+    <p class="muted" style="margin-top:0">No Apps Script and no Web app URL: Skyfly writes through Google's Sheets API with its own Google service account. You share the spreadsheet with Skyfly like you would with a person, then paste the spreadsheet's link here.</p>
     <% if (googleEmail) { %>
-      <p class="muted" style="margin-top:0">Skyfly writes through Google's Sheets API with its own Google service account. Nothing to install: you share the spreadsheet with Skyfly like you would with a person.</p>
       <ol style="padding-left:18px;font-size:14px">
         <li>Open your Google Sheet and click <strong>Share</strong>.</li>
         <li>Add <code data-google-email><%= googleEmail %></code> as <strong>Editor</strong> (untick “Notify people”), then click <strong>Share</strong>.</li>
         <li>Copy the sheet's link from your browser's address bar, paste it below, and click <strong>Connect</strong>.</li>
       </ol>
-      <p class="muted">Skyfly writes only to its own tab (“<%= skyflyTab %>”, created automatically), never changes or deletes your other tabs, and checks every tab before adding an order so it is never added twice.</p>
-      <label for="google-name">Name</label>
-      <input id="google-name" name="name" maxlength="120" placeholder="e.g. Laroseorders" value="<%= form.kind === 'google_api' ? (form.name || '') : '' %>">
-      <label for="google-link">Google Sheet link</label>
-      <input id="google-link" name="spreadsheet_url" required placeholder="https://docs.google.com/spreadsheets/d/…/edit" value="<%= form.kind === 'google_api' ? (form.spreadsheet_url || '') : '' %>">
-      <label for="google-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”)</label>
-      <input id="google-tab" name="sheet_tab" maxlength="100" placeholder="<%= skyflyTab %>">
-      <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
-      <p><button type="submit">Connect</button></p>
     <% } else { %>
-      <p class="muted" style="margin:0" data-google-missing><% if (googleProblem) { %>The server's Google service account setting cannot be used: <%= googleProblem %>. Paste the whole key file into <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> again (see docs/GOOGLE_SHEETS.md).<% } else { %>Not available yet: Skyfly's Google service account has not been added to the server (setting <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>; see docs/GOOGLE_SHEETS.md). Once it is, this box shows the email to share your sheet with.<% } %></p>
+      <div class="warn-box" data-google-missing><strong>Skyfly's Google key on the server is not usable yet<% if (googleSetting) { %> (<%= googleSetting %>)<% } %>:</strong> <%= googleProblem || 'no GOOGLE_SERVICE_ACCOUNT_JSON setting or key file reaches the app' %>.
+        <span class="muted">In Render, put the whole downloaded key file into the setting <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> or a secret file, then redeploy (docs/GOOGLE_SHEETS.md). You can save the spreadsheet link now: it is checked again automatically once the key works.</span></div>
     <% } %>
+    <p class="muted">Skyfly writes only to its own tab (“<%= skyflyTab %>”, created automatically), never changes or deletes your other tabs, and checks every tab before adding an order so it is never added twice. Orders that were already waiting are held until you compare them with the spreadsheet and send them.</p>
+    <label for="google-name">Name</label>
+    <input id="google-name" name="name" maxlength="120" placeholder="e.g. Laroseorders" value="<%= form.kind === 'google_api' ? (form.name || '') : '' %>">
+    <label for="google-link">Google Sheet link (or its ID)</label>
+    <input id="google-link" name="spreadsheet_url" required placeholder="https://docs.google.com/spreadsheets/d/…/edit" value="<%= form.kind === 'google_api' ? (form.spreadsheet_url || '') : '' %>">
+    <label for="google-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”)</label>
+    <input id="google-tab" name="sheet_tab" maxlength="100" placeholder="<%= skyflyTab %>">
+    <label style="color:var(--text)"><input type="checkbox" name="make_default" checked> Make it the default spreadsheet</label>
+    <p><button type="submit">Connect</button></p>
   </form>
   <% } %>
   <% function directForm() { %>
   <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add-script">
     <%- include('partials/csrf') %>
     <input type="hidden" name="kind" value="apps_script"><input type="hidden" name="script_key" value="<%= scriptKey %>">
-    <h2>Connect a spreadsheet directly (free, recommended)</h2>
+    <h2>Or connect with Google Apps Script</h2>
     <p class="muted" style="margin-top:0">Orders go straight from Skyfly to your Google Sheet through a small script that lives in your own spreadsheet. No SheetDB account and no SheetDB request limit. Takes about 3 minutes:</p>
     <ol style="padding-left:18px;font-size:14px">
       <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
@@ -84,11 +86,12 @@
     <p><button type="submit">Connect</button></p>
   </form>
   <% } %>
-  <% if (!hasDirect) { googleForm(); directForm(); } %>
+  <% if (!hasGoogle) googleForm(); %>
+  <% if (!hasDirect) directForm(); %>
 
   <h2 style="margin-top:28px">Connected spreadsheets</h2>
   <% if (!connections.length) { %><div class="card empty"><p>No spreadsheet connected yet. Add one below.</p></div><% } %>
-  <% connections.forEach((c) => { const isDefault = String(c.id) === String(defaultId); const [pillClass, pillText] = statusPill[c.check_status]; %>
+  <% connections.forEach((c) => { const isDefault = String(c.id) === String(defaultId); let [pillClass, pillText] = statusPill[c.check_status]; if (c.provider === 'google_api' && !googleEmail) [pillClass, pillText] = ['pending', 'Waiting for the server key']; %>
   <div class="card" id="sheet-<%= c.id %>">
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0"><%= c.name %> <% if (isDefault) { %><span class="pill confirmed">Default</span><% } %> <span class="pill <%= pillClass %>"><%= pillText %></span></h2>
@@ -103,7 +106,7 @@
       <dt>Columns</dt><dd><%= c.check_detail || 'Not checked yet.' %><% if (c.checked_at) { %> <span class="muted">Checked <%= formatDate(c.checked_at) %>.</span><% } %></dd>
       <dt>Last successful copy</dt><dd><%= c.last_success_at ? formatDate(c.last_success_at) : 'None yet' %></dd>
       <% if (c.last_error && (!c.last_success_at || c.last_error_at > c.last_success_at)) { %><dt>Last error</dt><dd class="error" style="margin:0"><%= c.last_error %> <span class="muted">(<%= formatDate(c.last_error_at) %>)</span></dd><% } %>
-      <% if (c.provider === 'sheetdb' && /429|limit/i.test(c.last_error || '')) { %><dt>What to do</dt><dd>SheetDB's request limit is used up. <a href="#<%= googleEmail ? 'add-google' : 'add-script' %>">Connect the same spreadsheet directly instead (free)</a>; this connection and its orders are kept.</dd><% } %>
+      <% if (c.provider === 'sheetdb' && /429|limit/i.test(c.last_error || '')) { %><dt>What to do</dt><dd>SheetDB's request limit is used up. <a href="#add-google">Connect the same spreadsheet directly instead (free)</a>; this connection and its orders are kept.</dd><% } %>
       <dt>Orders</dt><dd><%= c.synced %> copied<% if (c.failed) { %>, <a href="<%= base %>/orders?sheet=failed"><strong><%= c.failed %> failed</strong></a><% } %></dd>
     </dl>
     <% if (c.check_status === 'needs_columns') { %>
@@ -112,6 +115,23 @@
         <p><code><%= columns.join('  ') %></code></p>
         <p class="muted">Then click "Check connection": every waiting order is sent at once, with no duplicates. (Skyfly also checks by itself every 6 hours.)</p>
         <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/setup"><%- include('partials/csrf') %><button class="secondary" type="submit">Or let Skyfly add a “<%= skyflyTab %>” tab</button> <span class="muted">(paid SheetDB plans only; your other tabs are not changed)</span></form>
+      </div>
+    <% } %>
+    <% if (c.provider === 'google_api' && !c.backlog_released_at && c.held) { %>
+      <div class="warn-box" style="margin-top:12px" data-held>
+        <p style="margin-top:0"><strong><%= c.held %> order<%= c.held === 1 ? '' : 's' %> waiting from before this connection: held.</strong> Nothing is copied until you compare them with the spreadsheet and send them. New orders are copied as usual.</p>
+        <% const r = reconcile && String(reconcile.connectionId) === String(c.id) ? reconcile : null; %>
+        <% if (r) { %>
+          <p data-reconcile>Compared with every tab by order ID (nothing written): <strong><%= r.present.length %></strong> already in the spreadsheet (will not be added again), <strong><%= r.missing.length %></strong> missing (will be copied), of <%= r.waiting %> waiting.</p>
+          <% if (r.present.length) { %><p class="muted" style="font-size:13px">Already present: <%= r.present.join(', ') %></p><% } %>
+          <% if (r.missing.length) { %><p class="muted" style="font-size:13px">Missing: <%= r.missing.join(', ') %></p><% } %>
+        <% } %>
+        <div class="row">
+          <% if (c.check_status === 'ok') { %>
+            <form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/reconcile"><%- include('partials/csrf') %><button class="secondary" type="submit">Compare waiting orders with the spreadsheet</button></form>
+            <% if (r) { %><form method="post" action="<%= base %>/google-sheets/connections/<%= c.id %>/release"><%- include('partials/csrf') %><button type="submit">Send the waiting orders<%= r.missing.length ? ` (${r.missing.length} missing)` : '' %></button></form><% } %>
+          <% } else { %><span class="muted">Available once the connection shows “Connected”.</span><% } %>
+        </div>
       </div>
     <% } %>
     <div class="row" style="margin-top:12px">
@@ -157,7 +177,8 @@
     </tbody></table></div><% } %>
   </div>
 
-  <% if (hasDirect) { googleForm(); directForm(); } %>
+  <% if (hasGoogle) googleForm(); %>
+  <% if (hasDirect) directForm(); %>
 
   <form class="card" method="post" action="<%= base %>/google-sheets/connections" id="add">
     <%- include('partials/csrf') %>

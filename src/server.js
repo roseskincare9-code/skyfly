@@ -3,7 +3,7 @@ import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { ensureLaroseForOwner, ensureDemoSite } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
-import { startSheetWorker } from './services/sheets.js';
+import { startSheetWorker, recheckGoogleConnections } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
 import { googleSelfCheck } from './services/googleSheetsApi.js';
 
@@ -25,6 +25,10 @@ if (google.configured) {
   googleSelfCheck().then((r) => {
     Object.assign(google, r);
     console.log(`Google Sheets API: service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
+    // A spreadsheet saved while the key was not usable is checked now (same condition as the copy worker).
+    if (r.auth === 'ok' && (config.isProduction || process.env.SHEET_SYNC === 'on')) {
+      return recheckGoogleConnections(pool, config.encryptionKey);
+    }
   }).catch((err) => { google.auth = `check failed: ${err.message}`; });
 } else if (google.setting) {
   console.error(`Google Sheets API: ${google.setting} is set but cannot be used: ${google.problem}`);

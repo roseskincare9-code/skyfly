@@ -27,8 +27,17 @@ in Skyfly first; if Google is unavailable they wait and are copied later.
    ending in `.iam.gserviceaccount.com`.
 2. Open the spreadsheet (e.g. Laroseorders) → **Share** → add that email as **Editor** → untick
    "Notify people" → **Share**.
-3. Copy the spreadsheet's link from the address bar into Skyfly → **Connect**. Skyfly lists your tabs
-   ("not changed") and sends the orders that were waiting.
+3. Copy the spreadsheet's link (or just its ID) from the address bar into Skyfly → **Connect**. Skyfly
+   lists your tabs ("not changed") and adds its own "Skyfly Orders" tab. The link can be saved before
+   the server's key works; it is checked again automatically at the next start-up.
+4. Orders that were already waiting are **held**: click "Compare waiting orders with the spreadsheet"
+   (read-only: every tab is searched by order ID) to see how many are already there and how many are
+   missing, then "Send the waiting orders". Each is still looked up before it is added, so none is
+   added twice. New orders are copied as usual.
+
+The key must be the whole downloaded `.json` file (about 2,300 characters, starting with `{`). The
+40-character "key ID" shown in Google Cloud's key list is not the key; Skyfly says so on the Google
+Sheets page, on `/healthz`, and in the deploy check.
 
 ---
 

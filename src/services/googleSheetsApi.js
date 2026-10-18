@@ -25,9 +25,13 @@ export function parseServiceAccount(raw) {
 export function readServiceAccount(raw) {
   if (!raw) return { account: null, problem: 'not set' };
   let text = String(raw).trim();
+  const length = text.length;
+  // A 40-character hex value is the key's ID (private_key_id, shown in Google Cloud's key list),
+  // not the key file: a common mix-up. Reported by its shape and length only.
+  if (/^[0-9a-f]{40}$/i.test(text)) return { account: null, problem: 'only a 40-character key ID, not the key file. Open the .json file Google downloaded when the key was created and paste its whole content, from { to }' };
   if (!text.startsWith('{')) { try { text = Buffer.from(text, 'base64').toString('utf8'); } catch { return { account: null, problem: 'not JSON' }; } }
   let j;
-  try { j = JSON.parse(text); } catch { return { account: null, problem: 'not valid JSON (paste the whole key file, from { to })' }; }
+  try { j = JSON.parse(text); } catch { return { account: null, problem: `not valid JSON (${length} characters; a key file is about 2,300 and starts with {). Paste the whole key file, from { to }` }; }
   if (j.type && j.type !== 'service_account') return { account: null, problem: `a "${String(j.type).slice(0, 30)}" key, not a service account key` };
   if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(j.client_email || '')) return { account: null, problem: 'no service account email (client_email)' };
   if (!/BEGIN PRIVATE KEY/.test(j.private_key || '')) return { account: null, problem: 'no private key (private_key)' };
@@ -135,6 +139,21 @@ export async function findOrderRows(id, { ref, skyflyId = null }) {
     }
   }
   return found;
+}
+
+// For each { ref, skyflyId }: is it anywhere in the spreadsheet? (One read of every tab.)
+export async function matchOrders(id, orders) {
+  const refs = new Set(); const ids = new Set(); const sources = [];
+  for (const t of await readAll(id)) {
+    const header = (t.values[0] ?? []).map(String);
+    const [ci, cr, cs] = ['skyflyId', 'orderId', 'source'].map((c) => header.indexOf(c));
+    for (const row of t.values.slice(1)) {
+      if (ci >= 0 && row[ci]) ids.add(String(row[ci]));
+      if (cr >= 0 && row[cr]) refs.add(String(row[cr]));
+      if (cs >= 0 && row[cs]) sources.push(String(row[cs]));
+    }
+  }
+  return orders.map(({ ref, skyflyId }) => Boolean((skyflyId && ids.has(skyflyId)) || (ref && (refs.has(ref) || sources.some((v) => v.includes(ref))))));
 }
 
 // Values are written RAW: nothing is ever run as a formula, and text such as +234… phone numbers

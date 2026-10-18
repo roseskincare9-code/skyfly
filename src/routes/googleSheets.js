@@ -8,7 +8,7 @@ import { toCsv } from '../lib/csv.js';
 import {
   SHEETDB_URL_RE, GOOGLE_SHEET_URL_RE, SHEET_COLUMNS, SKYFLY_TAB, FALLBACK_MARKERS,
   addConnection, adoptLegacyUrls, checkConnection, loadConnection, setupColumns, sheetRow,
-  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey, isAppsScript, providerOf,
+  sealUrl, urlHash, urlHint, fallbackRows, prefillFromRow, requeue, rowKey, isAppsScript, providerOf, reconcileWaiting,
 } from '../services/sheets.js';
 import { APPS_SCRIPT_URL_RE, appsScriptSource, newScriptKey } from '../services/appsScript.js';
 import { googleAccountEmail, SPREADSHEET_ID_RE } from '../services/googleSheetsApi.js';
@@ -16,7 +16,7 @@ import { googleAccountEmail, SPREADSHEET_ID_RE } from '../services/googleSheetsA
 const NOTICES = {
   added: 'Spreadsheet connected.', saved: 'Saved.', default: 'Default spreadsheet changed. Pages without their own sheet now use it.',
   checked: 'Connection checked.', setup: `Added the "${SKYFLY_TAB}" tab with Skyfly's columns. Failed copies are being retried now.`,
-  removed: 'Spreadsheet connection removed.', page: 'Landing page sheet saved.', retrying: 'Retrying failed copies now. Refresh in a few seconds.',
+  removed: 'Spreadsheet connection removed.', released: 'Sending the waiting orders now. Each is looked up in the spreadsheet first and added only if it is not there. Refresh in a minute.', page: 'Landing page sheet saved.', retrying: 'Retrying failed copies now. Refresh in a few seconds.',
 };
 
 export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
@@ -32,9 +32,11 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     let apiUrl = String(body.api_url ?? '').trim().replace(/\/+$/, '');
     if (body.kind === 'google_api') {
       // Skyfly's service account writes through Google's Sheets API: only the spreadsheet link is needed.
-      const id = String(body.spreadsheet_url ?? '').trim().match(SPREADSHEET_ID_RE)?.[1];
-      if (!googleAccountEmail()) errors.push('The Google service account is not set up on the server yet.');
-      else if (!id) errors.push('Paste the link of your Google Sheet (https://docs.google.com/spreadsheets/d/…).');
+      const link = String(body.spreadsheet_url ?? '').trim();
+      const id = link.match(SPREADSHEET_ID_RE)?.[1] ?? (/^[A-Za-z0-9_-]{30,100}$/.test(link) ? link : null);
+      if (id) body = { ...body, spreadsheet_url: `https://docs.google.com/spreadsheets/d/${id}/edit` };
+      // Saved even before the server's key works: the connection is checked again once it does.
+      if (!id) errors.push('Paste the link of your Google Sheet (https://docs.google.com/spreadsheets/d/…) or its ID.');
       else apiUrl = `gsheets:${id}`;
     } else if (body.kind === 'apps_script') {
       // The web app URL plus the secret key written into the script shown on this page.
@@ -52,7 +54,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     return { name, apiUrl, tab, spreadsheetUrl: spreadsheetUrl || null, errors };
   }
 
-  async function render(req, res, { error = null, notice = null, status = 200, form = {} } = {}) {
+  async function render(req, res, { error = null, notice = null, status = 200, form = {}, reconcile = null } = {}) {
     const b = req.business;
     // The secret for a new Apps Script connection: kept for this sign-in until a connection is made,
     // so reloading the page never changes the key in a script the owner has already copied.
@@ -66,7 +68,9 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
         `SELECT c.id, c.name, c.api_hint, c.provider, c.sheet_tab, c.spreadsheet_url, c.check_status, c.check_detail, c.checked_at,
                 c.last_success_at, c.last_error, c.last_error_at, c.created_at,
                 (SELECT count(*)::int FROM orders o WHERE o.sheet_connection_id = c.id AND o.sheet_sync_status = 'synced') AS synced,
-                (SELECT count(*)::int FROM orders o WHERE o.sheet_connection_id = c.id AND o.sheet_sync_status = 'failed') AS failed
+                (SELECT count(*)::int FROM orders o WHERE o.sheet_connection_id = c.id AND o.sheet_sync_status = 'failed') AS failed,
+                c.backlog_released_at,
+                (SELECT count(*)::int FROM orders o WHERE o.business_id = c.business_id AND o.sheet_sync_status IN ('pending', 'failed') AND o.created_at < c.created_at) AS held
            FROM sheet_connections c WHERE c.business_id = $1 ORDER BY c.id`, [b.id]),
       pool.query('SELECT sheet_sync_status AS s, count(*)::int AS n FROM orders WHERE business_id = $1 GROUP BY 1', [b.id]),
       pool.query('SELECT id, name, slug, status, sheet_connection_id FROM landing_pages WHERE business_id = $1 ORDER BY status = \'archived\', created_at', [b.id]),
@@ -104,9 +108,9 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     }
     res.set('Cache-Control', 'no-store');
     res.status(status).render('google-sheets', {
-      active: 'sheet', error, notice, count, connections, defaultId, pages, lastSync: last.at, form,
+      active: 'sheet', error, notice, reconcile, count, connections, defaultId, pages, lastSync: last.at, form,
       rows, fetchError, checked: Boolean(checkId), markers: FALLBACK_MARKERS, columns: SHEET_COLUMNS, skyflyTab: SKYFLY_TAB,
-      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey), googleEmail: googleAccountEmail(), googleProblem: config.google?.setting ? config.google.problem : null,
+      encrypted: Boolean(key), scriptKey, appsScript: appsScriptSource(scriptKey), googleEmail: googleAccountEmail(), googleProblem: config.google?.setting ? config.google.problem : null, googleSetting: config.google?.setting ?? null,
     });
   }
 
@@ -188,6 +192,32 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
     // Just fixed (e.g. the column row was added): send the waiting copies now.
     if (status === 'ok' && !wasOk && await requeue(pool, req.business.id)) onOrderSaved();
     done(res, 'checked', `#sheet-${conn.id}`);
+  }));
+
+  // Read-only: which waiting orders are already in the spreadsheet (by order ID) and which are missing.
+  router.post('/connections/:id/reconcile', asyncHandler(async (req, res) => {
+    const conn = await loadConnection(pool, key, req.business.id, req.params.id);
+    if (!conn) return notFound(res);
+    if (conn.provider !== 'google_api') return render(req, res, { error: 'Comparing waiting orders is available for spreadsheets shared with Skyfly (Google Sheets API).', status: 400 });
+    if (conn.check_status !== 'ok') return render(req, res, { error: 'Check the connection first: it must show "Connected" before the waiting orders can be compared.', status: 400 });
+    try {
+      const r = await reconcileWaiting(pool, conn);
+      return render(req, res, { reconcile: { connectionId: conn.id, ...r } });
+    } catch (err) {
+      return render(req, res, { error: `Could not read the spreadsheet: ${err.message}`, status: 502 });
+    }
+  }));
+
+  // The owner has compared them: the waiting orders go out (each still looked up first, so none is added twice).
+  router.post('/connections/:id/release', asyncHandler(async (req, res) => {
+    const conn = await loadConnection(pool, key, req.business.id, req.params.id);
+    if (!conn) return notFound(res);
+    if (conn.provider !== 'google_api' || conn.check_status !== 'ok') return render(req, res, { error: 'Check the connection first: it must show "Connected".', status: 400 });
+    await pool.query('UPDATE sheet_connections SET backlog_released_at = now() WHERE id = $1 AND business_id = $2', [conn.id, req.business.id]);
+    const n = await requeue(pool, req.business.id);
+    if (n) onOrderSaved();
+    await audit(pool, req, { action: 'google_sheets.backlog_released', businessId: req.business.id, entityType: 'sheet_connection', entityId: conn.id, details: { orders: n } });
+    done(res, 'released', `#sheet-${conn.id}`);
   }));
 
   router.post('/connections/:id/setup', asyncHandler(async (req, res) => {

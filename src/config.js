@@ -91,17 +91,20 @@ export function loadConfig() {
           return { serviceAccount: account, setting: name, problem };
         }
         // Or a key file uploaded as a Render "secret file" (mounted in /etc/secrets): the first service account key found.
+        // A file whose name mentions Google but holds no usable key is reported, not silently skipped.
+        let unusable = null;
         for (const dir of [process.env.SECRET_FILES_DIR || '/etc/secrets']) {
           let files = [];
           try { files = readdirSync(dir); } catch { continue; }
           for (const f of files.sort()) {
             let text = '';
             try { text = readFileSync(`${dir}/${f}`, 'utf8'); } catch { continue; }
-            const { account } = readServiceAccount(text);
+            const { account, problem } = readServiceAccount(text);
             if (account) return { serviceAccount: account, setting: `secret file ${f}`, problem: null };
+            if (!unusable && /google|service.?account/i.test(f)) unusable = { serviceAccount: null, setting: `secret file ${f}`, problem };
           }
         }
-        return { serviceAccount: null, setting: null, problem: 'not set' };
+        return unusable ?? { serviceAccount: null, setting: null, problem: 'not set' };
       })(),
       apiBase: process.env.GOOGLE_SHEETS_API_BASE || 'https://sheets.googleapis.com',
       tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',

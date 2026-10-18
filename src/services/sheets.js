@@ -9,7 +9,7 @@ import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
 export { SKYFLY_TAB };
 import { STATUS_LABELS } from '../lib/statuses.js';
-import { listTabs, ensureTab, findOrderRows, appendOrder } from './googleSheetsApi.js';
+import { listTabs, ensureTab, findOrderRows, appendOrder, matchOrders } from './googleSheetsApi.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -195,6 +195,8 @@ export async function checkConnection(pool, conn) {
     'UPDATE sheet_connections SET check_status = $2, check_detail = $3, sheet_columns = $4, checked_at = now() WHERE id = $1',
     [conn.id, status, detail, columns ? JSON.stringify(columns) : null]);
   Object.assign(conn, { check_status: status, check_detail: detail, sheet_columns: columns });
+  // Outcome only (tab names and counts, no order or customer data), so live checks can be confirmed from the logs.
+  if (isGoogleApi(conn)) console.log(`Google Sheets: connection ${conn.id} check — ${status}: ${String(detail).slice(0, 400)}`);
   return { status, detail, columns };
 }
 
@@ -259,6 +261,21 @@ async function sheetIsEmpty(conn) {
 
 // The sheet an order goes to: its landing page's own sheet, else the business default.
 // Both references are constrained to the order's business in the database.
+export const backlogHeld = (conn, o) => isGoogleApi(conn) && !conn.backlog_released_at && new Date(o.created_at) < new Date(conn.created_at);
+
+// Read-only: the orders still waiting to be copied, matched against every tab of a Google
+// spreadsheet by order ID (reference or Skyfly ID), in one read. Nothing is written.
+export async function reconcileWaiting(pool, conn) {
+  const { rows } = await pool.query(
+    `SELECT id, reference, idempotency_key FROM orders
+      WHERE business_id = $1 AND sheet_sync_status IN ('pending', 'failed') ORDER BY id`, [conn.business_id]);
+  const found = rows.length ? await matchOrders(sheetIdOf(conn), rows.map((r) => ({ ref: r.reference, skyflyId: r.idempotency_key }))) : [];
+  const present = rows.filter((r, i) => found[i]).map((r) => r.reference);
+  const missing = rows.filter((r, i) => !found[i]).map((r) => r.reference);
+  console.log(`Google Sheets: reconciliation (read-only) for connection ${conn.id} — ${rows.length} waiting: ${present.length} already in the spreadsheet, ${missing.length} missing`);
+  return { waiting: rows.length, present, missing, checkedAt: new Date().toISOString() };
+}
+
 async function targetFor(pool, key, o) {
   const id = o.page_sheet_id ?? o.default_sheet_id;
   return id ? loadConnection(pool, key, o.business_id, id) : null;
@@ -302,6 +319,15 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
       [orderId, conn.check_status === 'needs_columns'
         ? 'Waiting: the Google Sheet has no column names in row 1. Skyfly checks again every 6 hours and then sends this order.'
         : 'Waiting: SheetDB\'s monthly request limit is used up. Skyfly tries again later.', conn.id, HOLD_MINUTES]);
+    return 'failed';
+  }
+  // Orders that were waiting before this Google connection was made stay held until the owner has
+  // compared them with the spreadsheet and clicked "Send the waiting orders" (backlogHeld below).
+  if (backlogHeld(conn, o)) {
+    await pool.query(
+      `UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_error = $2, sheet_connection_id = $3,
+              sheet_sync_next_at = now() + make_interval(mins => $4) WHERE id = $1`,
+      [orderId, 'Waiting: held until the owner compares the waiting orders with the spreadsheet and sends them (Google Sheets page).', conn.id, HOLD_MINUTES]);
     return 'failed';
   }
   const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
@@ -388,6 +414,14 @@ export async function recheckConnections(pool, key, { minutes = HOLD_MINUTES } =
     if (status === 'ok') { fixed += 1; await requeue(pool, r.business_id); }
   }
   return fixed;
+}
+
+// Google Sheets API connections that are not working yet (e.g. saved before the server's key
+// worked): checked once at start-up. Waiting orders are not released by this (see backlogHeld).
+export async function recheckGoogleConnections(pool, key) {
+  const { rows } = await pool.query("SELECT id, business_id FROM sheet_connections WHERE provider = 'google_api' AND check_status <> 'ok'");
+  for (const r of rows) await checkConnection(pool, await loadConnection(pool, key, r.business_id, r.id));
+  return rows.length;
 }
 
 // New orders wait a few minutes before their first copy, so a row the landing page

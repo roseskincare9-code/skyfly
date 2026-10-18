@@ -9,10 +9,11 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomBytes, generateKeyPairSync, createVerify } from 'node:crypto';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
+import { setup, makeConfig, resetDatabase, csrfToken, signUp, ORIGIN } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
 import { syncDue, SHEET_COLUMNS } from '../src/services/sheets.js';
-import { googleSelfCheck, readServiceAccount } from '../src/services/googleSheetsApi.js';
+import { googleSelfCheck, readServiceAccount, setGoogleAccess } from '../src/services/googleSheetsApi.js';
+import { createApp } from '../src/app.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const EMAIL = 'skyfly-sheets@skyfly-test.iam.gserviceaccount.com';
@@ -206,6 +207,12 @@ describe('server setting and startup check (yes/no only, never the key)', () => 
     assert.match(readServiceAccount('{"client_email": ').problem, /not valid JSON/);
     assert.match(readServiceAccount(JSON.stringify({ type: 'authorized_user' })).problem, /not a service account key/);
     assert.match(readServiceAccount(JSON.stringify({ client_email: EMAIL })).problem, /no private key/);
+    // The key ID shown in Google Cloud's key list is a common mix-up: named by its shape only.
+    const keyId = 'a'.repeat(20) + '0123456789abcdef0123';
+    const r = readServiceAccount(keyId);
+    assert.match(r.problem, /only a 40-character key ID, not the key file/);
+    assert.ok(!r.problem.includes(keyId));
+    assert.match(readServiceAccount('x'.repeat(40)).problem, /40 characters; a key file is about 2,300/);
     for (const r of [readServiceAccount('{"client_email": '), readServiceAccount(JSON.stringify({ client_email: EMAIL }))]) assert.ok(!JSON.stringify(r).includes('PRIVATE'));
   });
 
@@ -239,5 +246,78 @@ describe('key file uploaded as a Render secret file', () => {
       assert.equal(c.google.serviceAccount.client_email, EMAIL);
       assert.equal(c.google.setting, 'secret file skyfly-sheets-key.json');
     } finally { process.env = saved; }
+  });
+});
+
+describe('orders that were waiting before the connection are held until compared and sent', () => {
+  test('nothing is written until the owner compares and sends; then only the missing ones are added, once each', async () => {
+    const { rows: [b] } = await pool.query("SELECT id FROM businesses WHERE slug = 'larose-nigeria'");
+    await pool.query('UPDATE businesses SET default_sheet_connection_id = NULL WHERE id = $1', [b.id]);
+    await pool.query('UPDATE orders SET sheet_connection_id = NULL WHERE business_id = $1', [b.id]);
+    await pool.query('DELETE FROM sheet_connections WHERE business_id = $1', [b.id]);
+    // Three orders that failed earlier (e.g. SheetDB's quota); one already reached the spreadsheet.
+    const refs = [];
+    for (const name of ['Waiting One', 'Waiting Two', 'Waiting Three']) refs.push((await order(name)).body.reference);
+    await pool.query("UPDATE orders SET sheet_sync_status = 'failed', sheet_sync_attempts = 3, created_at = now() - interval '1 day' WHERE reference = ANY($1)", [refs]);
+    google.tabs[0].values.push(['2026-10-17', 'Waiting Two', '+2348051234567', `Website | Skyfly ${refs[1]} | ID y`]);
+    const before = JSON.stringify(google.tabs);
+    // Connected with the bare spreadsheet ID.
+    let _csrf = await csrfToken(owner, `${base}/google-sheets`);
+    await owner.post(`${base}/google-sheets/connections`).type('form').send({ _csrf, kind: 'google_api', name: 'Laroseorders', spreadsheet_url: SHEET_ID, make_default: 'on' }).expect(302);
+    const { rows: [c] } = await pool.query("SELECT * FROM sheet_connections WHERE business_id = $1 AND provider = 'google_api'", [b.id]);
+    assert.equal(c.check_status, 'ok', c.check_detail);
+    assert.equal(c.spreadsheet_url, `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`);
+    await sync();
+    for (const ref of refs) assert.match((await orderRow(ref)).sheet_sync_error, /held until the owner compares/);
+    assert.equal(JSON.stringify(google.tabs), before, 'nothing written while held');
+    const page = await owner.get(`${base}/google-sheets`).expect(200);
+    assert.ok(page.text.includes('data-held'));
+    // Compare (read-only).
+    _csrf = await csrfToken(owner, `${base}/google-sheets`);
+    const cmp = await owner.post(`${base}/google-sheets/connections/${c.id}/reconcile`).type('form').send({ _csrf }).expect(200);
+    assert.match(cmp.text, /<strong>1<\/strong> already in the spreadsheet \(will not be added again\), <strong>2<\/strong> missing \(will be copied\), of 3 waiting/);
+    assert.equal(JSON.stringify(google.tabs), before, 'comparing writes nothing');
+    // Send.
+    _csrf = await csrfToken(owner, `${base}/google-sheets`);
+    await owner.post(`${base}/google-sheets/connections/${c.id}/release`).type('form').send({ _csrf }).expect(302);
+    await sync();
+    for (const ref of refs) {
+      assert.equal((await orderRow(ref)).sheet_sync_status, 'synced');
+      assert.equal(rowsFor(ref).length, 1, `${ref}: exactly one row`);
+    }
+    assert.deepEqual(google.tabs[0].values.slice(0, HISTORY.length), HISTORY, 'history unchanged');
+    // A new order after connecting is copied as usual (not held).
+    const fresh = await order('After Connect');
+    await sync();
+    assert.equal((await orderRow(fresh.body.reference)).sheet_sync_status, 'synced');
+    google.tabs[0].values.pop();
+  });
+});
+
+describe('server key not usable', () => {
+  test('a secret file that holds no key is reported by name and reason; the page still offers the spreadsheet link (no Web app URL)', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(`${tmpdir()}/secrets-`);
+    writeFileSync(`${dir}/GOOGLE-SERVICE-ACCOUNT-JSON`, '0123456789abcdef0123456789abcdef01234567');
+    const saved = { ...process.env };
+    for (const k of Object.keys(process.env)) if (k.toUpperCase().replace(/-/g, '_') === 'GOOGLE_SERVICE_ACCOUNT_JSON') delete process.env[k];
+    process.env.SECRET_FILES_DIR = dir;
+    process.env.SESSION_SECRET ||= 'test-secret';
+    let cfg;
+    try { cfg = (await import('../src/config.js')).loadConfig(); } finally { process.env = saved; }
+    assert.equal(cfg.google.serviceAccount, null);
+    assert.equal(cfg.google.setting, 'secret file GOOGLE-SERVICE-ACCOUNT-JSON');
+    assert.match(cfg.google.problem, /40-character key ID/);
+    const noKey = createApp({ pool, config: makeConfig({ encryptionKey: key, google: { ...cfg.google, apiBase: base0, tokenUrl: `${base0}/token` } }) });
+    try {
+      const agent = request.agent(noKey);
+      const _csrf = await csrfToken(agent);
+      await agent.post('/login').type('form').send({ _csrf, email: 'owner@larose.test', password: 'correct-horse-battery' }).expect(302);
+      const page = await agent.get(`${base}/google-sheets`).expect(200);
+      assert.match(page.text, /data-google-missing><strong>Skyfly's Google key on the server is not usable yet \(secret file GOOGLE-SERVICE-ACCOUNT-JSON\)/);
+      assert.ok(page.text.includes('id="google-link"'), 'the spreadsheet link field is shown');
+      assert.ok(page.text.includes('Waiting for the server key'));
+    } finally { setGoogleAccess({ serviceAccount, apiBase: base0, tokenUrl: `${base0}/token` }); }
   });
 });
