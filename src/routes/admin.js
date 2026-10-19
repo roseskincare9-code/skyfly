@@ -17,7 +17,7 @@ import multer from 'multer';
 import { requireCsrf } from '../lib/csrf.js';
 import { googleStatus, googleAccountEmail, readServiceAccount, useServiceAccount, googleSelfCheck } from '../services/googleSheetsApi.js';
 import { storedGoogleKey, saveGoogleKey } from '../services/googleKey.js';
-import { recheckGoogleConnections, addConnection, loadConnection, checkConnection, reconcileWaiting, urlHash, SKYFLY_TAB } from '../services/sheets.js';
+import { recheckGoogleConnections, compareHeldGoogleConnections, addConnection, loadConnection, checkConnection, reconcileWaiting, urlHash, SKYFLY_TAB } from '../services/sheets.js';
 import { SPREADSHEET_ID_RE } from '../services/googleSheetsApi.js';
 
 // The Google key file is small (about 2.3 KB); anything much larger is not one.
@@ -289,7 +289,7 @@ export function adminRoutes({ pool, config }) {
   }));
 
   // ---- Google key: the platform's service account for Google Sheets (uploaded as the downloaded file).
-  const GOOGLE_NOTICES = { uploaded: 'Key file saved (encrypted) and checked. The results are below.', checked: 'Checked again.' };
+  const GOOGLE_NOTICES = { uploaded: 'Key file saved (encrypted) and checked. The results are below.', checked: 'Checked again.', sheet: 'Laroseorders saved for Larose (read-only, not the default). The results are below.' };
   const googlePage = async (req, res, { error = null, status = 200 } = {}) => {
     const stored = await storedGoogleKey(pool, config.encryptionKey).catch(() => null);
     res.set('Cache-Control', 'no-store');
@@ -348,11 +348,24 @@ export function adminRoutes({ pool, config }) {
     }
   }
 
+  // The Laroseorders link alone, with the key already saved (read-only, not the default).
+  router.post('/admin/google/larose-sheet', asyncHandler(async (req, res) => {
+    const link = String(req.body.larose_sheet ?? '').trim();
+    const sheetId = link.match(SPREADSHEET_ID_RE)?.[1] ?? (/^[A-Za-z0-9_-]{30,100}$/.test(link) ? link : null);
+    if (!sheetId) return googlePage(req, res, { error: 'Paste the Laroseorders link (https://docs.google.com/spreadsheets/d/…) or its ID.', status: 400 });
+    if (!googleStatus.configured) return googlePage(req, res, { error: 'Upload the key file first.', status: 400 });
+    req.session.googleSetup = await connectLarose(req, sheetId);
+    res.redirect('/admin/google?done=sheet');
+  }));
+
   router.post('/admin/google/check', asyncHandler(async (req, res) => {
     if (googleStatus.configured) {
       Object.assign(googleStatus, await googleSelfCheck());
       console.log(`Google Sheets API: checked again; sign-in ${googleStatus.auth}; Sheets API ${googleStatus.sheetsApi}`);
-      if (googleStatus.auth === 'ok') await recheckGoogleConnections(pool, config.encryptionKey);
+      if (googleStatus.auth === 'ok') {
+        await recheckGoogleConnections(pool, config.encryptionKey);
+        await compareHeldGoogleConnections(pool, config.encryptionKey);
+      }
     }
     res.redirect('/admin/google?done=checked');
   }));

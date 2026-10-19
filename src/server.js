@@ -3,9 +3,9 @@ import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { ensureLaroseForOwner, ensureDemoSite, ensureDemoUpsell, ensureLaroseHostedPage } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
-import { startSheetWorker, recheckGoogleConnections } from './services/sheets.js';
+import { startSheetWorker, recheckGoogleConnections, compareHeldGoogleConnections } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
-import { googleStatus, useServiceAccount } from './services/googleSheetsApi.js';
+import { googleStatus, useServiceAccount, googleSelfCheck } from './services/googleSheetsApi.js';
 import { storedGoogleKey } from './services/googleKey.js';
 
 const config = loadConfig();
@@ -35,8 +35,27 @@ const app = createApp({
   }
   console.log(`Google Sheets API: ${r.setting}; service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
   // A spreadsheet saved while the key was not usable is checked now, read-only (same condition as the copy worker).
-  if (r.auth === 'ok' && (config.isProduction || process.env.SHEET_SYNC === 'on')) await recheckGoogleConnections(pool, config.encryptionKey);
+  if (r.auth === 'ok' && (config.isProduction || process.env.SHEET_SYNC === 'on')) {
+    await recheckGoogleConnections(pool, config.encryptionKey);
+    await compareHeldGoogleConnections(pool, config.encryptionKey);
+  }
 })().catch((err) => { google.auth = `check failed: ${err.message}`; });
+
+// While sign-in or the Sheets API is not working yet (e.g. the API was just enabled in Google
+// Cloud), check again every 5 minutes; once it works, saved spreadsheets are checked and their
+// waiting orders compared (read-only). Nothing is copied by this.
+const googleRetry = setInterval(async () => {
+  if (!googleStatus.configured || (googleStatus.auth === 'ok' && googleStatus.sheetsApi === 'enabled')) return;
+  try {
+    Object.assign(googleStatus, await googleSelfCheck());
+    console.log(`Google Sheets API: checked again; sign-in ${googleStatus.auth}; Sheets API ${googleStatus.sheetsApi}`);
+    if (googleStatus.auth === 'ok' && googleStatus.sheetsApi === 'enabled' && (config.isProduction || process.env.SHEET_SYNC === 'on')) {
+      await recheckGoogleConnections(pool, config.encryptionKey);
+      await compareHeldGoogleConnections(pool, config.encryptionKey);
+    }
+  } catch (err) { console.error('Google Sheets API re-check failed:', err.message); }
+}, 5 * 60 * 1000);
+googleRetry.unref();
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);

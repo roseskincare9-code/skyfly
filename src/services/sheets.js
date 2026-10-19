@@ -430,6 +430,17 @@ export async function recheckGoogleConnections(pool, key) {
   return rows.length;
 }
 
+// Read-only comparison for every working Google connection whose waiting orders are still held,
+// so the owner sees (and the logs show) how many are already in the spreadsheet before anything is sent.
+export async function compareHeldGoogleConnections(pool, key) {
+  const { rows } = await pool.query(
+    "SELECT id, business_id FROM sheet_connections WHERE provider = 'google_api' AND check_status = 'ok' AND backlog_released_at IS NULL");
+  for (const r of rows) {
+    try { await reconcileWaiting(pool, await loadConnection(pool, key, r.business_id, r.id)); } catch (err) { console.log(`Google Sheets: reconciliation for connection ${r.id} failed: ${err.message}`); }
+  }
+  return rows.length;
+}
+
 // New orders wait a few minutes before their first copy, so a row the landing page
 // writes itself (older page versions) is in the sheet before Skyfly checks for it.
 export const FIRST_COPY_DELAY_MINUTES = 3;

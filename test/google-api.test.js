@@ -387,6 +387,21 @@ describe('Platform admin → Google key (the downloaded key file is uploaded, ne
     void after;
   });
 
+  test('with the key saved, the Laroseorders link alone connects it read-only and shows the comparison', async () => {
+    const before = JSON.stringify(google.tabs);
+    let _csrf = await csrfToken(owner, '/admin/google');
+    const bad = await owner.post('/admin/google/larose-sheet').type('form').send({ _csrf, larose_sheet: 'not a link' });
+    assert.equal(bad.status, 400);
+    _csrf = await csrfToken(owner, '/admin/google');
+    const r = await owner.post('/admin/google/larose-sheet').type('form').send({ _csrf, larose_sheet: LINK }).expect(302);
+    assert.equal(r.headers.location, '/admin/google?done=sheet');
+    const page = await owner.get(r.headers.location).expect(200);
+    assert.ok(page.text.includes('Laroseorders saved for Larose (read-only, not the default)'));
+    assert.match(page.text, /Connection check: <strong>Connected<\/strong>/);
+    assert.match(page.text, /data-google-compare>/);
+    assert.equal(JSON.stringify(google.tabs), before, 'nothing written');
+  });
+
   test('only the platform owner can open it', async () => {
     const other = request.agent(app);
     await other.get('/admin/google').expect(302);

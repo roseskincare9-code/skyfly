@@ -19,6 +19,16 @@
     </dl>
     <% if (status.configured) { %><form method="post" action="/admin/google/check" style="margin-top:12px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check again</button></form><% } %>
   </div>
+  <% if (status.configured) { %>
+  <form class="card" method="post" action="/admin/google/larose-sheet" data-larose-sheet>
+    <%- include('../partials/csrf') %>
+    <h2>Laroseorders spreadsheet</h2>
+    <p class="muted" style="margin-top:0">Paste its link to connect it to Larose. Read-only: Skyfly checks it and compares the waiting orders by order ID. It is not made the default and nothing is copied.</p>
+    <label for="larose_sheet_only">Spreadsheet link</label>
+    <input id="larose_sheet_only" name="larose_sheet" required placeholder="https://docs.google.com/spreadsheets/d/…/edit">
+    <p><button type="submit">Connect and compare</button></p>
+  </form>
+  <% } %>
   <% if (setup) { %>
   <div class="card" data-google-setup>
     <h2>Laroseorders (read-only check)</h2>
