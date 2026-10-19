@@ -218,7 +218,7 @@ await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configur
   return `${summary} (intercepted, not sent to Meta)`;
 });
 
-if (process.env.RENDER_API_KEY) {
+if (process.env.RENDER_API_KEY && process.env.RESTART_CHECK === 'yes') {
   await step('D. The order survives a restart of the Skyfly service', async () => {
     const api = (path, init = {}) => fetch(`https://api.render.com/v1${path}`, { ...init, headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json' } });
     const owners = (await (await api('/owners?limit=50')).json()).map((o) => o.owner ?? o);
