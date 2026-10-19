@@ -149,7 +149,10 @@ await step('H. The demo page loads only Skyfly\'s own Meta pixel (13257364895346
   const cfg = await shop.evaluate(() => window.__SKYFLY__ && window.__SKYFLY__.pixels);
   const ids = (cfg || []).map((p) => p.id);
   assert(ids.length === 0 || (ids.length === 1 && ids[0] === '1325736489534601'), `pixels on the page: ${JSON.stringify(cfg)}`);
-  const other = adRequests.filter((u) => !/connect\.facebook\.net\/en_US\/fbevents\.js/.test(u) && !u.includes('1325736489534601'));
+  // Every event hit belongs to Skyfly's own pixel (hits are answered here, never sent to Meta).
+  const foreign = pixelHits.filter((h) => h.id && h.id !== '1325736489534601');
+  assert(foreign.length === 0, `events for other pixels: ${JSON.stringify(foreign)}`);
+  const other = adRequests.filter((u) => !/connect\.facebook\.net\//.test(u) && !/facebook\.com\/tr\/?(\?|$)/.test(u));
   assert(other.length === 0, `unexpected ad requests: ${other.join(', ')}`);
   assert(!pixelHits.some((h) => h.ev === 'Purchase'), 'Purchase sent for a test order');
   if (!ids.length) return 'no pixel configured on this deployment';
