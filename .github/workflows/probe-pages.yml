@@ -15,6 +15,14 @@ jobs:
                    https://roseskincare9-code.github.io/Scaleforgelondon/ https://roseskincare9-code.github.io/AI-ACADEMY/; do
             echo "$(curl -s -o /tmp/body -w '%{http_code}' -L "$u") $u  title: $(grep -o '<title>[^<]*' /tmp/body | head -1 | cut -c8-90)  skyfly: $(grep -o 'skyfly-gybf[^"]*' /tmp/body | head -1)"
           done
+      - name: Larose page version and Skyfly-hosted copies
+        run: |
+          curl -s -L https://roseskincare9-code.github.io/Larosenigeria/ -o /tmp/larose
+          echo "GitHub Pages Larose page: thank-you 'We have received your order': $(grep -c 'We have received your order' /tmp/larose), WhatsApp button skyWa: $(grep -c 'id=\"skyWa\"' /tmp/larose), upsell box skyUp: $(grep -c 'id=\"skyUp\"' /tmp/larose), Skyfly API: $(grep -o 'SKYFLY_API=\"[^\"]*' /tmp/larose | head -1)"
+          for u in https://skyfly-gybf.onrender.com/p/larosenigeria/ https://skyfly-gybf.onrender.com/p/skyfly-demo/; do
+            echo "$(curl -s -o /tmp/b -w '%{http_code}' --max-time 90 "$u") $u  title: $(grep -o '<title>[^<]*' /tmp/b | head -1 | cut -c8-90)"
+          done
+          echo "Larose catalog (public): $(curl -s --max-time 60 https://skyfly-gybf.onrender.com/api/public/pages/larosenigeria/catalog | head -c 400)"
       - name: GitHub Pages settings (public API)
         run: |
           for r in Larosenigeria Larose-Skincare- Scaleforge-nigeria Scaleforgelondon AI-ACADEMY; do
