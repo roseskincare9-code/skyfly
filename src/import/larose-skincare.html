@@ -642,7 +642,7 @@ function skyUpdateSummary(){
 }
 document.addEventListener('change',function(e){if(e.target&&(e.target.id==='pr'||e.target.id==='qty'))skyUpdateSummary();});
 if(typeof selectPkg==='function'){const skyPick=selectPkg;selectPkg=function(v){skyPick(v);skyUpdateSummary();};}
-let skyBusy=false;
+let skyBusy=false,skyAttempted={};
 async function doSub(){
   if(skyBusy)return;
   const fn=document.getElementById('fn').value.trim();
@@ -668,6 +668,9 @@ async function doSub(){
     items:[{product:opt.dataset.product,quantity:qty,unitPrice:Number(opt.dataset.price)}].concat(skyAdd&&skyUpsell?[{product:skyUpsell.code,quantity:1,upsell:true,unitPrice:skyUpsell.price}]:[]),
     website:document.getElementById('skyfly_hp').value};
   order.idempotencyKey=skyKey(JSON.stringify(order));
+  // Without storage, a "same order again" reply for a submission this visit never sent was already
+  // counted on an earlier visit (e.g. refresh, then the same details again): shown, not counted twice.
+  const skyEarlierVisit=!skyCanStore&&!skyAttempted[order.idempotencyKey];skyAttempted[order.idempotencyKey]=true;
   order.attribution={pageUrl:location.href,referrer:document.referrer,utm_source:q.get('utm_source'),utm_medium:q.get('utm_medium'),utm_campaign:q.get('utm_campaign'),utm_content:q.get('utm_content'),utm_term:q.get('utm_term')};
 
   const btn=document.getElementById('sb');
@@ -690,10 +693,12 @@ async function doSub(){
 
   if(res&&res.ok&&data&&data.ok&&data.reference){
     btn.textContent='Order saved ✓';
+    if(!(data.replayed&&skyEarlierVisit)){
     try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
     try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
     // One Purchase per saved order (never for test orders); Skyfly keeps it from repeating on retries or refreshes.
     try{if(window.Skyfly&&Skyfly.trackPurchase)Skyfly.trackPurchase(data);}catch(e){}
+    }
     // What Skyfly saved and priced (package and any add-on), not the browser's own figures.
     const saved=(data.items||[]).map(i=>i.name+' × '+i.quantity+(i.upsell?' (add-on)':'')).join(', ');
     const conf={name:fn,reference:data.reference,item:saved||opt.value.replace(/\s+–\s+₦[\d,]+$/,'')+' × '+qty,total:data.total,currency:data.currency,url:data.confirmationUrl,wa:data.whatsappUrl};

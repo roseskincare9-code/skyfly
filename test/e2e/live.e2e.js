@@ -282,10 +282,13 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   const purchases = () => pixelEvents.slice(start).filter((e) => e.host.endsWith('facebook.com') && e.ev === 'Purchase');
   const ref = `LR-SIM${String(RUN).replace(/\D/g, '').slice(-5).padStart(5, '0')}`;
   let mode = 'fail';
+  const replies = [];
+  p3.on('requestfailed', (r) => { if (r.url().includes('/api/public/orders')) replies.push(`${r.method()} failed: ${r.failure()?.errorText}`); });
+  p3.on('response', (r) => { if (r.url().includes('/api/public/orders')) replies.push(`${r.request().method()} ${r.status()}`); });
   await p3.route(`${SKYFLY}/api/public/orders`, (route) => (mode === 'fail'
     ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
     : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' },
-      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: false, test: false }) })));
+      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) })));
   await p3.goto(`${PAGE}?skyfly_e2e=${RUN}-purchase`, { waitUntil: 'load' });
   await p3.click('text=Order Power Glow');
   await p3.fill('#fn', 'Simulated Reply Check');
@@ -301,15 +304,28 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   assert(!(await p3.isVisible('#sb2')), 'confirmation shown for a failed order');
   mode = 'saved';
   await p3.click('#sb');
-  await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 });
+  await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 }).catch(async (e) => {
+    throw new Error(`no confirmation for the simulated saved reply; page error: "${((await p3.textContent('#skyErr').catch(() => '')) || '').slice(0, 160)}", button: "${await p3.textContent('#sb').catch(() => '')}", replies seen: ${replies.join(', ')}`);
+  });
   for (let i = 0; i < 20 && purchases().length === 0; i += 1) await sleep(500);
   const p = purchases();
   assert(p.length === 1, `${p.length} Purchase event(s) after the saved reply`);
   assert(p[0].id === '1357015185691765' && p[0].eid === `purchase_${ref}` && Number(p[0].value) === 51500 && p[0].currency === 'NGN', `Purchase sent ${JSON.stringify(p[0])}`);
   await p3.reload({ waitUntil: 'load' });
-  await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 30000 });
-  // The same reply again (a repeated submission or a network retry returns the same order).
-  await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+  if (HOSTED) {
+    // Sandboxed hosting has no browser storage: after a refresh the customer sees the form again.
+    // Sending the same details again returns the same order (replayed): shown, never counted twice.
+    mode = 'replayed';
+    await p3.click('text=Order Power Glow');
+    await p3.fill('#fn', 'Simulated Reply Check'); await p3.fill('#ph', '08012345678');
+    await p3.fill('#addr', 'TEST - simulated reply, no order is created'); await p3.selectOption('#st', 'Lagos');
+    await p3.click('#sb');
+    await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 30000 });
+  } else {
+    await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 30000 });
+    // The same reply again (a repeated submission or a network retry returns the same order).
+    await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+  }
   await sleep(3000);
   assert(purchases().length === 1, `${purchases().length} Purchase events after a refresh and a repeated reply`);
   await p3.screenshot({ path: 'live-screenshots/larose-simulated-purchase.png', fullPage: false });

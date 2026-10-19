@@ -103,3 +103,10 @@ describe('image safety', () => {
     assert.deepEqual(meta, {}, 'skipped');
   });
 });
+
+test('images embedded in the page (data: URIs) are not lazy-loaded (they are already downloaded)', () => {
+  const html = '<img src="hero.jpg"><img src="data:image/jpeg;base64,AAAA"><img src="b.jpg">';
+  const out = optimizeHtml(html, { versionId: 1 });
+  assert.match(out, /<img src="data:image\/jpeg;base64,AAAA"(?![^>]*loading=)[^>]*>/);
+  assert.match(out, /<img src="b\.jpg\?v=1"[^>]*loading="lazy"/);
+});

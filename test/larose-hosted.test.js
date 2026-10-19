@@ -44,6 +44,23 @@ test('imported and published once in the Larose business; the GitHub Pages page 
   assert.equal(c, 1);
 });
 
+test('an updated copy replaces only the automatic import, never a version the owner made', async () => {
+  const { rows: [lp] } = await pool.query("SELECT id, published_version_id FROM landing_pages WHERE slug = 'larose-skincare'");
+  // Pretend the bundled copy changed: the published import's file differs.
+  await pool.query("INSERT INTO page_blobs (sha256, size, data) VALUES (repeat('a', 64), 1, 'x') ON CONFLICT DO NOTHING");
+  await pool.query("UPDATE page_files SET sha256 = repeat('a', 64) WHERE version_id = $1", [lp.published_version_id]);
+  assert.equal(await ensureLaroseHostedPage(pool, config, quiet), lp.id);
+  const { rows: [now] } = await pool.query("SELECT published_version_id FROM landing_pages WHERE id = $1", [lp.id]);
+  assert.notEqual(String(now.published_version_id), String(lp.published_version_id));
+  // The owner uploads their own version: never replaced afterwards.
+  const { rows: [own] } = await pool.query(
+    "INSERT INTO page_versions (landing_page_id, source_name, entry_path, file_count, total_bytes) VALUES ($1, 'my-edit.zip', 'index.html', 1, 1) RETURNING id", [lp.id]);
+  await pool.query('UPDATE landing_pages SET published_version_id = $1 WHERE id = $2', [own.id, lp.id]);
+  assert.equal(await ensureLaroseHostedPage(pool, config, quiet), null);
+  const { rows: [after2] } = await pool.query("SELECT published_version_id FROM landing_pages WHERE id = $1", [lp.id]);
+  assert.equal(String(after2.published_version_id), String(own.id));
+});
+
 test('a test order from the hosted page (Origin: null) is saved once in the Larose business', async () => {
   const body = { landingPage: 'larose-skincare', idempotencyKey: 'skyh-hostedtest-0001-x', customer: { name: 'TEST ORDER hosted', phone: '08031234567', address: '4 Allen Avenue, Ikeja', state: 'Lagos' },
     items: [{ product: 'package-3', quantity: 2, unitPrice: 51500 }] };

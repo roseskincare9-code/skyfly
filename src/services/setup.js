@@ -97,17 +97,33 @@ export async function ensureDemoUpsell(pool) {
 // "larose-skincare" in the Larose business, published at /p/larose-skincare/ with the same
 // packages (prices from Skyfly), the business's Meta Pixel and Google Sheet settings. The
 // GitHub Pages page (form key "larosenigeria") is not touched. Created once: an existing page
-// with this key is never overwritten, so the owner's later edits stay.
+// with this key keeps the owner's own versions (see below).
+const IMPORT_NAME = 'Larose page (GitHub Pages copy)';
 export async function ensureLaroseHostedPage(pool, config, log = console) {
   if (!config.publicBaseUrl) return null;
   const { rows: [src] } = await pool.query(
     `SELECT lp.id, lp.business_id, b.owner_id FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = 'larosenigeria' AND b.slug = 'larose-nigeria'`);
   if (!src) return null;
-  const { rows: [existing] } = await pool.query("SELECT 1 FROM landing_pages WHERE slug = 'larose-skincare'");
-  if (existing) return null;
   const data = readFileSync(new URL('../import/larose-skincare.html', import.meta.url));
   const files = [{ path: 'index.html', contentType: 'text/html; charset=utf-8', size: data.length, sha256: createHash('sha256').update(data).digest('hex'), data }];
+  const upload = () => ({ sourceName: IMPORT_NAME, entryPath: 'index.html', files, totalBytes: data.length, report: analyzeFiles(files, 'index.html') });
+  const { rows: [existing] } = await pool.query("SELECT id, business_id, published_version_id FROM landing_pages WHERE slug = 'larose-skincare'");
+  if (existing) {
+    // Updated only while the newest version is still this automatic import, published, and the
+    // bundled copy changed. Once the owner uploads or edits a version, it is never replaced.
+    const { rows: [latest] } = await pool.query(
+      `SELECT v.id, v.source_name, f.sha256 FROM page_versions v LEFT JOIN page_files f ON f.version_id = v.id AND f.path = 'index.html'
+        WHERE v.landing_page_id = $1 ORDER BY v.id DESC LIMIT 1`, [existing.id]);
+    if (!latest || latest.source_name !== IMPORT_NAME || String(latest.id) !== String(existing.published_version_id) || latest.sha256 === files[0].sha256) return null;
+    const versionId = await saveVersion(pool, { pageId: existing.id, userId: src.owner_id, upload: upload() });
+    await pool.query('UPDATE landing_pages SET published_version_id = $1, updated_at = now() WHERE id = $2', [versionId, existing.id]);
+    await pool.query(
+      "INSERT INTO audit_log (user_id, business_id, action, entity_type, entity_id, details) VALUES ($1, $2, 'page.published', 'landing_page', $3, '{\"automatic\":true,\"updated_from\":\"larosenigeria\"}')",
+      [src.owner_id, existing.business_id, String(existing.id)]);
+    log.log(`Larose hosted page updated to the current copy of the live page (version ${versionId}).`);
+    return existing.id;
+  }
   const { rows: [page] } = await pool.query(
     `INSERT INTO landing_pages (business_id, slug, name, status, notes)
      VALUES ($1, 'larose-skincare', 'Larose Skincare (Skyfly-hosted)', 'draft',
@@ -119,7 +135,7 @@ export async function ensureLaroseHostedPage(pool, config, log = console) {
     [page.id, src.id]);
   const versionId = await saveVersion(pool, {
     pageId: page.id, userId: src.owner_id,
-    upload: { sourceName: 'Larose page (GitHub Pages copy)', entryPath: 'index.html', files, totalBytes: data.length, report: analyzeFiles(files, 'index.html') },
+    upload: upload(),
   });
   await pool.query("UPDATE landing_pages SET published_version_id = $1, status = 'active', updated_at = now() WHERE id = $2", [versionId, page.id]);
   await pool.query(

@@ -29,7 +29,10 @@ export function optimizeHtml(html, { meta = null, filePath = 'index.html', versi
     index += 1;
     const src = attr(tag, 'src');
     let extra = '';
-    if (!hasAttr(tag, 'loading') && !hasAttr(tag, 'fetchpriority')) extra += first ? ' fetchpriority="high"' : ' loading="lazy"';
+    // Images embedded in the page (data: URIs) are already downloaded with it: lazy loading saves
+    // nothing and leaves images in hidden or unscrolled parts blank, so they load as written.
+    const embedded = /^\s*data:/i.test(src || '');
+    if (!embedded && !hasAttr(tag, 'loading') && !hasAttr(tag, 'fetchpriority')) extra += first ? ' fetchpriority="high"' : ' loading="lazy"';
     if (!first && !hasAttr(tag, 'decoding')) extra += ' decoding="async"';
     const info = meta && meta[resolveAsset(filePath, src)];
     if (info) {
