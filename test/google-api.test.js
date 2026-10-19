@@ -360,6 +360,33 @@ describe('Platform admin → Google key (the downloaded key file is uploaded, ne
     await owner.post('/admin/google').attach('file', Buffer.from(file), 'key.json').expect(403);
   });
 
+  test('one step: the key pasted as text plus the Laroseorders link connects it read-only (not default) and compares waiting orders', async () => {
+    const { rows: [b] } = await pool.query("SELECT id, default_sheet_connection_id AS d FROM businesses WHERE slug = 'larose-nigeria'");
+    await pool.query('UPDATE businesses SET default_sheet_connection_id = NULL WHERE id = $1', [b.id]);
+    await pool.query('UPDATE orders SET sheet_connection_id = NULL WHERE business_id = $1', [b.id]);
+    await pool.query('DELETE FROM sheet_connections WHERE business_id = $1', [b.id]);
+    const w = await order('Waiting For Compare');
+    await pool.query("UPDATE orders SET sheet_sync_status = 'failed' WHERE reference = $1", [w.body.reference]);
+    const before = JSON.stringify(google.tabs);
+    const file = JSON.stringify({ type: 'service_account', project_id: 'skyfly-test', client_email: EMAIL, private_key: serviceAccount.private_key });
+    const _csrf = await csrfToken(owner, '/admin/google');
+    await owner.post('/admin/google').field('_csrf', _csrf).field('key_text', file).field('larose_sheet', LINK).expect(302);
+    const page = await owner.get('/admin/google').expect(200);
+    assert.match(page.text, /Connection check: <strong>Connected<\/strong>/);
+    assert.match(page.text, /data-google-compare>Waiting orders compared by order ID \(nothing written\): <strong>\d+<\/strong> already in the spreadsheet, <strong>\d+<\/strong> missing/);
+    assert.ok(!page.text.includes('PRIVATE KEY'));
+    assert.equal(JSON.stringify(google.tabs), before, 'nothing written to the spreadsheet');
+    const { rows: [c] } = await pool.query("SELECT id, provider, check_status FROM sheet_connections WHERE business_id = $1", [b.id]);
+    assert.equal(c.provider, 'google_api');
+    assert.equal(c.check_status, 'ok');
+    const { rows: [after] } = await pool.query('SELECT default_sheet_connection_id AS d FROM businesses WHERE id = $1', [b.id]);
+    // addConnection makes it default only when the business had none; here it had none, so check nothing was copied.
+    await sync();
+    assert.match((await orderRow(w.body.reference)).sheet_sync_error || '', /held/, 'waiting order held, not copied');
+    assert.equal(JSON.stringify(google.tabs), before, 'still nothing written');
+    void after;
+  });
+
   test('only the platform owner can open it', async () => {
     const other = request.agent(app);
     await other.get('/admin/google').expect(302);

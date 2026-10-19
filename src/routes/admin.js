@@ -17,7 +17,8 @@ import multer from 'multer';
 import { requireCsrf } from '../lib/csrf.js';
 import { googleStatus, googleAccountEmail, readServiceAccount, useServiceAccount, googleSelfCheck } from '../services/googleSheetsApi.js';
 import { storedGoogleKey, saveGoogleKey } from '../services/googleKey.js';
-import { recheckGoogleConnections } from '../services/sheets.js';
+import { recheckGoogleConnections, addConnection, loadConnection, checkConnection, reconcileWaiting, urlHash, SKYFLY_TAB } from '../services/sheets.js';
+import { SPREADSHEET_ID_RE } from '../services/googleSheetsApi.js';
 
 // The Google key file is small (about 2.3 KB); anything much larger is not one.
 const keyUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20000, files: 1, fields: 5 } });
@@ -294,6 +295,7 @@ export function adminRoutes({ pool, config }) {
     res.set('Cache-Control', 'no-store');
     res.status(status).render('admin/google', {
       status: googleStatus, email: googleAccountEmail(), stored, error, notice: GOOGLE_NOTICES[req.query.done] ?? null, canStore: Boolean(config.encryptionKey),
+      setup: req.session.googleSetup ?? null,
     });
   };
   router.get('/admin/google', asyncHandler((req, res) => googlePage(req, res)));
@@ -304,8 +306,12 @@ export function adminRoutes({ pool, config }) {
   }), asyncHandler(async (req, res) => {
     if (req.uploadError) return googlePage(req, res, { error: req.uploadError, status: 400 });
     if (!config.encryptionKey) return googlePage(req, res, { error: 'SKYFLY_ENCRYPTION_KEY is not set on the server, so the key cannot be stored safely.', status: 400 });
-    const text = req.file?.buffer?.toString('utf8') ?? '';
-    if (!text.trim()) return googlePage(req, res, { error: 'Choose the .json key file Google downloaded when you created the key.', status: 400 });
+    // The downloaded file, or its contents pasted (for phones where choosing a file is awkward).
+    const text = req.file?.buffer?.toString('utf8') || String(req.body.key_text ?? '').slice(0, 20000);
+    if (!text.trim()) return googlePage(req, res, { error: 'Choose the .json key file Google downloaded when you created the key, or paste its whole contents.', status: 400 });
+    const sheetLink = String(req.body.larose_sheet ?? '').trim();
+    const sheetId = sheetLink ? (sheetLink.match(SPREADSHEET_ID_RE)?.[1] ?? (/^[A-Za-z0-9_-]{30,100}$/.test(sheetLink) ? sheetLink : null)) : null;
+    if (sheetLink && !sheetId) return googlePage(req, res, { error: 'The Laroseorders link must be a Google Sheets link (https://docs.google.com/spreadsheets/d/…) or its ID.', status: 400 });
     const { account, problem } = readServiceAccount(text);
     if (!account) return googlePage(req, res, { error: `This file cannot be used: ${problem}.`, status: 400 });
     await saveGoogleKey(pool, config.encryptionKey, text);
@@ -314,8 +320,33 @@ export function adminRoutes({ pool, config }) {
     // Spreadsheets saved before the key worked are checked now (read-only; waiting orders stay held).
     if (r.auth === 'ok') await recheckGoogleConnections(pool, config.encryptionKey);
     await audit(pool, req, { action: 'admin.google_key_uploaded', details: { project: r.project, email: account.client_email, auth: r.auth, sheetsApi: r.sheetsApi } });
+    // Optional, same step: connect Laroseorders to Larose (read-only check, NOT the default, so nothing
+    // is copied) and compare the waiting orders with it by order ID. Nothing is written or sent.
+    if (sheetId && r.auth === 'ok') req.session.googleSetup = await connectLarose(req, sheetId);
     res.redirect('/admin/google?done=uploaded');
   }));
+
+  async function connectLarose(req, sheetId) {
+    const { rows: [b] } = await pool.query("SELECT id FROM businesses WHERE slug = 'larose-nigeria'");
+    if (!b) return { error: 'The Larose business was not found.' };
+    const apiUrl = `gsheets:${sheetId}`;
+    let { rows: [c] } = await pool.query('SELECT id FROM sheet_connections WHERE business_id = $1 AND api_url_hash = $2', [b.id, urlHash(apiUrl)]);
+    if (!c) {
+      const id = await addConnection(pool, config.encryptionKey, b.id, {
+        name: 'Laroseorders', apiUrl, tab: SKYFLY_TAB, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`, makeDefault: false });
+      c = { id };
+      await audit(pool, req, { action: 'google_sheets.connected', businessId: b.id, entityType: 'sheet_connection', entityId: id, details: { name: 'Laroseorders', default: false } });
+    }
+    const conn = await loadConnection(pool, config.encryptionKey, b.id, c.id);
+    const { status, detail } = await checkConnection(pool, conn);
+    if (status !== 'ok') return { connectionId: c.id, check: status, detail };
+    try {
+      const cmp = await reconcileWaiting(pool, conn);
+      return { connectionId: c.id, check: status, detail, waiting: cmp.waiting, present: cmp.present.length, missing: cmp.missing.length };
+    } catch (err) {
+      return { connectionId: c.id, check: status, detail, error: `Comparison failed: ${err.message}` };
+    }
+  }
 
   router.post('/admin/google/check', asyncHandler(async (req, res) => {
     if (googleStatus.configured) {

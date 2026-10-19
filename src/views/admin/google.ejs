@@ -19,6 +19,17 @@
     </dl>
     <% if (status.configured) { %><form method="post" action="/admin/google/check" style="margin-top:12px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check again</button></form><% } %>
   </div>
+  <% if (setup) { %>
+  <div class="card" data-google-setup>
+    <h2>Laroseorders (read-only check)</h2>
+    <% if (setup.error && !setup.check) { %><p class="error"><%= setup.error %></p><% } else { %>
+      <p>Connection check: <strong><%= setup.check === 'ok' ? 'Connected' : 'Not reachable' %></strong> — <%= setup.detail %></p>
+      <% if (setup.waiting !== undefined) { %><p data-google-compare>Waiting orders compared by order ID (nothing written): <strong><%= setup.present %></strong> already in the spreadsheet, <strong><%= setup.missing %></strong> missing, of <%= setup.waiting %>.</p><% } %>
+      <% if (setup.error) { %><p class="error"><%= setup.error %></p><% } %>
+      <p class="muted">Nothing has been copied. To start, open Larose → Google Sheets: make Laroseorders the default and click “Send the waiting orders” when you are ready.</p>
+    <% } %>
+  </div>
+  <% } %>
   <form class="card" method="post" action="/admin/google" enctype="multipart/form-data">
     <%- include('../partials/csrf') %>
     <h2><%= status.configured ? 'Replace the key file' : 'Upload the key file' %></h2>
@@ -28,7 +39,12 @@
     </ol>
     <% if (!canStore) { %><p class="error">SKYFLY_ENCRYPTION_KEY is not set on the server, so a key cannot be stored.</p><% } %>
     <label for="file">Key file (.json)</label>
-    <input id="file" name="file" type="file" accept=".json,application/json" required>
+    <input id="file" name="file" type="file" accept=".json,application/json">
+    <label for="key_text">…or paste the file's whole contents (starts with <code>{</code>)</label>
+    <textarea id="key_text" name="key_text" rows="4" autocomplete="off" spellcheck="false" placeholder='{"type": "service_account", …}'></textarea>
+    <label for="larose_sheet">Laroseorders spreadsheet link (optional: connect it to Larose in the same step)</label>
+    <input id="larose_sheet" name="larose_sheet" placeholder="https://docs.google.com/spreadsheets/d/…/edit">
+    <p class="muted" style="font-size:13px;margin:4px 0 0">Read-only: Skyfly checks the spreadsheet and compares the waiting orders with it by order ID. It is not made the default and nothing is copied until you choose to on Larose → Google Sheets.</p>
     <p><button type="submit">Upload and check</button></p>
   </form>
 </main>
