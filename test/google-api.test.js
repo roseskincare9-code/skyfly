@@ -330,3 +330,38 @@ describe('server key not usable', () => {
     } finally { setGoogleAccess({ serviceAccount, apiBase: base0, tokenUrl: `${base0}/token` }); }
   });
 });
+
+describe('Platform admin → Google key (the downloaded key file is uploaded, never pasted)', () => {
+  test('a key ID is refused with the reason; the key file is stored encrypted, used at once and checked', async () => {
+    await pool.query("UPDATE users SET is_platform_admin = true WHERE email = 'owner@larose.test'");
+    let page = await owner.get('/admin/google').expect(200);
+    assert.ok(page.text.includes('Upload the key file'));
+    const upload = async (content) => {
+      const _csrf = await csrfToken(owner, '/admin/google');
+      return owner.post('/admin/google').field('_csrf', _csrf).attach('file', Buffer.from(content), 'key.json');
+    };
+    const bad = await upload('0123456789abcdef0123456789abcdef01234567');
+    assert.equal(bad.status, 400);
+    assert.match(bad.text, /This file cannot be used: only a 40-character key ID, not the key file/);
+    const file = JSON.stringify({ type: 'service_account', project_id: 'skyfly-test', client_email: EMAIL, private_key: serviceAccount.private_key });
+    const ok = await upload(file);
+    assert.equal(ok.status, 302);
+    page = await owner.get('/admin/google').expect(200);
+    assert.match(page.text, /Key in use<\/dt><dd>key file uploaded in Platform admin/);
+    assert.match(page.text, /data-google-auth>ok</);
+    assert.match(page.text, /data-google-api>enabled</);
+    assert.ok(page.text.includes(`<code data-google-email>${EMAIL}</code>`));
+    assert.ok(!page.text.includes('PRIVATE KEY'), 'the key is never shown');
+    const { rows: [r] } = await pool.query("SELECT value::text AS v FROM platform_settings WHERE key = 'google_service_account'");
+    assert.ok(!r.v.includes('PRIVATE') && !r.v.includes(EMAIL), 'stored encrypted');
+    const { storedGoogleKey } = await import('../src/services/googleKey.js');
+    assert.equal((await storedGoogleKey(pool, key)).account.client_email, EMAIL);
+    // Without CSRF the upload is refused.
+    await owner.post('/admin/google').attach('file', Buffer.from(file), 'key.json').expect(403);
+  });
+
+  test('only the platform owner can open it', async () => {
+    const other = request.agent(app);
+    await other.get('/admin/google').expect(302);
+  });
+});

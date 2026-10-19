@@ -13,6 +13,14 @@ import { inviteOrAdd, readInvite } from './team.js';
 import { normalizeSubdomain, subdomainHost, subdomainState } from '../services/subdomains.js';
 import { clearOriginCache } from '../lib/origins.js';
 import { TABLE_ORDER, exportBackup, uncoveredTables } from '../services/backup.js';
+import multer from 'multer';
+import { requireCsrf } from '../lib/csrf.js';
+import { googleStatus, googleAccountEmail, readServiceAccount, useServiceAccount, googleSelfCheck } from '../services/googleSheetsApi.js';
+import { storedGoogleKey, saveGoogleKey } from '../services/googleKey.js';
+import { recheckGoogleConnections } from '../services/sheets.js';
+
+// The Google key file is small (about 2.3 KB); anything much larger is not one.
+const keyUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20000, files: 1, fields: 5 } });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
@@ -277,6 +285,45 @@ export function adminRoutes({ pool, config }) {
     await savePlatformSetting(pool, 'renewal_instructions', String(req.body.renewal_instructions ?? '').trim().slice(0, 2000));
     await audit(pool, req, { action: 'admin.settings_updated', details: { clientSignup: signup, trialDays } });
     res.redirect('/admin/settings?done=1');
+  }));
+
+  // ---- Google key: the platform's service account for Google Sheets (uploaded as the downloaded file).
+  const GOOGLE_NOTICES = { uploaded: 'Key file saved (encrypted) and checked. The results are below.', checked: 'Checked again.' };
+  const googlePage = async (req, res, { error = null, status = 200 } = {}) => {
+    const stored = await storedGoogleKey(pool, config.encryptionKey).catch(() => null);
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/google', {
+      status: googleStatus, email: googleAccountEmail(), stored, error, notice: GOOGLE_NOTICES[req.query.done] ?? null, canStore: Boolean(config.encryptionKey),
+    });
+  };
+  router.get('/admin/google', asyncHandler((req, res) => googlePage(req, res)));
+
+  router.post('/admin/google', (req, res, next) => keyUpload.single('file')(req, res, (err) => {
+    if (err) { req.uploadError = 'The file could not be read. Choose the .json key file Google downloaded (about 2 KB).'; req.body = req.body || {}; }
+    requireCsrf(req, res, next);
+  }), asyncHandler(async (req, res) => {
+    if (req.uploadError) return googlePage(req, res, { error: req.uploadError, status: 400 });
+    if (!config.encryptionKey) return googlePage(req, res, { error: 'SKYFLY_ENCRYPTION_KEY is not set on the server, so the key cannot be stored safely.', status: 400 });
+    const text = req.file?.buffer?.toString('utf8') ?? '';
+    if (!text.trim()) return googlePage(req, res, { error: 'Choose the .json key file Google downloaded when you created the key.', status: 400 });
+    const { account, problem } = readServiceAccount(text);
+    if (!account) return googlePage(req, res, { error: `This file cannot be used: ${problem}.`, status: 400 });
+    await saveGoogleKey(pool, config.encryptionKey, text);
+    const r = await useServiceAccount(account, 'key file uploaded in Platform admin');
+    console.log(`Google Sheets API: key file uploaded in Platform admin; service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
+    // Spreadsheets saved before the key worked are checked now (read-only; waiting orders stay held).
+    if (r.auth === 'ok') await recheckGoogleConnections(pool, config.encryptionKey);
+    await audit(pool, req, { action: 'admin.google_key_uploaded', details: { project: r.project, email: account.client_email, auth: r.auth, sheetsApi: r.sheetsApi } });
+    res.redirect('/admin/google?done=uploaded');
+  }));
+
+  router.post('/admin/google/check', asyncHandler(async (req, res) => {
+    if (googleStatus.configured) {
+      Object.assign(googleStatus, await googleSelfCheck());
+      console.log(`Google Sheets API: checked again; sign-in ${googleStatus.auth}; Sheets API ${googleStatus.sheetsApi}`);
+      if (googleStatus.auth === 'ok') await recheckGoogleConnections(pool, config.encryptionKey);
+    }
+    res.redirect('/admin/google?done=checked');
   }));
 
   return router;

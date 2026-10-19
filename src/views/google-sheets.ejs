@@ -45,7 +45,7 @@
       </ol>
     <% } else { %>
       <div class="warn-box" data-google-missing><strong>Skyfly's Google key on the server is not usable yet<% if (googleSetting) { %> (<%= googleSetting %>)<% } %>:</strong> <%= googleProblem || 'no GOOGLE_SERVICE_ACCOUNT_JSON setting or key file reaches the app' %>.
-        <span class="muted">In Render, put the whole downloaded key file into the setting <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> or a secret file, then redeploy (docs/GOOGLE_SHEETS.md). You can save the spreadsheet link now: it is checked again automatically once the key works.</span></div>
+        <span class="muted">Platform owner: upload the downloaded key file in <a href="/admin/google">Platform admin → Google key</a> (takes effect at once, no redeploy). You can save the spreadsheet link now: it is checked again automatically once the key works.</span></div>
     <% } %>
     <p class="muted">Skyfly writes only to its own tab (“<%= skyflyTab %>”, created automatically), never changes or deletes your other tabs, and checks every tab before adding an order so it is never added twice. Orders that were already waiting are held until you compare them with the spreadsheet and send them.</p>
     <label for="google-name">Name</label>

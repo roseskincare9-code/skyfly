@@ -1,0 +1,35 @@
+<%- include('../partials/head', { title: 'Google key' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main class="narrow">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Google key (Google Sheets)</h1>
+  <p class="muted">Skyfly's own Google service account, used by every business that connects a spreadsheet by sharing it. Upload the <strong>.json key file</strong> Google downloaded when you created the key: no copying or pasting. It is stored encrypted and never shown again.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="card" data-google-status>
+    <h2>Status</h2>
+    <dl class="kv">
+      <dt>Key in use</dt><dd><%= status.configured ? status.setting : 'None' %><% if (!status.configured && status.setting) { %> <span class="error" style="margin:0">(<%= status.setting %> cannot be used: <%= status.problem %>)</span><% } %></dd>
+      <% if (stored && !stored.account) { %><dt>Uploaded key</dt><dd class="error" style="margin:0">Cannot be used: <%= stored.problem %></dd><% } %>
+      <dt>Service account email</dt><dd><% if (email) { %><code data-google-email><%= email %></code> <span class="muted">share each spreadsheet with this email as Editor</span><% } else { %>—<% } %></dd>
+      <dt>Google Cloud project</dt><dd><%= status.project || '—' %></dd>
+      <dt>Google sign-in</dt><dd data-google-auth><%= status.configured ? (status.auth || 'checking') : '—' %></dd>
+      <dt>Google Sheets API</dt><dd data-google-api><%= status.configured ? (status.sheetsApi || 'checking') : '—' %></dd>
+      <dt>Checked</dt><dd><%= status.checkedAt ? formatDate(status.checkedAt) : '—' %></dd>
+    </dl>
+    <% if (status.configured) { %><form method="post" action="/admin/google/check" style="margin-top:12px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check again</button></form><% } %>
+  </div>
+  <form class="card" method="post" action="/admin/google" enctype="multipart/form-data">
+    <%- include('../partials/csrf') %>
+    <h2><%= status.configured ? 'Replace the key file' : 'Upload the key file' %></h2>
+    <ol style="padding-left:18px;font-size:14px">
+      <li>Find the <strong>.json</strong> file Google downloaded (Google Cloud → IAM &amp; Admin → Service accounts → your account → Keys → Add key → Create new key → JSON). The 40-character “Key ID” shown in the list is <strong>not</strong> the key.</li>
+      <li>Choose it below and click <strong>Upload and check</strong>. Skyfly signs in to Google at once and shows the result above.</li>
+    </ol>
+    <% if (!canStore) { %><p class="error">SKYFLY_ENCRYPTION_KEY is not set on the server, so a key cannot be stored.</p><% } %>
+    <label for="file">Key file (.json)</label>
+    <input id="file" name="file" type="file" accept=".json,application/json" required>
+    <p><button type="submit">Upload and check</button></p>
+  </form>
+</main>
+</body></html>

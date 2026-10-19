@@ -13,7 +13,23 @@ const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 let access = null; // { serviceAccount: { client_email, private_key }, apiBase, tokenUrl }
 let token = null;  // { value, expiresAt }
 
-export function setGoogleAccess(google) { access = google?.serviceAccount ? google : null; token = null; }
+let endpoints = { apiBase: 'https://sheets.googleapis.com', tokenUrl: 'https://oauth2.googleapis.com/token' };
+// What /healthz and the platform admin page show (yes/no and names only, never the key).
+export const googleStatus = { configured: false, setting: null, problem: null };
+
+export function setGoogleAccess(google) {
+  if (google?.apiBase) endpoints = { apiBase: google.apiBase, tokenUrl: google.tokenUrl };
+  access = google?.serviceAccount ? { ...endpoints, serviceAccount: google.serviceAccount } : null;
+  token = null;
+}
+
+// Starts using a key (the server setting, or a key file uploaded by the platform owner) and checks it at once.
+export async function useServiceAccount(account, setting) {
+  setGoogleAccess({ ...endpoints, serviceAccount: account });
+  for (const k of Object.keys(googleStatus)) delete googleStatus[k];
+  Object.assign(googleStatus, { configured: true, setting, problem: null }, await googleSelfCheck());
+  return googleStatus;
+}
 export const googleAccountEmail = () => access?.serviceAccount.client_email ?? null;
 export const SPREADSHEET_ID_RE = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,100})/;
 

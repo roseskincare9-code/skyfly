@@ -5,7 +5,8 @@ import { ensureLaroseForOwner, ensureDemoSite } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
 import { startSheetWorker, recheckGoogleConnections } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
-import { googleSelfCheck } from './services/googleSheetsApi.js';
+import { googleStatus, useServiceAccount } from './services/googleSheetsApi.js';
+import { storedGoogleKey } from './services/googleKey.js';
 
 const config = loadConfig();
 const pool = createPool(config.databaseUrl, config.databaseSsl);
@@ -16,23 +17,26 @@ const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startShe
 // Only in production (or EMAIL_WORKER=on), so local servers never email anyone.
 const jobs = config.isProduction || process.env.EMAIL_WORKER === 'on' ? startEmailWorker(pool, config) : { kick() {}, stop() {} };
 // Google Sheets API (service account): yes/no results only, shown on /healthz. Never the key.
-const google = { configured: Boolean(config.google.serviceAccount), setting: config.google.setting, problem: config.google.problem };
+const google = Object.assign(googleStatus, { configured: false, setting: config.google.setting, problem: config.google.problem });
 const app = createApp({
   pool, config, onOrderSaved: (id) => { sheets.kick(id); jobs.kick(); },
   workers: { email: jobs.status ?? null, sheets: sheets.status ?? null, google, startedAt: new Date().toISOString() },
 });
-if (google.configured) {
-  googleSelfCheck().then((r) => {
-    Object.assign(google, r);
-    console.log(`Google Sheets API: service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
-    // A spreadsheet saved while the key was not usable is checked now (same condition as the copy worker).
-    if (r.auth === 'ok' && (config.isProduction || process.env.SHEET_SYNC === 'on')) {
-      return recheckGoogleConnections(pool, config.encryptionKey);
-    }
-  }).catch((err) => { google.auth = `check failed: ${err.message}`; });
-} else if (google.setting) {
-  console.error(`Google Sheets API: ${google.setting} is set but cannot be used: ${google.problem}`);
-}
+// A key file uploaded in Platform admin is used first; otherwise the server setting.
+(async () => {
+  const stored = await storedGoogleKey(pool, config.encryptionKey).catch(() => null);
+  if (stored && !stored.account) console.error(`Google Sheets API: the key file uploaded in Platform admin cannot be used: ${stored.problem}`);
+  let r;
+  if (stored?.account) r = await useServiceAccount(stored.account, 'key file uploaded in Platform admin');
+  else if (config.google.serviceAccount) r = await useServiceAccount(config.google.serviceAccount, config.google.setting);
+  else {
+    if (config.google.setting) console.error(`Google Sheets API: ${config.google.setting} is set but cannot be used: ${config.google.problem}`);
+    return;
+  }
+  console.log(`Google Sheets API: ${r.setting}; service account of project ${r.project}; sign-in ${r.auth}; Sheets API ${r.sheetsApi}`);
+  // A spreadsheet saved while the key was not usable is checked now, read-only (same condition as the copy worker).
+  if (r.auth === 'ok' && (config.isProduction || process.env.SHEET_SYNC === 'on')) await recheckGoogleConnections(pool, config.encryptionKey);
+})().catch((err) => { google.auth = `check failed: ${err.message}`; });
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);

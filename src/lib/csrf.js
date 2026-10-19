@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
-const UPLOAD_ROUTES = /^\/businesses\/\d+\/landing-pages\/(?:(?:\d+\/)?upload|\d+\/versions\/\d+\/edit)$/;
+const UPLOAD_ROUTES = /^(?:\/businesses\/\d+\/landing-pages\/(?:(?:\d+\/)?upload|\d+\/versions\/\d+\/edit)|\/admin\/google)$/;
 
 function valid(req) {
   const sent = Buffer.from(String(req.body?._csrf ?? ''));

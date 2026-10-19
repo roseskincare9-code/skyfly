@@ -2,7 +2,7 @@
 <%- include('../partials/nav', { active: 'admin' }) %>
 <main>
   <div class="page-head"><div><h1>Client businesses</h1><p>Every workspace on this Skyfly platform, its subscription and setup.</p></div>
-    <div class="row"><a class="btn secondary" href="/admin/system">System status &amp; backup</a><a class="btn secondary" href="/admin/settings">Platform settings</a><a class="btn" href="/admin/businesses/new">New client business</a></div></div>
+    <div class="row"><a class="btn secondary" href="/admin/system">System status &amp; backup</a><a class="btn secondary" href="/admin/settings">Platform settings</a><a class="btn secondary" href="/admin/google">Google key</a><a class="btn" href="/admin/businesses/new">New client business</a></div></div>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <div class="grid">
     <% [['active', 'Active'], ['trial', 'Trial'], ['expired', 'Expired'], ['locked', 'Locked'], ['internal', 'Internal']].forEach(([k, l]) => { %>

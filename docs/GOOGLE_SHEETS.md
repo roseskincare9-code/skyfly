@@ -21,6 +21,13 @@ in Skyfly first; if Google is unavailable they wait and are copied later.
    key `GOOGLE_SERVICE_ACCOUNT_JSON`, value = the whole content of the `.json` file (open it in a text
    editor, select all, copy, paste) → **Save, rebuild and deploy**.
 
+### Easiest: upload the key file in Skyfly
+
+Skyfly → **Platform admin → Google key** → choose the downloaded `.json` file → **Upload and check**.
+Skyfly stores it encrypted (SKYFLY_ENCRYPTION_KEY), uses it at once (no redeploy), signs in to
+Google and checks the Sheets API, and shows the service account email to share spreadsheets with.
+An uploaded key is used instead of the `GOOGLE_SERVICE_ACCOUNT_JSON` setting.
+
 ## Per spreadsheet (business owner, 1 minute)
 
 1. Skyfly → the business → **Google Sheets** → "Connect by sharing your sheet". It shows an email
