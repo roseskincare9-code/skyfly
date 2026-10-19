@@ -34,7 +34,8 @@
     <h2>Laroseorders (read-only check)</h2>
     <% if (setup.error && !setup.check) { %><p class="error"><%= setup.error %></p><% } else { %>
       <p>Connection check: <strong><%= setup.check === 'ok' ? 'Connected' : 'Not reachable' %></strong> — <%= setup.detail %></p>
-      <% if (setup.waiting !== undefined) { %><p data-google-compare>Waiting orders compared by order ID (nothing written): <strong><%= setup.present %></strong> already in the spreadsheet, <strong><%= setup.missing %></strong> missing, of <%= setup.waiting %>.</p><% } %>
+      <% if (setup.title !== undefined) { %><p>Spreadsheet: <strong><%= setup.title || '(title not available)' %></strong> — <%= setup.isDefault ? 'the default for Larose (new orders go here)' : 'not the default (nothing is copied here)' %>. Check it is the file with your past orders.</p><% } %>
+      <% if (setup.waiting !== undefined) { %><p data-google-compare>Waiting orders compared by order ID (nothing written): <strong><%= setup.present %></strong> already in the spreadsheet, <strong><%= setup.missing %></strong> missing, of <%= setup.waiting %><%= setup.tests ? ` (${setup.tests} of them test orders)` : '' %>.</p><% } %>
       <% if (setup.error) { %><p class="error"><%= setup.error %></p><% } %>
       <p class="muted">Nothing has been copied. To start, open Larose → Google Sheets: make Laroseorders the default and click “Send the waiting orders” when you are ready.</p>
     <% } %>

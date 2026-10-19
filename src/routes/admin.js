@@ -342,7 +342,7 @@ export function adminRoutes({ pool, config }) {
     if (status !== 'ok') return { connectionId: c.id, check: status, detail };
     try {
       const cmp = await reconcileWaiting(pool, conn);
-      return { connectionId: c.id, check: status, detail, waiting: cmp.waiting, present: cmp.present.length, missing: cmp.missing.length };
+      return { connectionId: c.id, check: status, detail, waiting: cmp.waiting, present: cmp.present.length, missing: cmp.missing.length, tests: cmp.tests, title: cmp.title, isDefault: cmp.isDefault };
     } catch (err) {
       return { connectionId: c.id, check: status, detail, error: `Comparison failed: ${err.message}` };
     }

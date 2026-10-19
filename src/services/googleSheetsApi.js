@@ -110,6 +110,11 @@ async function api(spreadsheetId, path, { method = 'GET', body = null, query = {
 const quoteTab = (name) => `'${String(name).replace(/'/g, "''")}'`;
 const colName = (n) => { let s = ''; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
 
+// The spreadsheet's own title as Google shows it (read-only), to tell files apart in logs and pages.
+export async function spreadsheetTitle(id) {
+  return (await api(id, '', { query: { fields: 'properties.title' } })).properties?.title ?? null;
+}
+
 // Every tab with all its values (read-only).
 async function readAll(id) {
   const meta = await api(id, '', { query: { fields: 'sheets.properties.title' } });

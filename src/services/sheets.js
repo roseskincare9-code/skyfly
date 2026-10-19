@@ -9,7 +9,7 @@ import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
 export { SKYFLY_TAB };
 import { STATUS_LABELS } from '../lib/statuses.js';
-import { ensureTab, findOrderRows, appendOrder, matchOrders, inspect } from './googleSheetsApi.js';
+import { ensureTab, findOrderRows, appendOrder, matchOrders, inspect, spreadsheetTitle } from './googleSheetsApi.js';
 
 export const SHEETDB_URL_RE = /^https:\/\/sheetdb\.io\/api\/v1\/[A-Za-z0-9]{6,40}$/;
 export const GOOGLE_SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,100}(\/[^\s"'<>]*)?$/;
@@ -278,8 +278,14 @@ export async function reconcileWaiting(pool, conn) {
   const found = rows.length ? await matchOrders(sheetIdOf(conn), rows.map((r) => ({ ref: r.reference, skyflyId: r.idempotency_key }))) : [];
   const present = rows.filter((r, i) => found[i]).map((r) => r.reference);
   const missing = rows.filter((r, i) => !found[i]).map((r) => r.reference);
-  console.log(`Google Sheets: reconciliation (read-only) for connection ${conn.id} — ${rows.length} waiting: ${present.length} already in the spreadsheet, ${missing.length} missing`);
-  return { waiting: rows.length, present, missing, checkedAt: new Date().toISOString() };
+  // Which file this is (title, short ID) and whether new orders go to it (business default), for the owner and the logs.
+  const sid = sheetIdOf(conn);
+  const title = await spreadsheetTitle(sid).catch(() => null);
+  const { rows: [b] } = await pool.query('SELECT default_sheet_connection_id AS d FROM businesses WHERE id = $1', [conn.business_id]);
+  const isDefault = String(b?.d) === String(conn.id);
+  const tests = (await pool.query('SELECT count(*)::int AS n FROM orders WHERE id = ANY($1::bigint[]) AND is_test', [rows.map((r) => r.id)])).rows[0].n;
+  console.log(`Google Sheets: reconciliation (read-only) for connection ${conn.id} — spreadsheet "${title ?? '?'}" (ID ${sid.slice(0, 6)}…), ${isDefault ? 'IS' : 'is not'} the business default — ${rows.length} waiting (${tests} test orders): ${present.length} already in the spreadsheet, ${missing.length} missing`);
+  return { waiting: rows.length, present, missing, tests, title, isDefault, checkedAt: new Date().toISOString() };
 }
 
 async function targetFor(pool, key, o) {
