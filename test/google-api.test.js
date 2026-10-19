@@ -234,6 +234,12 @@ describe('server setting and startup check (yes/no only, never the key)', () => 
     google.disabled = true;
     r = await googleSelfCheck();
     assert.match(r.sheetsApi, /^disabled: enable the Google Sheets API/);
+    // A spreadsheet check names the switched-off API, not sharing, as the cause.
+    const { rows: [c] } = await pool.query("SELECT id, business_id FROM sheet_connections WHERE provider = 'google_api' ORDER BY id LIMIT 1");
+    const { loadConnection, checkConnection } = await import('../src/services/sheets.js');
+    const { detail } = await checkConnection(pool, await loadConnection(pool, key, c.business_id, c.id));
+    assert.match(detail, /The Google Sheets API is turned off for the Google Cloud project/);
+    assert.ok(!/click Share/.test(detail));
     google.disabled = false;
   });
 });

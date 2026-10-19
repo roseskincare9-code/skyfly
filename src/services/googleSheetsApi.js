@@ -96,6 +96,10 @@ async function api(spreadsheetId, path, { method = 'GET', body = null, query = {
   const json = await res.json().catch(() => null);
   if (res.ok) return json ?? {};
   const msg = String(json?.error?.message || '').slice(0, 160);
+  // The Sheets API is switched off for the service account's Google Cloud project: not a sharing problem.
+  if (res.status === 403 && /has not been used|is disabled|SERVICE_DISABLED|not been enabled/i.test(msg)) {
+    throw new GoogleApiError(`The Google Sheets API is turned off for the Google Cloud project of ${googleAccountEmail()}. Enable it in Google Cloud → APIs & Services → Google Sheets API → Enable; Skyfly checks again automatically every 5 minutes (Google: ${msg}).`, 403);
+  }
   if (res.status === 403 || res.status === 404) {
     throw new GoogleApiError(`Skyfly cannot open this spreadsheet. In Google Sheets, click Share and add ${googleAccountEmail()} as Editor${msg ? ` (Google: ${msg})` : ''}.`, 403);
   }
