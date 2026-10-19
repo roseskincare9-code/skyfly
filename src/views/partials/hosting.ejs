@@ -13,8 +13,15 @@
   <% } else { %>
     <dl class="kv">
       <dt>Status</dt><dd><% if (live) { %><span class="pill active">Published</span><% } else { %><span class="pill">Not published</span><% } %></dd>
-      <% if (live && hosting.publishedUrl) { %><dt>Live address</dt><dd><a href="<%= hosting.publishedUrl %>" target="_blank" rel="noopener" id="live-url"><%= hosting.publishedUrl %></a></dd><% } %>
-      <% if (live && hosting.domainUrl) { %><dt>Custom domain</dt><dd><a href="<%= hosting.domainUrl %>" target="_blank" rel="noopener"><%= hosting.domainUrl %></a></dd><% } %>
+      <% if (live && hosting.publishedUrl) { %><dt>Live address</dt><dd>
+        <input id="live-url-text" readonly value="<%= hosting.publishedUrl %>" style="max-width:420px" aria-label="Public address for ads">
+        <button type="button" class="secondary" data-copy="live-url-text">Copy link</button>
+        <a href="<%= hosting.publishedUrl %>" target="_blank" rel="noopener" id="live-url">Open ↗</a>
+        <div class="muted" style="font-size:13px">Use this address in your ads. It stays the same when you edit and publish new versions.</div></dd><% } %>
+      <% if (live && hosting.domainUrl) { %><dt>Custom domain</dt><dd>
+        <input id="domain-url-text" readonly value="<%= hosting.domainUrl %>" style="max-width:420px" aria-label="Custom domain address">
+        <button type="button" class="secondary" data-copy="domain-url-text">Copy link</button>
+        <a href="<%= hosting.domainUrl %>" target="_blank" rel="noopener">Open ↗</a></dd><% } %>
     </dl>
     <div class="row" style="margin-top:12px">
       <% if (live) { %>
@@ -101,7 +108,15 @@
       <li>In Render → your Skyfly service → Settings → Custom Domains, add <code><%= page.custom_domain %></code>. Render issues the HTTPS certificate.</li>
       <li>Publish this page, then check below.</li>
     </ol>
-    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/domain/check"><%- include('csrf') %><button class="secondary" type="submit">Check DNS</button></form>
-    <% if (page.domain_status) { %><p class="<%= page.domain_status.startsWith('ok') ? 'notice' : 'warn-box' %>" style="margin-top:10px"><%= page.domain_status.replace(/^(ok|not_ready): /, '') %> <span class="muted">(checked <%= formatDate(page.domain_checked_at) %>)</span></p><% } %>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/domain/check"><%- include('csrf') %><button class="secondary" type="submit">Check domain (DNS, HTTPS, live)</button></form>
+    <% if (page.domain_status) { const st = page.domain_status; const dnsOk = !/Waiting for DNS/.test(st); const httpsOk = st.startsWith('ok') || /HTTPS ✓/.test(st); %>
+      <p data-domain-steps style="margin:10px 0 4px">
+        <span class="pill <%= dnsOk ? 'delivered' : 'pending' %>">DNS <%= dnsOk ? '✓' : 'pending' %></span>
+        <span class="pill <%= httpsOk ? 'delivered' : 'pending' %>">HTTPS <%= httpsOk ? '✓' : 'pending' %></span>
+        <span class="pill <%= st.startsWith('ok') ? 'delivered' : 'pending' %>">Live <%= st.startsWith('ok') ? '✓' : 'not yet' %></span>
+      </p>
+      <p class="<%= st.startsWith('ok') ? 'notice' : 'warn-box' %>" style="margin-top:6px"><%= st.replace(/^(ok|not_ready): /, '') %> <span class="muted">(checked <%= formatDate(page.domain_checked_at) %>)</span></p>
+    <% } else { %><p class="muted">Not checked yet: the domain is not live until all three checks pass.</p><% } %>
   <% } %>
 </div>
+<script src="/static/copy.js" defer></script>

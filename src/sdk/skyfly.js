@@ -265,20 +265,33 @@
     box.classList.add('sky-co');
     var page = box.getAttribute('data-skyfly-checkout') || pageKey;
     var doneKey = 'skyfly_done_' + page;
-    var cat = null; var st8 = { product: box.getAttribute('data-product') || '', qty: 1, c: {} }; var started = false;
+    var cat = null; var st8 = { product: box.getAttribute('data-product') || '', qty: 1, c: {}, addon: false }; var started = false;
     box.innerHTML = '<p class="sky-muted">Loading the order form…</p>';
     function start() { if (!started) { started = true; track('InitiateCheckout'); } }
     function product() { for (var i = 0; i < cat.products.length; i++) if (cat.products[i].code === st8.product) return cat.products[i]; return null; }
     function wa() { return cat.whatsapp ? '<p class="sky-muted" style="margin-top:14px">Questions? <a href="https://wa.me/' + esc(cat.whatsapp) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a> (optional)</p>' : ''; }
+    // The page's optional add-on, when the customer has added it.
+    function addon() { return st8.addon && cat.upsell ? cat.upsell : null; }
+    function sum() { var p = product(); return p ? p.price * st8.qty + (addon() ? addon().price : 0) : 0; }
     function showConfirmation(r) {
-      box.innerHTML = '<div class="sky-ok" role="status"><h3>Thank you! Your order is confirmed.</h3><div class="sky-rows">' +
+      // Shown only for Skyfly's reply for a saved order; WhatsApp is optional (the order is already saved).
+      box.innerHTML = '<div class="sky-ok" role="status"><h3>Thank you! We have received your order.</h3><div class="sky-rows">' +
         '<div><span>Order reference</span><b data-skyfly-reference>' + esc(r.reference) + '</b></div>' +
         (r.summary ? '<div><span>Order</span><b>' + esc(r.summary) + '</b></div>' : '') +
-        '<div><span>Total</span><b>' + esc(money(r.total, r.currency)) + '</b></div></div>' +
-        '<p>We will contact you to arrange delivery. Keep your order reference.</p>' +
+        '<div><span>Total</span><b data-skyfly-total>' + esc(money(r.total, r.currency)) + '</b></div></div>' +
+        '<p>Our team will contact you shortly to confirm the details and delivery. You can speak with our representative on WhatsApp using the button below. Please keep your order reference for follow-up.</p>' +
+        (r.whatsappUrl ? '<a class="sky-btn" style="background:#25d366;text-align:center;text-decoration:none" data-skyfly-whatsapp href="' + esc(r.whatsappUrl) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a>' : '') +
         (r.confirmationUrl ? '<p><a href="' + esc(r.confirmationUrl) + '" target="_blank" rel="noopener">View your order details</a></p>' : '') +
-        '<button type="button" class="sky-link" data-again>Place another order</button></div>' + wa();
-      box.querySelector('[data-again]').onclick = function () { store(doneKey, ''); st8.c = {}; render(); };
+        '<button type="button" class="sky-link" data-again>Place another order</button></div>';
+      box.querySelector('[data-again]').onclick = function () { store(doneKey, ''); st8.c = {}; st8.addon = false; render(); };
+    }
+    function upsellBox() {
+      var u = cat.upsell;
+      if (!u) return '';
+      return '<div class="sky-up" data-skyfly-upsell style="border:2px dashed #7c5cff;border-radius:12px;padding:12px;margin-top:14px;background:#f6f3ff">' +
+        '<b>' + esc(u.headline) + '</b>' + (u.text ? '<p class="sky-muted" style="margin:6px 0">' + esc(u.text) + '</p>' : '') +
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span>' + esc(u.name) + ' · <b>' + esc(money(u.price, cat.currency)) + '</b></span>' +
+        '<button type="button" class="sky-btn" data-addon style="width:auto;margin:0 0 0 auto;padding:10px 16px">' + (st8.addon ? 'Added ✓ (remove)' : 'Add') + '</button></div></div>';
     }
     function form() {
       var opts = cat.products.map(function (p) {
@@ -298,13 +311,17 @@
         '<label style="font-weight:400"><input type="checkbox" name="consent" style="width:auto"' + (c.marketingConsent ? ' checked' : '') + '> Send me offers by email (optional)</label>' +
         '<label for="sky-notes">Notes (optional)</label><textarea id="sky-notes" name="notes">' + esc(c.notes) + '</textarea>' +
         '<div class="sky-hp" aria-hidden="true"><input name="website" tabindex="-1" autocomplete="off"></div>' +
+        upsellBox() +
         '<div class="sky-total" data-total></div><div class="sky-err" data-err hidden role="alert"></div>' +
         '<button class="sky-btn" type="submit">' + esc(box.getAttribute('data-button') || 'Review my order') + '</button></form>' + wa();
       var f = box.querySelector('form');
       function total() {
         var p = product();
-        box.querySelector('[data-total]').innerHTML = p ? 'Total: <b>' + esc(money(p.price * st8.qty, cat.currency)) + '</b> <span class="sky-muted">(confirmed by our system when you order)</span>' : '';
+        box.querySelector('[data-total]').innerHTML = p ? '<div class="sky-muted">' + esc(p.name) + ' × ' + st8.qty + (addon() ? ' + ' + esc(addon().name) : '') + '</div>' +
+          'Total: <b data-skyfly-total>' + esc(money(sum(), cat.currency)) + '</b> <span class="sky-muted">(confirmed by our system when you order)</span>' : '';
       }
+      var addBtn = box.querySelector('[data-addon]');
+      if (addBtn) addBtn.onclick = function () { st8.addon = !st8.addon; addBtn.textContent = st8.addon ? 'Added ✓ (remove)' : 'Add'; total(); };
       f.addEventListener('focusin', start);
       f.addEventListener('change', function (e) {
         if (e.target.name === 'sky_product') { st8.product = e.target.value; Array.prototype.forEach.call(f.querySelectorAll('.sky-opt'), function (o) { o.classList.toggle('on', o.querySelector('input').checked); }); }
@@ -331,7 +348,8 @@
       var p = product(); var c = st8.c;
       box.innerHTML = '<h3>Review your order</h3><div class="sky-rows">' +
         '<div><span>Package</span><b>' + esc(p.name) + ' × ' + st8.qty + '</b></div>' +
-        '<div><span>Total</span><b>' + esc(money(p.price * st8.qty, cat.currency)) + '</b></div>' +
+        (addon() ? '<div><span>Add-on</span><b>' + esc(addon().name) + ' (' + esc(money(addon().price, cat.currency)) + ')</b></div>' : '') +
+        '<div><span>Total</span><b>' + esc(money(sum(), cat.currency)) + '</b></div>' +
         '<div><span>Name</span><b>' + esc(c.name) + '</b></div><div><span>Phone</span><b>' + esc(c.phone) + '</b></div>' +
         '<div><span>Deliver to</span><b>' + esc(c.address + (c.state ? ', ' + c.state : '')) + '</b></div>' +
         (c.email ? '<div><span>Email</span><b>' + esc(c.email) + '</b></div>' : '') + '</div>' +
@@ -343,10 +361,14 @@
       btn.onclick = function () {
         if (btn.disabled) return;
         btn.disabled = true; btn.textContent = 'Placing your order…';
-        submitOrder({ landingPage: page, customer: st8.c, items: [{ product: st8.product, quantity: st8.qty }], website: st8.website || '' }).then(function (r) {
+        var items = [{ product: st8.product, quantity: st8.qty }];
+        if (addon()) items.push({ product: addon().code, quantity: 1, upsell: true });
+        submitOrder({ landingPage: page, customer: st8.c, items: items, website: st8.website || '' }).then(function (r) {
           // Success only when Skyfly has saved the order and returned its reference.
           if (r && r.ok === true && r.reference) {
-            var conf = { reference: r.reference, total: r.total, currency: r.currency, confirmationUrl: r.confirmationUrl, summary: p.name + ' × ' + st8.qty };
+            // The summary and total are Skyfly's (what was saved and priced), not the browser's.
+            var saved = (r.items || []).map(function (i) { return i.name + ' × ' + i.quantity + (i.upsell ? ' (add-on)' : ''); }).join(', ');
+            var conf = { reference: r.reference, total: r.total, currency: r.currency, confirmationUrl: r.confirmationUrl, whatsappUrl: r.whatsappUrl, summary: saved || p.name + ' × ' + st8.qty };
             store(doneKey, JSON.stringify(conf));
             showConfirmation(conf);
             return;

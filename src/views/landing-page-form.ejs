@@ -26,6 +26,21 @@
       <label style="color:var(--text)"><input type="checkbox" name="products" value="<%= p.id %>" <%= page.productIds.includes(String(p.id)) ? 'checked' : '' %>>
         <%= p.name %> — <%= formatMoney(p.price_minor, business.currency) %> <span class="muted">(<code><%= p.code %></code>)<%= p.active ? '' : ' · unavailable' %></span></label>
     <% }) %>
+    <% if (page.id) { %>
+    <fieldset data-upsell style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:14px">
+      <legend style="font-weight:600">Upsell at checkout (optional)</legend>
+      <p class="muted" style="font-size:13px;margin-top:0">Shown under the order details with an <strong>Add</strong> button; the total updates when the customer adds it. Skyfly prices it from your product list when the order is saved. Pages using Skyfly's checkout show it automatically.</p>
+      <label for="upsell_product_id">Product offered</label>
+      <select id="upsell_product_id" name="upsell_product_id">
+        <option value="">No upsell</option>
+        <% products.filter((p) => p.active).forEach((p) => { %><option value="<%= p.id %>" <%= String(page.upsell_product_id) === String(p.id) ? 'selected' : '' %>><%= p.name %> — <%= formatMoney(p.price_minor, business.currency) %></option><% }) %>
+      </select>
+      <label for="upsell_headline">Headline</label>
+      <input id="upsell_headline" name="upsell_headline" maxlength="120" value="<%= page.upsell_headline || '' %>" placeholder="e.g. Add a Glow Toner for a better result">
+      <label for="upsell_text">Short description (what is included)</label>
+      <input id="upsell_text" name="upsell_text" maxlength="400" value="<%= page.upsell_text || '' %>" placeholder="e.g. 100ml toner, used after washing">
+    </fieldset>
+    <% } %>
     <label style="color:var(--text);margin-top:14px"><input type="checkbox" name="test_mode" <%= page.test_mode ? 'checked' : '' %>> Test mode: every order from this page is saved as a <strong>test order</strong> (not counted in sales, never sent to Meta/TikTok as a Purchase, never emailed)</label>
     <label for="notes">Notes</label>
     <textarea id="notes" name="notes" maxlength="2000"><%= page.notes || '' %></textarea>

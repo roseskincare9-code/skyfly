@@ -97,7 +97,12 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));
       }
       // Reached only after the order is committed: the reply is the proof of a saved order.
-      const { rows: [biz] } = await pool.query('SELECT b.slug FROM orders o JOIN businesses b ON b.id = o.business_id WHERE o.id = $1', [order.id]);
+      const { rows: [biz] } = await pool.query(
+        'SELECT b.slug, b.name, b.whatsapp_number FROM orders o JOIN businesses b ON b.id = o.business_id WHERE o.id = $1', [order.id]);
+      const { rows: lines } = await pool.query(
+        'SELECT product_name, quantity, line_total_minor, is_upsell FROM order_items WHERE order_id = $1 ORDER BY id', [order.id]);
+      // The business's own WhatsApp number (the Larose default for Larose only), with the order reference prefilled.
+      const number = biz.whatsapp_number || (biz.slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
       res.status(replayed ? 200 : 201).json({
         ok: true,
         saved: true,
@@ -108,6 +113,9 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         total: Number(order.total_minor) / 100,
         currency: order.currency,
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,
+        // What Skyfly saved and priced (packages and any add-on), for the page's thank-you message.
+        items: lines.map((l) => ({ name: l.product_name, quantity: l.quantity, total: Number(l.line_total_minor) / 100, upsell: l.is_upsell })),
+        whatsappUrl: number ? `https://wa.me/${whatsappDigits(number)}?text=${encodeURIComponent(`Hi ${biz.name}! I just placed order ${order.reference}. Please confirm my order. Thank you!`)}` : null,
         replayed,
         // Test orders ("TEST ORDER …", or any order from a page in test mode) are never counted as purchases.
         test: Boolean(order.is_test) || isTestName(input.customer.name),
@@ -150,8 +158,11 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.set('Cache-Control', 'public, max-age=60');
     const { rows: [page] } = await pool.query(
-      `SELECT lp.id, lp.slug, b.currency, b.whatsapp_number, b.slug AS business_slug
-         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND lp.status = 'active'`, [String(req.params.slug)]);
+      `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, b.currency, b.whatsapp_number, b.slug AS business_slug,
+              u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price
+         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
+         LEFT JOIN products u ON u.id = lp.upsell_product_id AND u.active AND u.business_id = lp.business_id
+        WHERE lp.slug = $1 AND lp.status = 'active'`, [String(req.params.slug)]);
     if (!page) return res.status(404).json({ page: req.params.slug, products: [] });
     const { rows } = await pool.query(
       `SELECT p.code, p.name, p.price_minor FROM products p JOIN landing_page_products lpp ON lpp.product_id = p.id
@@ -160,6 +171,11 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.json({
       page: page.slug, currency: page.currency, whatsapp: number ? whatsappDigits(number) : null,
       products: rows.map((p) => ({ code: p.code, name: p.name, price: Number(p.price_minor) / 100 })),
+      // Optional add-on offered at checkout (null when none is set). Skyfly prices it again on saving.
+      upsell: page.upsell_code ? {
+        code: page.upsell_code, name: page.upsell_name, price: Number(page.upsell_price) / 100,
+        headline: page.upsell_headline || `Add ${page.upsell_name}`, text: page.upsell_text || '',
+      } : null,
     });
   }));
 
@@ -181,7 +197,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
       return res.status(404).render('error', { message: 'Order not found.' });
     }
     const items = await pool.query(
-      'SELECT product_name, quantity, unit_price_minor, line_total_minor FROM order_items WHERE order_id = $1 ORDER BY id',
+      'SELECT product_name, quantity, unit_price_minor, line_total_minor, is_upsell FROM order_items WHERE order_id = $1 ORDER BY id',
       [order.id],
     );
     const firstName = order.customer_name.split(' ')[0];

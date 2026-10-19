@@ -120,6 +120,15 @@ For the existing Larose page there is a ready-made patch: `integrations/laroseni
 `https://YOUR-SKYFLY/api/public/orders` with `Authorization: Bearer sky_…`.
 The request body is the same as in the README. Never put an API key in a web page.
 
+### Upsell (optional add-on at checkout)
+
+Landing pages → the page → **Upsell at checkout**: choose one of your products (not one of the
+page's packages), a headline and what is included. Customers see it under their details with an
+**Add** button; the total updates at once. Skyfly prices the add-on from your product list when the
+order is saved (browser totals are never used), and marks it "Add-on" in the order, the
+confirmation and the Google Sheet. Pages using Skyfly's checkout show it automatically; the Larose
+page shows it too. "No upsell" removes it.
+
 ## 3. Pixels
 
 **Pixels** screen → for Meta and/or TikTok:

@@ -55,7 +55,21 @@ await step('C. The checkout shows Skyfly\'s own products and prices', async () =
 const browser = await chromium.launch();
 const phone = await browser.newContext({ ...devices['Pixel 5'] });
 const adRequests = [];
-await phone.route(/^https:\/\/([a-z0-9-]+\.)*(facebook\.(com|net)|tiktok\.com)\//, (r) => { adRequests.push(r.request().url()); return r.abort(); });
+// Meta's script loads normally; its event hits are counted and answered here, never sent to Meta.
+const pixelHits = [];
+await phone.route(/^https:\/\/([a-z0-9-]+\.)*(facebook\.(com|net)|tiktok\.com)\//, (r) => {
+  const u = new URL(r.request().url());
+  adRequests.push(u.href);
+  if (/\/tr\/?$/.test(u.pathname)) {
+    // Query string, urlencoded or multipart body.
+    let text = `${u.search} ${r.request().postData() || ''}`;
+    try { text = decodeURIComponent(text.replace(/\+/g, ' ')); } catch { /* keep as is */ }
+    const field = (n) => text.match(new RegExp(`[?&\\s]${n}=([^&\\s]+)`))?.[1] ?? text.match(new RegExp(`name="${n}"\\r?\\n\\r?\\n([^\\r\\n]+)`))?.[1] ?? null;
+    pixelHits.push({ id: field('id'), ev: field('ev') });
+    return r.fulfill({ status: 200, contentType: 'image/gif', body: '' });
+  }
+  return u.hostname.endsWith('facebook.net') ? r.continue() : r.abort();
+});
 const shop = await phone.newPage();
 let reply = null;
 shop.on('response', async (r) => { if (r.url().endsWith('/api/public/orders') && r.request().method() === 'POST' && r.status() !== 500) reply = await r.json().catch(() => null); });
@@ -65,6 +79,7 @@ const fill = async () => {
   await shop.selectOption('#sky-qty', '2');
   await shop.fill('#sky-name', NAME); await shop.fill('#sky-phone', '08012345678');
   await shop.fill('#sky-address', 'TEST ORDER - do not deliver, automated check'); await shop.fill('#sky-state', 'Lagos');
+  if (catalog.upsell) await shop.locator('[data-skyfly-upsell] button:text-is("Add")').click();
   await shop.click('text=Review my order');
 };
 
@@ -87,11 +102,28 @@ await step('E. A labelled test order is saved; the confirmation shows Skyfly\'s 
   await shop.waitForSelector('.sky-ok', { timeout: 60000 });
   reference = (await shop.textContent('[data-skyfly-reference]')).trim();
   const duo = catalog.products[1];
+  const addon = catalog.upsell?.price ?? 0;
   assert(reply?.saved === true && reply.reference === reference && reply.business === 'skyfly-demo', JSON.stringify(reply));
-  assert(reply.total === duo.price * 2 && reply.currency === 'NGN', `total ${reply.total} ${reply.currency}`);
+  assert(reply.total === duo.price * 2 + addon && reply.currency === 'NGN', `total ${reply.total} ${reply.currency}`);
   assert(reply.test === true, 'demo orders must be test orders');
   await shop.screenshot({ path: 'live-screenshots/demo-confirmation-mobile.png' });
-  return `${reference}, ₦${reply.total.toLocaleString('en-NG')} (${duo.name} × 2), test order`;
+  return `${reference}, ₦${reply.total.toLocaleString('en-NG')} (${duo.name} × 2${addon ? ` + add-on ₦${addon.toLocaleString('en-NG')}` : ''}, priced by Skyfly), test order`;
+});
+
+await step('E2. The upsell: shown with what is included, Add updates the total, saved as an add-on and priced by Skyfly', async () => {
+  if (!catalog.upsell) throw new Blocked('no upsell set on the demo page on this deployment');
+  const line = (reply.items || []).find((i) => i.upsell);
+  assert(line && line.name === catalog.upsell.name && line.total === catalog.upsell.price && line.quantity === 1, JSON.stringify(reply.items));
+  return `"${catalog.upsell.headline}": ${line.name} ₦${line.total.toLocaleString('en-NG')} saved as add-on`;
+});
+
+await step('E3. Thank-you message (only after the save) with a WhatsApp button for the configured number and the order reference', async () => {
+  const ok = (await shop.textContent('.sky-ok')).replace(/\s+/g, ' ');
+  assert(/Thank you! We have received your order\./.test(ok) && /Our team will contact you shortly to confirm the details and delivery\./.test(ok), ok.slice(0, 200));
+  assert(!/24 hours/.test(ok), 'promises 24 hours');
+  const wa = await shop.getAttribute('[data-skyfly-whatsapp]', 'href');
+  assert(new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`).test(wa), `WhatsApp link ${wa}`);
+  return `WhatsApp ${wa.slice(0, 40)}… (reference prefilled)`;
 });
 
 await step('F. The order is stored: Skyfly\'s confirmation page (read from the database) shows it', async () => {
@@ -113,14 +145,17 @@ await step('G. Refreshing and sending the same details again returns the same or
   return `same reference ${again}, replayed`;
 });
 
-await step('H. The demo page loads only Skyfly\'s own Meta pixel (1325736489534601); no Purchase for this test order (intercepted, nothing sent to Meta)', async () => {
+await step('H. The demo page loads only Skyfly\'s own Meta pixel (1325736489534601): PageView fires on the published page; no Purchase for this test order (intercepted, nothing sent to Meta)', async () => {
   const cfg = await shop.evaluate(() => window.__SKYFLY__ && window.__SKYFLY__.pixels);
   const ids = (cfg || []).map((p) => p.id);
   assert(ids.length === 0 || (ids.length === 1 && ids[0] === '1325736489534601'), `pixels on the page: ${JSON.stringify(cfg)}`);
   const other = adRequests.filter((u) => !/connect\.facebook\.net\/en_US\/fbevents\.js/.test(u) && !u.includes('1325736489534601'));
   assert(other.length === 0, `unexpected ad requests: ${other.join(', ')}`);
-  assert(!adRequests.some((u) => /[?&]ev=Purchase/.test(u)), 'no Purchase');
-  return ids.length ? `pixel ${ids[0]} configured; script requests: ${adRequests.length}` : 'no pixel configured on this deployment';
+  assert(!pixelHits.some((h) => h.ev === 'Purchase'), 'Purchase sent for a test order');
+  if (!ids.length) return 'no pixel configured on this deployment';
+  const views = pixelHits.filter((h) => h.id === '1325736489534601' && h.ev === 'PageView').length;
+  assert(views >= 1, `no PageView for 1325736489534601 (hits: ${JSON.stringify(pixelHits)})`);
+  return `pixel ${ids[0]}: PageView ×${views} on the published page, no Purchase for the test order (events: ${[...new Set(pixelHits.map((h) => h.ev))].join(', ')}; intercepted, not sent to Meta)`;
 });
 
 await step('I. A desktop visitor gets the same page and checkout', async () => {

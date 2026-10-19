@@ -11,7 +11,7 @@ import { saveVersion } from '../hosting/storage.js';
 import { LIMITS } from '../hosting/files.js';
 import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
-import { checkDomain, normalizeDomain } from '../hosting/domains.js';
+import { domainReadiness, normalizeDomain } from '../hosting/domains.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: LIMITS.uploadBytes, files: 1, fields: 10 } });
 
@@ -54,11 +54,16 @@ function readPage(body) {
   const notes = String(body.notes ?? '').trim().slice(0, 2000) || null;
   const productIds = [].concat(body.products ?? []).filter((id) => /^\d+$/.test(id));
   const testMode = body.test_mode === 'on';
+  // Optional upsell: one of the business's products, offered with an "Add" button at checkout.
+  const upsellProductId = /^\d+$/.test(String(body.upsell_product_id ?? '')) ? String(body.upsell_product_id) : null;
+  const upsellHeadline = String(body.upsell_headline ?? '').trim().slice(0, 120) || null;
+  const upsellText = String(body.upsell_text ?? '').trim().slice(0, 400) || null;
   const errors = [];
   if (!name) errors.push('Name is required.');
   if (!slug) errors.push('Form key is required.');
   if (url === undefined) errors.push('Enter a valid http(s) URL.');
-  return { name, slug, url: url ?? null, status, notes, productIds, testMode, errors };
+  if (upsellProductId && productIds.includes(upsellProductId)) errors.push('The upsell must be a different product from the packages on the page.');
+  return { name, slug, url: url ?? null, status, notes, productIds, testMode, upsellProductId, upsellHeadline, upsellText, errors };
 }
 
 export function landingPageRoutes({ pool, config }) {
@@ -90,6 +95,12 @@ export function landingPageRoutes({ pool, config }) {
         await client.query(
           'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, test_mode = $8, updated_at = now() WHERE id = $6 AND business_id = $7',
           [page.name, page.slug, page.url, page.status, page.notes, id, businessId, page.testMode === true],
+        );
+        // Only one of this business's own products can be the upsell.
+        await client.query(
+          `UPDATE landing_pages SET upsell_product_id = (SELECT id FROM products WHERE id = $2::bigint AND business_id = $3),
+                  upsell_headline = $4, upsell_text = $5 WHERE id = $1`,
+          [id, page.upsellProductId ?? null, businessId, page.upsellHeadline ?? null, page.upsellText ?? null],
         );
         await client.query('DELETE FROM landing_page_products WHERE landing_page_id = $1', [id]);
       } else {
@@ -310,7 +321,7 @@ export function landingPageRoutes({ pool, config }) {
     const page = await loadPage(req);
     if (!page?.custom_domain) return res.status(404).render('error', { message: 'No domain to check.' });
     const target = config.renderHost || new URL(config.publicBaseUrl || 'http://localhost').hostname;
-    const result = await checkDomain(page.custom_domain, target);
+    const result = await domainReadiness(page.custom_domain, target);
     await pool.query('UPDATE landing_pages SET domain_status = $1, domain_checked_at = now() WHERE id = $2', [`${result.ok ? 'ok' : 'not_ready'}: ${result.message}`, page.id]);
     res.redirect(`${res.locals.base}/landing-pages/${page.id}`);
   }));

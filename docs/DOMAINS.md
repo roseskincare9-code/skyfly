@@ -36,3 +36,16 @@ dashboard cookies (the session cookie is host-only).
 
 Existing links (the Render address, the Larose GitHub Pages site) keep working; nothing
 moves until you change it.
+
+## One landing page on your own domain (e.g. `shop.yourbrand.com`)
+
+1. Publish the page in Skyfly. Its Skyfly address (`https://skyfly-gybf.onrender.com/p/<page>/`)
+   works at once; copy it with **Copy link** on the page (Landing pages → the page → Hosting).
+2. On the same page, under **Custom domain**, enter the domain and click **Save domain**.
+3. At your domain provider: a **CNAME** for the domain pointing to `skyfly-gybf.onrender.com`
+   (for a root domain without `www`/`shop`, an **A** record to `216.24.57.1`).
+4. In Render → skyfly → Settings → Custom Domains, add the same domain. Render verifies it and
+   issues the HTTPS certificate.
+5. Click **Check domain (DNS, HTTPS, live)**. Skyfly shows three steps and calls the domain live
+   only when all three are proven: DNS points at Skyfly, HTTPS answers with a valid certificate,
+   and the published page is actually served there. Until then, keep advertising the Skyfly address.

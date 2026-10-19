@@ -1,6 +1,7 @@
 // End-to-end: import a page with no order form, add Skyfly's drop-in checkout, publish it on
 // the Skyfly address (/p/<slug>/, sandboxed), order on a phone: validation, a failed save,
-// review, a saved order shown once, Purchase once; desktop view; the order in the dashboard.
+// review, an upsell added with one button, a saved order shown once with the thank-you message and
+// WhatsApp hand-off, Purchase once with the server total; desktop view; the order in the dashboard.
 //   npm run test:e2e:checkout
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -72,6 +73,20 @@ try {
     await Promise.all([dash.waitForURL(/done=published/), dash.locator('button:text-is("Publish this version")').first().click()]);
     pageUrl = await dash.getAttribute('#live-url', 'href');
     assert.equal(pageUrl, `${DASH}/p/glow-drop/`);
+    assert.equal(await dash.inputValue('#live-url-text'), pageUrl, 'copyable public address');
+    assert.equal(await dash.locator('button[data-copy="live-url-text"]').count(), 1);
+  });
+
+  await step('owner offers an upsell on the page (one of the business\'s products)', async () => {
+    await pool.query("INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES ($1, 'glow-toner', 'Glow Toner', 850000, 9)", [businessId]);
+    await dash.goto(`${DASH}/businesses/${businessId}/landing-pages/${pageId}`);
+    await dash.selectOption('#upsell_product_id', { label: 'Glow Toner — ₦8,500' });
+    await dash.fill('#upsell_headline', 'Add a Glow Toner');
+    await dash.fill('#upsell_text', '100ml toner, used after washing');
+    await Promise.all([dash.waitForURL(/landing-pages$/), dash.click('form:has(#upsell_product_id) button[type=submit]')]);
+    const { rows: [lp] } = await pool.query('SELECT upsell_headline, status FROM landing_pages WHERE id = $1', [pageId]);
+    assert.equal(lp.upsell_headline, 'Add a Glow Toner');
+    assert.equal(lp.status, 'active', 'still published');
   });
 
   const phone = await browser.newContext({ ...devices['Pixel 5'] });
@@ -111,11 +126,23 @@ try {
     assert.equal(purchases().length, 0, 'clicking without completing is not a Purchase');
   });
 
+  await step('the upsell shows what is included; Add updates the total (Remove takes it off again)', async () => {
+    const box = shop.locator('[data-skyfly-upsell]');
+    assert.match(await box.textContent(), /Add a Glow Toner.*100ml toner.*Glow Toner · ₦8,500/s);
+    await box.locator('button:text-is("Add")').click();
+    assert.match(await shop.textContent('[data-total]'), /Package 2.*× 2 \+ Glow Toner.*₦74,500/s);
+    await box.locator('button[data-addon]').click();
+    assert.match(await shop.textContent('[data-total]'), /₦66,000/);
+    await box.locator('button[data-addon]').click();
+    assert.match(await shop.textContent('[data-total]'), /₦74,500/);
+    assert.equal(purchases().length, 0, 'adding the upsell is not a Purchase');
+  });
+
   await step('a failed save shows an honest error, no confirmation, no order, no Purchase', async () => {
     await shop.fill('#sky-name', 'Ada Checkout'); await shop.fill('#sky-phone', '08031234567');
     await shop.fill('#sky-address', '4 Allen Avenue, Ikeja'); await shop.fill('#sky-state', 'Lagos');
     await shop.click('text=Review my order');
-    assert.match(await shop.textContent('.sky-rows'), /Package 2.*× 2/);
+    assert.match(await shop.textContent('.sky-rows'), /Package 2.*× 2.*Add-on.*Glow Toner.*₦74,500/s);
     await shop.route('**/api/public/orders', (route) => route.fulfill({ status: 500, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': 'null' }, body: '{"ok":false,"message":"We could not save your order. Please try again in a moment."}' }));
     await shop.click('text=Place my order');
     await shop.waitForSelector('[data-err]:not([hidden])', { timeout: 10000 }).catch(async (e) => { console.log('BOX:', await shop.textContent('.sky-co')); throw e; });
@@ -127,7 +154,7 @@ try {
   });
 
   let reference;
-  await step('placing the order (tapped twice) saves it once and confirms it with Skyfly\'s reference and total', async () => {
+  await step('placing the order (tapped twice) saves it once with the add-on and shows the thank-you message, total and WhatsApp hand-off', async () => {
     await shop.click('text=Place my order');
     await shop.click('[data-place]', { force: true, noWaitAfter: true }).catch(() => {});
     await shop.waitForSelector('.sky-ok');
@@ -135,12 +162,21 @@ try {
     const saved = await orders();
     assert.equal(saved.length, 1);
     assert.equal(saved[0].reference, reference);
-    assert.equal(Number(saved[0].total_minor), 6600000, 'priced by Skyfly');
+    assert.equal(Number(saved[0].total_minor), 7450000, 'priced by Skyfly, add-on included');
     assert.equal(String(saved[0].landing_page_id), pageId);
-    assert.match(await shop.textContent('.sky-ok'), /₦66,000/);
+    const { rows: lines } = await pool.query('SELECT product_code, is_upsell FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.reference = $1 ORDER BY i.id', [reference]);
+    assert.deepEqual(lines.map((l) => [l.product_code, l.is_upsell]), [['package-2', false], ['glow-toner', true]]);
+    const ok = await shop.textContent('.sky-ok');
+    assert.match(ok, /Thank you! We have received your order\./);
+    assert.match(ok, /Our team will contact you shortly to confirm the details and delivery\./);
+    assert.match(ok, /Glow Toner × 1 \(add-on\)/);
+    assert.match(ok, /₦74,500/);
+    assert.ok(!/24 hours/.test(ok));
+    const wa = await shop.getAttribute('[data-skyfly-whatsapp]', 'href');
+    assert.match(wa, new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`), wa);
     const p = purchases();
     assert.equal(p.length, 1, 'one Purchase for the saved order');
-    assert.equal(p[0][3].value, 66000);
+    assert.equal(p[0][3].value, 74500);
     assert.equal(p[0][3].currency, 'NGN');
     assert.equal(p[0][4].eventID, `purchase_${reference}`);
     await shop.screenshot({ path: path.join(shots, 'confirmation-mobile.png') });
@@ -155,6 +191,7 @@ try {
     await shop.selectOption('#sky-qty', '2');
     await shop.fill('#sky-name', 'Ada Checkout'); await shop.fill('#sky-phone', '08031234567');
     await shop.fill('#sky-address', '4 Allen Avenue, Ikeja'); await shop.fill('#sky-state', 'Lagos');
+    await shop.locator('[data-skyfly-upsell] button:text-is("Add")').click();
     await shop.click('text=Review my order');
     await shop.click('text=Place my order');
     await shop.waitForSelector('.sky-ok');

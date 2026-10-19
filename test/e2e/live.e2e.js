@@ -144,7 +144,9 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   mkdirSync('live-screenshots', { recursive: true });
   await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: false });
   const text = await page.textContent('body');
-  assert(text.includes(reference) && /What happens next/.test(text), 'confirmation content');
+  assert(text.includes(reference) && /(What happens next|We have received your order)/.test(text), 'confirmation content');
+  const wa = await page.getAttribute('#skyWa', 'href').catch(() => null);
+  if (wa) assert(new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`).test(wa), `WhatsApp link ${wa}`);
   if (await page.$('#skyRef')) {
     assert((await page.textContent('#skyRef')).trim() === reference, 'reference on the page differs from Skyfly\'s');
     assert(/Total \(pay on delivery\): ₦103,000/.test(await page.textContent('#skyConf')), 'confirmed total');

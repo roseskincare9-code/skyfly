@@ -60,7 +60,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
         `SELECT o.id, o.reference, o.customer_name, o.phone, o.email, o.state, o.status, o.payment_status, o.source,
                 o.total_minor, o.currency, o.created_at, o.utm_campaign, o.is_test,
                 lp.name AS landing_page_name,
-                (SELECT string_agg(i.product_name || ' × ' || i.quantity, ', ' ORDER BY i.id) FROM order_items i WHERE i.order_id = o.id) AS items
+                (SELECT string_agg(CASE WHEN i.is_upsell THEN 'Add-on: ' ELSE '' END || i.product_name || ' × ' || i.quantity, ', ' ORDER BY i.id) FROM order_items i WHERE i.order_id = o.id) AS items
            FROM orders o LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
           WHERE ${sql} ORDER BY o.created_at DESC LIMIT ${PAGE_SIZE} OFFSET ${(pageNumber - 1) * PAGE_SIZE}`,
         params,

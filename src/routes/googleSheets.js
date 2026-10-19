@@ -298,7 +298,7 @@ export function googleSheetsRoutes({ pool, config, onOrderSaved = () => {} }) {
       `SELECT o.*, lp.name AS page_name FROM orders o JOIN businesses b ON b.id = o.business_id
          LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id WHERE ${where.join(' AND ')} ORDER BY o.created_at`, params);
     const { rows: items } = await pool.query(
-      'SELECT order_id, product_name, quantity FROM order_items WHERE order_id = ANY($1::bigint[]) ORDER BY id', [rows.map((o) => o.id)]);
+      'SELECT order_id, product_name, quantity, is_upsell FROM order_items WHERE order_id = ANY($1::bigint[]) ORDER BY id', [rows.map((o) => o.id)]);
     const byOrder = Map.groupBy(items, (i) => String(i.order_id));
     await audit(pool, req, { action: 'google_sheets.exported', businessId: req.business.id, details: { rows: rows.length, sheet: conn?.id ?? 'all' } });
     const csv = toCsv([...SHEET_COLUMNS, 'copyStatus'], rows.map((o) => {

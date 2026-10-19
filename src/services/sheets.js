@@ -235,7 +235,7 @@ const safe = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) && !/
 
 // Same columns the landing page has always written.
 export function sheetRow(order, items, pageName) {
-  const pkg = items.map((i) => `${i.product_name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ');
+  const pkg = items.map((i) => `${i.is_upsell ? 'Add-on: ' : ''}${i.product_name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ');
   const origin = order.source === 'manual' ? 'Entered in Skyfly' : (pageName || 'Website');
   return {
     timestamp: new Date(order.created_at).toISOString(),
@@ -336,7 +336,7 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
       [orderId, 'Waiting: held until the owner compares the waiting orders with the spreadsheet and sends them (Google Sheets page).', conn.id, HOLD_MINUTES]);
     return 'failed';
   }
-  const { rows: items } = await pool.query('SELECT product_name, quantity FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
+  const { rows: items } = await pool.query('SELECT product_name, quantity, is_upsell FROM order_items WHERE order_id = $1 ORDER BY id', [orderId]);
   const attempt = async () => {
     if (!conn.url) throw new SheetError(conn.urlError);
     // Google Sheets API: looks for the order in every tab, then adds it to Skyfly's tab.

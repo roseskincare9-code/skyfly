@@ -74,3 +74,21 @@ export async function ensureDemoSite(pool, config, log = console) {
   log.log(`Skyfly demo site published at /p/skyfly-demo/ (business #${businessId}, test mode).`);
   return businessId;
 }
+
+// The demo shop (test business) gets an upsell and a WhatsApp number once, so the full checkout
+// (add-on, total, thank-you, WhatsApp hand-off) can be tested live without touching a real business.
+export async function ensureDemoUpsell(pool) {
+  const { rows: [page] } = await pool.query(
+    "SELECT lp.id, lp.business_id, lp.upsell_product_id FROM landing_pages lp WHERE lp.slug = 'skyfly-demo' AND lp.test_mode");
+  if (!page || page.upsell_product_id) return false;
+  const { rows: [p] } = await pool.query(
+    `INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES ($1, 'demo-addon', 'Glow Demo Travel Size (add-on)', 450000, 9)
+     ON CONFLICT DO NOTHING RETURNING id`, [page.business_id]);
+  const id = p?.id ?? (await pool.query("SELECT id FROM products WHERE business_id = $1 AND code = 'demo-addon'", [page.business_id])).rows[0]?.id;
+  if (!id) return false;
+  await pool.query(
+    "UPDATE landing_pages SET upsell_product_id = $1, upsell_headline = 'Add a travel-size serum', upsell_text = '15ml travel size (test add-on)' WHERE id = $2",
+    [id, page.id]);
+  await pool.query("UPDATE businesses SET whatsapp_number = '+2349049206695' WHERE id = $1 AND whatsapp_number IS NULL", [page.business_id]);
+  return true;
+}

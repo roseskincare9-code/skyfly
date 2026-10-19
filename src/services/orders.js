@@ -56,7 +56,8 @@ export function validateOrderInput(body) {
     for (const raw of rawItems) {
       const code = str(raw?.product).toLowerCase();
       const quantity = Number(raw?.quantity ?? 1);
-      if (!code || seen.has(code)) { fields.items = 'Select a valid package.'; break; }
+      const upsell = raw?.upsell === true;
+      if (!code || seen.has(code) || (upsell && items.some((i) => i.upsell))) { fields.items = 'Select a valid package.'; break; }
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) {
         fields.quantity = `Quantity must be between 1 and ${MAX_QUANTITY}.`;
         break;
@@ -67,8 +68,10 @@ export function validateOrderInput(body) {
         break;
       }
       seen.add(code);
-      items.push({ code, quantity, displayedPrice: displayed === undefined || displayed === null ? null : Number(displayed) });
+      items.push({ code, quantity, upsell, displayedPrice: displayed === undefined || displayed === null ? null : Number(displayed) });
     }
+    // An add-on is only ever offered with a package.
+    if (!fields.items && !fields.quantity && !items.some((i) => !i.upsell)) fields.items = 'Select a package.';
   }
 
   const landingPage = str(body?.landingPage).toLowerCase();
@@ -100,13 +103,13 @@ export function validateOrderInput(body) {
 
 function fingerprint(input) {
   const { customer, items, landingPage } = input;
-  const canonical = JSON.stringify([landingPage, customer, items.map((i) => [i.code, i.quantity])]);
+  const canonical = JSON.stringify([landingPage, customer, items.map((i) => (i.upsell ? [i.code, i.quantity, 'upsell'] : [i.code, i.quantity]))]);
   return createHash('sha256').update(canonical).digest('hex');
 }
 
 async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
-    `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode,
+    `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode, lp.upsell_product_id,
             (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
@@ -115,22 +118,27 @@ async function loadLandingPage(client, slug) {
   return rows[0];
 }
 
-async function loadPricedItems(client, landingPageId, items) {
+// Prices every item from Skyfly's catalog: a package must be on the page; an add-on must be the
+// page's configured upsell. Totals sent by the browser are never used.
+async function loadPricedItems(client, page, items) {
   const codes = items.map((i) => i.code);
   const { rows } = await client.query(
-    `SELECT p.id, p.code, p.name, p.price_minor
+    `SELECT p.id, p.code, p.name, p.price_minor, (lpp.product_id IS NOT NULL) AS on_page
        FROM products p
-       JOIN landing_page_products lpp ON lpp.product_id = p.id AND lpp.landing_page_id = $1
-      WHERE p.active AND p.code = ANY($2::text[])`,
-    [landingPageId, codes],
+       LEFT JOIN landing_page_products lpp ON lpp.product_id = p.id AND lpp.landing_page_id = $1
+      WHERE p.active AND p.business_id = $2 AND p.code = ANY($3::text[]) AND (lpp.product_id IS NOT NULL OR p.id = $4)`,
+    [page.id, page.business_id, codes, page.upsell_product_id ?? null],
   );
   const byCode = new Map(rows.map((r) => [r.code, r]));
 
   return items.map((item) => {
     const product = byCode.get(item.code);
-    if (!product) {
-      throw new OrderError(400, 'UNKNOWN_PRODUCT', 'That package is no longer available. Please choose another package.', {
-        fields: { items: 'This package is not available.' },
+    const allowed = product && (item.upsell ? String(product.id) === String(page.upsell_product_id) : product.on_page);
+    if (!allowed) {
+      throw new OrderError(400, 'UNKNOWN_PRODUCT', item.upsell
+        ? 'That add-on is no longer available. Please refresh the page.'
+        : 'That package is no longer available. Please choose another package.', {
+        fields: { items: item.upsell ? 'This add-on is not available.' : 'This package is not available.' },
       });
     }
     const unit = Number(product.price_minor);
@@ -146,6 +154,7 @@ async function loadPricedItems(client, landingPageId, items) {
       unitPrice: unit,
       quantity: item.quantity,
       lineTotal: unit * item.quantity,
+      isUpsell: item.upsell === true,
     };
   });
 }
@@ -191,9 +200,9 @@ async function insertOrder(client, o) {
   if (!order) return null;
   for (const item of o.items) {
     await client.query(
-      `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal],
+      `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor, is_upsell)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal, item.isUpsell === true],
     );
   }
   await client.query(
@@ -247,7 +256,7 @@ export async function createOrder(pool, input, auth, config) {
     const existing = await findByIdempotencyKey(client, page.business_id, input.idempotencyKey);
     if (existing) return replay(existing, print);
 
-    const items = await loadPricedItems(client, page.id, input.items);
+    const items = await loadPricedItems(client, page, input.items);
     await client.query('BEGIN');
     const order = await insertOrder(client, {
       businessId: page.business_id, landingPageId: page.id, prefix: page.order_prefix, currency: page.currency,

@@ -53,7 +53,7 @@ describe('pages on the Skyfly address', () => {
     await form(`/${pageId}/publish`, { version_id: String(await latestVersion()) });
     clearOriginCache();
     const dash = await owner.get(`/businesses/${businessId}/landing-pages/${pageId}`).expect(200);
-    assert.match(dash.text, /id="live-url">http:\/\/skyfly\.test\/p\/glow-path\/</);
+    assert.match(dash.text, /id="live-url-text" readonly value="http:\/\/skyfly\.test\/p\/glow-path\/"/);
     await request(app).get('/p/glow-path').expect(301).expect('Location', '/p/glow-path/');
     const page = await request(app).get('/p/glow-path/').expect(200);
     assert.match(page.text, /Glow serum v1/);
