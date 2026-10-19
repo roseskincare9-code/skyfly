@@ -11,6 +11,11 @@ import { chromium } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 const PAGE = process.env.LANDING_URL || 'https://roseskincare9-code.github.io/Larosenigeria/';
+// The same Larose page hosted on Skyfly (/p/larose-skincare/) runs in a browser sandbox: its
+// requests carry "Origin: null" and it has its own form key.
+const HOSTED = PAGE.startsWith(SKYFLY);
+const PAGE_KEY = process.env.PAGE_KEY || (HOSTED ? 'larose-skincare' : 'larosenigeria');
+const PAGE_ORIGIN = HOSTED ? 'null' : 'https://roseskincare9-code.github.io';
 const SHEET = 'https://sheetdb.io/api/v1/m111fq96ve953';
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());
 const NAME = `TEST ORDER Skyfly E2E ${RUN} please ignore`;
@@ -60,7 +65,7 @@ async function waitForSheetRows(text, want, seconds = 120) {
 const ready = await step('A. Larose Natural Skincare Nigeria is set up on the live Skyfly (page, products, Meta Pixel)', async () => {
   const h = await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) });
   assert(h.ok, `/healthz HTTP ${h.status}`);
-  const t = await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`);
+  const t = await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`);
   assert(t.ok, `Larose is not set up (tracking HTTP ${t.status})`);
   const cfg = await t.json();
   const meta = (cfg.pixels || []).find((p) => p.provider === 'meta');
@@ -114,7 +119,14 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
   const api = await page.evaluate('typeof SKYFLY_API === "string" ? SKYFLY_API : null');
   assert(api === SKYFLY, `page SKYFLY_API is ${JSON.stringify(api)}`);
   await page.waitForFunction('window.Skyfly && window.Skyfly.version', null, { timeout: 30000 });
-  return `${PAGE} (HTTP 200, Skyfly SDK loaded)`;
+  // Every product image loads (scrolling, so lazily loaded images load too).
+  await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } window.scrollTo(0, 0); });
+  await page.waitForTimeout(1500);
+  const imgs = await page.evaluate(() => [...document.images].filter((i) => !/facebook\.com\/tr/.test(i.src)).map((i) => i.complete && i.naturalWidth > 0));
+  assert(imgs.length && imgs.every(Boolean), `${imgs.filter((x) => !x).length} of ${imgs.length} images did not load`);
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  assert(width <= 400, `horizontal scroll on a phone (${width}px)`);
+  return `${PAGE} (HTTP 200, Skyfly SDK loaded, all ${imgs.length} images loaded, fits a phone screen${HOSTED ? `, Skyfly-hosted sandbox, form key ${PAGE_KEY}` : ''})`;
 });
 
 let reference = null;
@@ -168,7 +180,7 @@ await step('D. The order persists: the confirmation page (read from the database
 await step('F. Sending the same submission again returns the same order (no duplicate)', async () => {
   assert(apiBody && reference, 'no first submission');
   const res = await fetch(`${SKYFLY}/api/public/orders`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://roseskincare9-code.github.io' }, body: apiBody,
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: PAGE_ORIGIN }, body: apiBody,
   });
   const data = await res.json();
   assert(res.status === 200 && data.reference === reference && data.replayed === true, `HTTP ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
@@ -207,7 +219,7 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
 });
 
 await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configured; this TEST ORDER sends PageView once per page load, Lead once and no Purchase (test orders never count)', async () => {
-  const cfg = await (await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`)).json();
+  const cfg = await (await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`)).json();
   const metaCfg = (cfg.pixels || []).find((p) => p.provider === 'meta');
   assert(metaCfg?.id === '1357015185691765' && metaCfg.events.includes('Purchase'), `live config: ${JSON.stringify(cfg.pixels)}`);
   const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === '1357015185691765');
@@ -272,7 +284,7 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   let mode = 'fail';
   await p3.route(`${SKYFLY}/api/public/orders`, (route) => (mode === 'fail'
     ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
-    : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': 'https://roseskincare9-code.github.io' },
+    : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' },
       body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: false, test: false }) })));
   await p3.goto(`${PAGE}?skyfly_e2e=${RUN}-purchase`, { waitUntil: 'load' });
   await p3.click('text=Order Power Glow');

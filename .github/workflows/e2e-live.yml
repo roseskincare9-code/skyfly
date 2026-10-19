@@ -7,6 +7,9 @@ on:
       url:
         description: Verified Skyfly service address (https://<name>.onrender.com)
         required: true
+      landing_url:
+        description: Page to test (default the GitHub Pages Larose page; e.g. https://skyfly-gybf.onrender.com/p/larose-skincare/)
+        default: ''
       restart_check:
         description: Also restart the live service to prove the order survives a restart (brief downtime)
         default: 'no'
@@ -28,6 +31,7 @@ jobs:
           SKYFLY_URL: ${{ inputs.url }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RESTART_CHECK: ${{ inputs.restart_check }}
+          LANDING_URL: ${{ inputs.landing_url }}
           SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
           SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
       - uses: actions/upload-artifact@v4
