@@ -14,12 +14,15 @@ const withDomain = createApp({ pool, config: makeConfig({ platformDomain: 'platf
 let admin;
 const ids = {};
 
-const html = (title) => Buffer.from(`<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><form id="f"></form></body></html>`);
+const html = (title) => Buffer.from(`<!doctype html><html><head><title>${title}</title></head><body><h1>${title} — skincare for every day</h1><div data-skyfly-checkout></div></body></html>`);
 async function publishPage(agent, businessId, name) {
   const _csrf = await csrfToken(agent, `/businesses/${businessId}/landing-pages`);
   const up = await agent.post(`/businesses/${businessId}/landing-pages/upload`).field('_csrf', _csrf).field('name', name).attach('file', html(name), 'index.html').expect(302);
   const pageId = up.headers.location.match(/landing-pages\/(\d+)/)[1];
   const { rows: [v] } = await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1', [pageId]);
+  // A page is published only with something to order.
+  const { rows: [item] } = await pool.query('INSERT INTO products (business_id, code, name, price_minor) VALUES ($1, $2, $3, 100000) RETURNING id', [businessId, `item-${pageId}`, `${name} item`]);
+  await pool.query('INSERT INTO landing_page_products (landing_page_id, product_id) VALUES ($1, $2)', [pageId, item.id]);
   const _csrf2 = await csrfToken(agent, `/businesses/${businessId}/landing-pages/${pageId}`);
   await agent.post(`/businesses/${businessId}/landing-pages/${pageId}/publish`).type('form').send({ _csrf: _csrf2, version_id: v.id }).expect(302);
   return (await pool.query('SELECT slug FROM landing_pages WHERE id = $1', [pageId])).rows[0].slug;

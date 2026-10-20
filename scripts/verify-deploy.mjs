@@ -154,6 +154,8 @@ if (process.env.RENDER_API_KEY) {
         const g = appAll.filter((m) => /^Google Sheets( API)?:/.test(m));
         report(null, 'Render logs: Google Sheets lines (latest 100 app lines)', g.length ? g.slice(0, 30).map((m) => mask(m)).join(' | ') : 'none');
         // Start-up summary of the latest TEST ORDERs read from the database (no real customer data).
+        const it = appAll.filter((m) => m.startsWith('Import test site'));
+        report(null, 'Render logs: import test site (start-up)', it.length ? it.slice(0, 6).map((m) => m.slice(0, 600)).join(' | ') : 'none (already set up, or not restarted since)');
         const oc = appAll.filter((m) => m.startsWith('Orders check'));
         report(null, 'Render logs: test orders in the database (start-up check, latest)', oc.length ? oc.slice(0, 8).map((m) => m.replace(/^Orders check \(test orders, read-only\): /, '').slice(0, 300)).join(' | ') : 'none');
       } catch (err) { report(null, 'Render logs', err.message); }

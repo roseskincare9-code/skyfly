@@ -8,17 +8,33 @@ pixels, and manage orders.
 1. **Pages → Import a landing page.** Give it a name and choose your file:
    - a **.zip** with `index.html` and its folders (css, js, images, fonts), or
    - a single **.html** file (only if everything it needs comes from the internet).
-2. Skyfly opens the page's screen and shows **Check before publishing**:
-   - **Missing files**: images or styles the page refers to that weren't in the ZIP.
-   - **External services**: e.g. "SheetDB", "Paystack", "WhatsApp links", with what each means.
-   - **Tracking code already in the page**: Skyfly won't add a second copy.
-   - **Order form**: whether it is connected to Skyfly yet.
-3. Click **Preview** to see it exactly as visitors will (the link works for one hour).
-4. Under **Page settings**, tick the **connected products** the page sells, then **Save**.
-5. Click **Publish this version**. The live address appears: until you have a domain it is on
-   the Skyfly address, e.g. `https://skyfly-gybf.onrender.com/p/glow-promo/` (it stays the same
-   when you publish new versions).
-   **Unpublish** takes it offline immediately. Uploading again creates a new version. The live page doesn't change until you publish it.
+2. Skyfly opens the page's screen with the steps **Import → Products → Checkout → Preview → Checks → Publish**
+   (any page works: made by ChatGPT, Claude, another AI tool or a developer):
+   - **Products**: your products (Products screen) that the page sells. Products matched in step 3 are connected for you.
+   - **Checkout**: Skyfly lists the page's order forms (and which box is the name, phone, address…), its purchase
+     buttons (including WhatsApp "order" links and external checkouts) and the products and prices it shows,
+     matched to your catalogue by name and price (✓ = confident; ⚠ = please choose). Click
+     **Connect checkout automatically**: the page's own form and buttons now save orders in Skyfly (the design
+     stays the same; "Chat with us" WhatsApp links stay as they are). A page without an order form gets Skyfly's
+     ready-made checkout at the end. This is saved as a new version.
+   - **Preview** on phone and desktop.
+   - **Checks** (done by the server): the page renders, the business may take orders, the address, products,
+     the checkout connection, every product and price, the name/phone/address fields, purchase buttons, the
+     thank-you page, and optional pixels and Google Sheets. Each is PASS, WARNING (you can publish) or
+     BLOCKED (publishing is refused, with the fix). Pixels and Google Sheets are optional and never block.
+   - Also shown: missing files, external services (SheetDB, Paystack…), tracking code already in the page.
+3. Click **Publish**. The address is `/p/<form key>/`, e.g. `https://skyfly-gybf.onrender.com/p/glow-promo/`; it
+   stays the same for every version and never moves the page to another business. Skyfly then opens the
+   address like a visitor: the page shows **Live ✓** only after that check passed (**Check now** repeats it).
+   **Unpublish** takes it offline immediately; **Republish** brings the same version back. Uploading or
+   editing creates a new version; the live page doesn't change until you publish it.
+
+**Supported files:** a single `.html` file, or a `.zip` with `index.html` and its CSS, JavaScript, images, fonts
+and data files (max 25 MB). Server code (PHP, Python…) is never run: a page must work as plain HTML/JS.
+**Known limits:** forms built entirely by JavaScript after the page loads (no `<form>` in the HTML) are not
+detected; such pages get Skyfly's ready-made checkout instead. Pages whose own script already sends orders to
+Skyfly's order API are accepted with a WARNING (place one test order). Paid checkouts (Paystack, Stripe…) are
+listed, not replaced.
 
 Skyfly never edits your page's design. When serving it, it adds its small script and your pixels,
 and speeds it up: WebP copies of large images in several sizes (the original stays as the fallback),

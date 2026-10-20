@@ -1,0 +1,82 @@
+<% const w = workflow; const d = w.detected; const v = w.version; const live = page.status === 'active' && page.published_version_id; %>
+<div class="card" id="workflow">
+  <h2>Import → Products → Checkout → Preview → Checks → Publish</h2>
+  <p data-steps style="margin:0 0 10px">
+    <% w.steps.forEach((s) => { %><span class="pill <%= s.done ? 'delivered' : 'pending' %>"><%= s.n %>. <%= s.label %> <%= s.done ? '✓' : '' %></span> <% }) %>
+  </p>
+  <p class="muted" style="margin-top:0">For the latest version (<%= v.source_name %>, <%= formatDate(v.created_at) %>). Each change is saved as a new version; the published version stays live until you publish another.</p>
+
+  <h3 style="font-size:1rem">2. Products</h3>
+  <% const onPage = page.productIds || []; const sellable = w.catalogue; %>
+  <% if (!sellable.length) { %>
+    <div class="warn-box">This business has no active products yet. Add them under <a href="<%= base %>/products">Products</a> (name and price), then come back.</div>
+  <% } else { %>
+    <p style="margin:0">Connected to this page: <strong><%= onPage.length %></strong> product(s). Products matched in step 3 are connected automatically; you can also tick them under <a href="#settings">Page settings</a>.</p>
+  <% } %>
+
+  <h3 style="font-size:1rem;margin-top:16px">3. Checkout</h3>
+  <% const openForms = d.forms.filter((f) => f.isOrder && !f.connected); const leaving = d.buttons; %>
+  <ul style="margin:0 0 8px;padding-left:18px">
+    <% d.forms.filter((f) => f.isOrder).forEach((f) => { %>
+      <li>Order form <%= f.id + 1 %>: <%= f.connected ? 'saves orders in Skyfly ✓' : 'not connected' + (f.sendsTo ? ' (sends orders to ' + f.sendsTo + ')' : '') %><%= f.missing.length ? ' — missing: ' + f.missing.map((m) => w.fieldLabels[m]).join(', ') : '' %></li>
+    <% }) %>
+    <% if (d.dropIn) { %><li>Skyfly checkout on the page ✓</li><% } %>
+    <% if (d.customApi) { %><li>The page's own code sends orders to Skyfly's order API</li><% } %>
+    <% leaving.forEach((b) => { %><li>Button "<%= b.text || 'Button' %>" goes to <%= b.goesTo %></li><% }) %>
+    <% if (!d.forms.some((f) => f.isOrder) && !d.dropIn && !d.customApi) { %><li>No order form found: Skyfly's ready-made checkout will be added at the end of the page, in the page's place for ordering.</li><% } %>
+  </ul>
+  <% if (openForms.length || leaving.length || (!d.dropIn && !d.customApi && !d.forms.some((f) => f.connected))) { %>
+  <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/versions/<%= v.id %>/connect" data-connect>
+    <%- include('csrf') %>
+    <% if (d.candidates.length) { %>
+      <p style="margin:6px 0 4px"><strong>Products on the page</strong> <span class="muted">(matches marked ✓ were found by name and price; check the others)</span></p>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>On the page</th><th>Skyfly product</th></tr></thead><tbody>
+      <% d.candidates.forEach((c) => { const m = c.match; %>
+        <tr><td><%= c.label %><%= c.price ? ' · ' + c.price.toLocaleString('en-NG') : '' %> <span class="muted">(<%= { option: 'form option', form: 'order form', button: 'button' }[c.source] %>)</span></td>
+          <td><select name="product__<%= c.key %>" aria-label="Skyfly product for <%= c.label %>">
+            <option value="">— not a product / choose —</option>
+            <% sellable.forEach((p) => { %><option value="<%= p.code %>" <%= m && m.code === p.code ? 'selected' : '' %>><%= p.name %> (<%= p.price.toLocaleString('en-NG') %>)</option><% }) %>
+          </select> <%= m ? (m.confidence === 'high' ? '✓' : '⚠ ' + m.reason) : '⚠ no match' %></td></tr>
+      <% }) %>
+      </tbody></table></div>
+    <% } %>
+    <% openForms.forEach((f) => { %>
+      <p style="margin:10px 0 4px"><strong>Order form <%= f.id + 1 %> fields</strong></p>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>Field on the page</th><th>Skyfly field</th></tr></thead><tbody>
+      <% f.fields.forEach((fd) => { %>
+        <tr><td><code><%= fd.name || fd.hint %></code></td><td><select name="field__<%= f.id %>.<%= fd.index %>" aria-label="Skyfly field for <%= fd.name %>">
+          <% Object.entries(w.fieldLabels).forEach(([k, label]) => { %><option value="<%= k %>" <%= fd.field === k ? 'selected' : '' %>><%= label %></option><% }) %>
+        </select> <%= fd.confident ? '✓' : '⚠' %></td></tr>
+      <% }) %>
+      </tbody></table></div>
+    <% }) %>
+    <p style="margin-bottom:0"><button type="submit">Connect checkout automatically</button>
+      <span class="muted">Order forms and purchase buttons are connected to Skyfly's own checkout (orders are saved before any thank-you, never sent to WhatsApp instead); the design stays the same. Saved as a new version you can preview first.</span></p>
+  </form>
+  <% } else { %>
+    <p class="notice" style="margin:0">The checkout is connected to Skyfly.</p>
+  <% } %>
+
+  <h3 style="font-size:1rem;margin-top:16px">4. Preview</h3>
+  <p style="margin:0"><a class="btn secondary" href="<%= base %>/landing-pages/<%= page.id %>/versions/<%= v.id %>/preview">Preview on phone and desktop</a> <span class="muted">Ordering and tracking are off in previews.</span></p>
+
+  <h3 style="font-size:1rem;margin-top:16px">5. Checks</h3>
+  <div class="table-wrap"><table class="stack" data-checks><thead><tr><th>Check</th><th>Result</th><th>Details</th></tr></thead><tbody>
+  <% w.validation.checks.forEach((c) => { %>
+    <tr data-check="<%= c.key %>"><td><%= c.label %></td>
+      <td><span class="pill <%= c.status === 'PASS' ? 'delivered' : c.status === 'WARNING' ? 'pending' : 'cancelled' %>"><%= c.status %></span></td>
+      <td><%= c.message %><% if (c.repair && c.status !== 'PASS') { %><br><span class="muted">Fix: <%= c.repair %></span><% } %></td></tr>
+  <% }) %>
+  </tbody></table></div>
+
+  <h3 style="font-size:1rem;margin-top:16px">6. Publish</h3>
+  <% if (w.validation.blocked) { %>
+    <p class="warn-box" style="margin:0">Publishing is available when no check is BLOCKED (see the fixes above).</p>
+  <% } else if (live && Number(page.published_version_id) === v.id) { %>
+    <p class="notice" style="margin:0">This version is published. See the address and its live check under Hosting.</p>
+  <% } else { %>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/publish"><%- include('csrf') %><input type="hidden" name="version_id" value="<%= v.id %>">
+      <button type="submit"><%= page.published_version_id ? 'Publish this version' : 'Publish' %></button>
+      <span class="muted">The address is <code>/p/<%= page.slug %>/</code>; it stays the same for every version.</span></form>
+  <% } %>
+</div>

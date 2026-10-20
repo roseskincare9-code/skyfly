@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Glow — Radiance Serum (Skyfly import test)</title>
+<style>
+  :root { --brand:#b5476b; --ink:#2a1f2d; --soft:#fbf3f6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: Georgia, 'Times New Roman', serif; color:var(--ink); background:#fff; }
+  header { background:var(--soft); padding:48px 20px; text-align:center; }
+  header h1 { font-size:2.1rem; margin:0 0 10px; }
+  .cta { display:inline-block; background:var(--brand); color:#fff; padding:14px 26px; border-radius:30px; text-decoration:none; font-weight:bold; border:0; font-size:1rem; cursor:pointer; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px; padding:32px 20px; max-width:900px; margin:0 auto; }
+  .card { border:1px solid #eed7e0; border-radius:16px; padding:20px; text-align:center; }
+  .price { font-size:1.5rem; color:var(--brand); font-weight:bold; }
+  form { max-width:520px; margin:0 auto 40px; padding:20px; border:1px solid #eed7e0; border-radius:16px; }
+  label { display:block; margin:12px 0 4px; font-weight:bold; }
+  input, select, textarea { width:100%; padding:11px; border:1px solid #d9c3cc; border-radius:10px; font:inherit; }
+  footer { text-align:center; padding:24px; color:#7a6a74; }
+</style>
+</head>
+<body>
+<header>
+  <p>✨ This is a labelled Skyfly import-test page. Orders placed here are test orders.</p>
+  <h1>Aurora Glow Radiance Serum</h1>
+  <p>Brighter, even-toned skin in 14 days. Pay on delivery anywhere in Nigeria.</p>
+  <a class="cta" href="https://wa.me/2349049206695?text=Hello%2C%20I%20want%20to%20order%20the%20Radiance%20Serum">Order on WhatsApp</a>
+</header>
+
+<section class="cards">
+  <div class="card">
+    <h3>Radiance Serum</h3>
+    <p>30ml vitamin C serum</p>
+    <p class="price">₦15,000</p>
+    <a class="cta" href="https://wa.me/2349049206695?text=I%20want%20to%20order%20Radiance%20Serum">Buy now</a>
+  </div>
+  <div class="card">
+    <h3>Glow Duo Set</h3>
+    <p>Serum + gentle cleanser</p>
+    <p class="price">₦27,500</p>
+    <button class="cta" type="button" onclick="window.open('https://wa.me/2349049206695?text=Order%20Glow%20Duo')">Order now</button>
+  </div>
+</section>
+
+<form id="orderForm" onsubmit="return false">
+  <h2>Place your order</h2>
+  <label for="pkg">Choose your package</label>
+  <select id="pkg" name="package">
+    <option value="">-- Select a package --</option>
+    <option value="serum">Radiance Serum – ₦15,000</option>
+    <option value="duo">Glow Duo Set – ₦27,500</option>
+  </select>
+  <label for="fullname">Your full name</label>
+  <input id="fullname" name="fullname" placeholder="e.g. Ada Obi">
+  <label for="phone_number">WhatsApp / phone number</label>
+  <input id="phone_number" name="phone_number" type="tel">
+  <label for="addr">Delivery address</label>
+  <textarea id="addr" name="delivery"></textarea>
+  <label for="city">State</label>
+  <input id="city" name="city">
+  <button type="button" class="cta" onclick="sendOrder()">Send my order</button>
+</form>
+
+<footer>
+  <a href="https://wa.me/2349049206695">Chat with us on WhatsApp</a>
+</footer>
+<script>
+  // What the AI tool generated: the order goes to WhatsApp, nothing is saved.
+  function sendOrder() {
+    var f = document.getElementById('orderForm');
+    var msg = 'New order: ' + f.package.value + ' for ' + f.fullname.value + ', ' + f.phone_number.value;
+    window.location.href = 'https://wa.me/2349049206695?text=' + encodeURIComponent(msg);
+  }
+</script>
+</body>
+</html>

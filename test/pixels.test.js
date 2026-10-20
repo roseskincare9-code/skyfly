@@ -242,7 +242,7 @@ describe('hosted page injection', () => {
     const { rows: [lp] } = await pool.query("SELECT id FROM landing_pages WHERE slug = 'larosenigeria'");
     const _csrf = await csrfToken(owner, `/businesses/${businessId}/landing-pages/${lp.id}`);
     await owner.post(`/businesses/${businessId}/landing-pages/${lp.id}/upload`).field('_csrf', _csrf)
-      .attach('file', Buffer.from('<!doctype html><html><head><title>L</title></head><body><form data-skyfly-form></form></body></html>'), 'index.html')
+      .attach('file', Buffer.from('<!doctype html><html><head><title>L</title></head><body><h1>Larose glow packages, delivered</h1><div data-skyfly-checkout></div></body></html>'), 'index.html')
       .expect(302);
     const { rows: [v] } = await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1 ORDER BY id DESC LIMIT 1', [lp.id]);
     const page = await owner.get(`/businesses/${businessId}/landing-pages/${lp.id}`).expect(200);

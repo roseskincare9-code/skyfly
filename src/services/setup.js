@@ -144,3 +144,53 @@ export async function ensureLaroseHostedPage(pool, config, log = console) {
   log.log(`Larose page imported and published at ${config.publicBaseUrl}/p/larose-skincare/ (Larose business #${src.business_id}).`);
   return page.id;
 }
+
+// A labelled, isolated test of the universal import on the live service: business "Skyfly Import
+// Test (test)" (own products, no pixel, no sheet), whose page is an AI-style page that sends
+// orders to WhatsApp. It goes through the same steps as an owner's import (import, match
+// products and fields, connect checkout, server checks, publish, live check) and is published
+// in test mode at /p/skyfly-import-test/. Created once, for the platform owner.
+const IMPORT_TEST = 'skyfly-import-test';
+export async function ensureImportTestSite(pool, config, log = console) {
+  if (!config.demoSite || !config.publicBaseUrl) return null;
+  const { rows: [admin] } = await pool.query('SELECT id FROM users WHERE is_platform_admin ORDER BY id LIMIT 1');
+  if (!admin) return null;
+  if ((await pool.query('SELECT 1 FROM landing_pages WHERE slug = $1', [IMPORT_TEST])).rows[0]) return null;
+  const { detectCheckout, connectCheckout } = await import('../hosting/adapter.js');
+  const { validateVersion, publishVersion, checkLive, businessCatalogue } = await import('../hosting/validate.js');
+  const { rows: [b] } = await pool.query(
+    `INSERT INTO businesses (owner_id, name, slug, currency, order_prefix, subscription_status, whatsapp_number)
+     VALUES ($1, 'Skyfly Import Test (test)', $2, 'NGN', 'IT', 'internal', '+2349049206695') ON CONFLICT (slug) DO NOTHING RETURNING id`, [admin.id, IMPORT_TEST]);
+  if (!b) return null;
+  await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, admin.id]);
+  await pool.query(
+    `INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES
+       ($1, 'radiance-serum', 'Radiance Serum', 1500000, 1), ($1, 'glow-duo', 'Glow Duo Set', 2750000, 2)`, [b.id]);
+  const { rows: [page] } = await pool.query(
+    `INSERT INTO landing_pages (business_id, slug, name, status, test_mode, notes)
+     VALUES ($1, $2, 'Import test: AI-generated page', 'draft', true, 'Created automatically to test the universal import on the live service. Orders are test orders.')
+     RETURNING *`, [b.id, IMPORT_TEST]);
+  const data = readFileSync(new URL('../demo/import-sample/index.html', import.meta.url));
+  const file = (buf) => [{ path: 'index.html', contentType: 'text/html; charset=utf-8', size: buf.length, sha256: createHash('sha256').update(buf).digest('hex'), data: buf }];
+  const upload = (buf, sourceName) => ({ sourceName, entryPath: 'index.html', files: file(buf), totalBytes: buf.length, report: analyzeFiles(file(buf), 'index.html') });
+  await saveVersion(pool, { pageId: page.id, userId: admin.id, upload: upload(data, 'import-sample/index.html') });
+  // Automatic matching only (no owner answers): what an owner gets by clicking "Connect checkout automatically".
+  const catalogue = await businessCatalogue(pool, b.id);
+  const found = detectCheckout(data.toString('utf8'), catalogue);
+  const { html, changes } = connectCheckout(data.toString('utf8'), { slug: IMPORT_TEST, catalogue });
+  const versionId = await saveVersion(pool, { pageId: page.id, userId: admin.id, upload: upload(Buffer.from(html), 'Checkout connected (from import-sample/index.html)') });
+  const codes = [...new Set([...html.matchAll(/data-product="([^"]+)"/g)].map((m) => m[1]))];
+  await pool.query(
+    'INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE business_id = $2 AND code = ANY($3::text[]) ON CONFLICT DO NOTHING', [page.id, b.id, codes]);
+  log.log(`Import test site: found ${found.forms.filter((f) => f.isOrder).length} order form(s), ${found.buttons.length} purchase button(s) (${found.whatsappOrderButtons} to WhatsApp), ${found.candidates.filter((c) => c.match?.confidence === 'high').length}/${found.candidates.length} products matched; connected: ${changes.length} change(s).`);
+  const validation = await validateVersion(pool, config, page, versionId);
+  log.log(`Import test site checks: ${validation.checks.map((c) => `${c.label} ${c.status}`).join('; ')}`);
+  if (validation.blocked) return null;
+  await publishVersion(pool, page, versionId);
+  await pool.query(
+    "INSERT INTO audit_log (user_id, business_id, action, entity_type, entity_id, details) VALUES ($1, $2, 'page.published', 'landing_page', $3, '{\"automatic\":true,\"import_test\":true}')",
+    [admin.id, b.id, String(page.id)]);
+  const live = await checkLive(pool, config, page);
+  log.log(`Import test site published at ${config.publicBaseUrl}/p/${IMPORT_TEST}/ (business #${b.id}, test mode); live check: ${live}`);
+  return page.id;
+}

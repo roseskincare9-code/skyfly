@@ -92,8 +92,18 @@ describe('import', () => {
 
   test('publish serves the page and assets on the pages host only', async () => {
     const { rows: [v] } = await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1', [pageId]);
-    const _csrf = await csrfToken(owner, `/businesses/${businessId}/landing-pages/${pageId}`);
-    await owner.post(`/businesses/${businessId}/landing-pages/${pageId}/publish`).type('form').send({ _csrf, version_id: v.id }).expect(302);
+    const base = `/businesses/${businessId}/landing-pages/${pageId}`;
+    // Refused while customers could not order: no products, no checkout connected to Skyfly.
+    let _csrf = await csrfToken(owner, base);
+    const refused = await owner.post(`${base}/publish`).type('form').send({ _csrf, version_id: v.id }).expect(400);
+    assert.match(refused.text, /Not published\. .*Products: No products are connected.*Checkout connected: The page has no order form connected to Skyfly/s);
+    assert.equal((await pool.query('SELECT status FROM landing_pages WHERE id = $1', [pageId])).rows[0].status, 'draft');
+    await pool.query("INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE code = 'package-1'", [pageId]);
+    _csrf = await csrfToken(owner, base);
+    await owner.post(`${base}/versions/${v.id}/connect`).type('form').send({ _csrf }).expect(302);
+    const { rows: [v2] } = await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1 ORDER BY id DESC LIMIT 1', [pageId]);
+    _csrf = await csrfToken(owner, base);
+    await owner.post(`${base}/publish`).type('form').send({ _csrf, version_id: v2.id }).expect(302);
     const { rows: [lp] } = await pool.query('SELECT slug, status FROM landing_pages WHERE id = $1', [pageId]);
     assert.equal(lp.status, 'active');
 
@@ -147,7 +157,7 @@ describe('import', () => {
 
   test('orders are accepted from the hosted page and its custom domain', async () => {
     const { rows: [lp] } = await pool.query('SELECT slug, id FROM landing_pages WHERE id = $1', [pageId]);
-    await pool.query("INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE code = 'package-1'", [lp.id]);
+    await pool.query("INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE code = 'package-1' ON CONFLICT DO NOTHING", [lp.id]);
     clearOriginCache();
     const order = (key) => ({
       landingPage: lp.slug, idempotencyKey: `hosted-order-key-${key}`,

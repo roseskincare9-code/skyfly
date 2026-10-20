@@ -11,6 +11,8 @@ import { readFile, saveVersion } from '../hosting/storage.js';
 import { previewToken } from '../hosting/preview.js';
 import { analyzeFiles } from '../hosting/report.js';
 import { analyzePage, applyChanges, EditError } from '../hosting/editor.js';
+import { connectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
+import { businessCatalogue } from '../hosting/validate.js';
 
 const IMAGE_TYPES = { 'image/jpeg': [0xff, 0xd8], 'image/png': [0x89, 0x50], 'image/gif': [0x47, 0x49], 'image/webp': [0x52, 0x49] };
 const images = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 30, fieldSize: 2 * 1024 * 1024, fields: 5000 } });
@@ -28,7 +30,7 @@ export function pageEditorRoutes({ pool, config }) {
   async function load(req) {
     if (!/^\d+$/.test(req.params.pageId) || !/^\d+$/.test(req.params.versionId)) return null;
     const { rows: [v] } = await pool.query(
-      `SELECT v.id, v.entry_path, v.created_at, v.source_name, lp.id AS page_id, lp.name AS page_name, lp.business_id
+      `SELECT v.id, v.entry_path, v.created_at, v.source_name, lp.id AS page_id, lp.name AS page_name, lp.business_id, lp.slug
          FROM page_versions v JOIN landing_pages lp ON lp.id = v.landing_page_id
         WHERE v.id = $1 AND lp.id = $2 AND lp.business_id = $3`, [req.params.versionId, req.params.pageId, req.business.id]);
     return v ?? null;
@@ -97,6 +99,33 @@ export function pageEditorRoutes({ pool, config }) {
     const versionId = await deriveVersion(v, updated, new Map(), `Skyfly checkout added (from ${v.source_name})`, req.session.userId);
     await audit(pool, req, { action: 'page.checkout_added', businessId: req.business.id, entityType: 'landing_page', entityId: v.page_id, details: { from: v.id, versionId } });
     res.redirect(`${base}?done=checkout`);
+  }));
+
+  // Universal checkout adapter: connects the page's own order forms and purchase buttons to Skyfly
+  // (with the product and field matches confirmed in the dashboard), as a new version.
+  router.post('/:pageId/versions/:versionId/connect', asyncHandler(async (req, res) => {
+    const v = await load(req);
+    if (!v) return res.status(404).render('error', { message: 'Version not found.' });
+    const base = `${res.locals.base}/landing-pages/${v.page_id}`;
+    const html = (await readFile(pool, v.id, v.entry_path)).data.toString('utf8');
+    const catalogue = await businessCatalogue(pool, req.business.id);
+    const mapping = { products: {}, fields: {} };
+    for (const [k, val] of Object.entries(req.body ?? {})) {
+      if (k.startsWith('product__')) mapping.products[k.slice(9)] = catalogue.some((p) => p.code === String(val)) ? String(val) : '';
+      if (k.startsWith('field__')) mapping.fields[k.slice(7)] = Object.hasOwn(FIELD_LABELS, String(val)) ? String(val) : 'ignore';
+    }
+    const { html: updated, changes } = connectCheckout(html, { slug: v.slug, catalogue, mapping });
+    if (updated === html) return res.redirect(`${base}?error=${encodeURIComponent('Nothing left to connect in this version: its checkout is already connected to Skyfly.')}#workflow`);
+    const versionId = await deriveVersion(v, updated, new Map(), `Checkout connected (from ${v.source_name})`, req.session.userId);
+    // The products the page now orders are connected to it (this business's products only).
+    const codes = [...new Set([...updated.matchAll(/data-product="([^"]+)"/g)].map((m) => m[1]))];
+    if (codes.length) {
+      await pool.query(
+        `INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE business_id = $2 AND code = ANY($3::text[])
+         ON CONFLICT DO NOTHING`, [v.page_id, req.business.id, codes]);
+    }
+    await audit(pool, req, { action: 'page.checkout_connected', businessId: req.business.id, entityType: 'landing_page', entityId: v.page_id, details: { from: v.id, versionId, changes: changes.slice(0, 20) } });
+    res.redirect(`${base}?done=connected#workflow`);
   }));
 
   router.get('/:pageId/versions/:versionId/edit', asyncHandler(async (req, res) => {

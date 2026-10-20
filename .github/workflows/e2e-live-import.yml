@@ -1,0 +1,33 @@
+# Live check of the universal landing-page import on the labelled import test site
+# (/p/skyfly-import-test/, test mode, its own test business). Places ONE clearly labelled TEST ORDER. Manual only.
+name: Live import test (import test site)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com)
+        required: true
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: node test/e2e/live-import.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
+          SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-import-screenshots
+          path: live-screenshots/
+          retention-days: 7

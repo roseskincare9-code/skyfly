@@ -184,7 +184,11 @@
   // ---------- automatic connection for <form data-skyfly-form> ----------
   var FIELDS = { name: ['name', 'full_name', 'fullname'], phone: ['phone', 'tel', 'whatsapp'], email: ['email'],
     address: ['address', 'delivery_address'], state: ['state'], notes: ['notes', 'note', 'message'] };
+  // Fields marked by Skyfly's import adapter (data-skyfly-field="name"…) come first; then common names.
+  function marked(form, key) { return form.querySelectorAll('[data-skyfly-field="' + key + '"]'); }
   function field(form, names) {
+    var m = marked(form, names[0]);
+    if (m.length) return Array.prototype.map.call(m, function (el) { return String(el.value || '').trim(); }).filter(Boolean).join(' ');
     for (var i = 0; i < names.length; i++) { var el = form.elements[names[i]]; if (el && el.value !== undefined) return String(el.value).trim(); }
     return '';
   }
@@ -204,17 +208,20 @@
     if (form.__skyfly) return;
     form.__skyfly = true;
     form.addEventListener('focusin', function () { track('InitiateCheckout'); });
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
+    // Imported forms (data-skyfly-exclusive) are handled in the capture phase (see below), so the
+    // page's own scripts can't also send the order to WhatsApp or another service.
+    if (!form.hasAttribute('data-skyfly-exclusive')) form.addEventListener('submit', function (e) { e.preventDefault(); send(form); });
+  }
+  function send(form) {
       if (form.__busy) return;
-      var productEl = form.elements.product;
+      var productEl = marked(form, 'product')[0] || form.elements.product;
       var opt = productEl && productEl.options ? productEl.options[productEl.selectedIndex] : null;
       var product = opt ? (opt.getAttribute('data-product') || opt.value) : (productEl ? productEl.value : form.getAttribute('data-product'));
       var displayed = opt && opt.getAttribute('data-price');
       var order = {
         landingPage: form.getAttribute('data-skyfly-form') || pageKey,
         customer: {}, items: [{ product: product, quantity: parseInt(field(form, ['quantity', 'qty']), 10) || 1 }],
-        website: field(form, ['website']),
+        website: form.elements.website ? String(form.elements.website.value || '') : '',
       };
       if (displayed) order.items[0].unitPrice = Number(displayed);
       Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
@@ -236,9 +243,46 @@
         box.textContent = [res.message].concat(details).join(' ');
         box.style.display = 'block';
       });
-    });
   }
   function bindAll() { Array.prototype.forEach.call(document.querySelectorAll('form[data-skyfly-form]'), bind); }
+
+  // Capture phase: runs before the page's own handlers (inline onclick/onsubmit included).
+  // - an imported order form's submit: Skyfly saves the order; the page's code doesn't run.
+  // - its submit button: the page's click code (e.g. "open WhatsApp") doesn't run; the form submits.
+  // - a purchase button (data-skyfly-buy): opens Skyfly's order form, with its product chosen.
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || !form.matches || !form.matches('form[data-skyfly-form][data-skyfly-exclusive]')) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    bind(form); send(form);
+  }, true);
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-skyfly-submit],[data-skyfly-buy]') : null;
+    if (!el) return;
+    if (el.hasAttribute('data-skyfly-submit')) {
+      var form = el.closest('form[data-skyfly-exclusive]');
+      if (form) e.stopImmediatePropagation(); // the browser still submits the form (default action)
+      return;
+    }
+    e.preventDefault(); e.stopImmediatePropagation();
+    choose(el.getAttribute('data-product'), (el.getAttribute('href') || '').charAt(0) === '#' ? el.getAttribute('href').slice(1) : '');
+  }, true);
+  function choose(code, targetId) {
+    var target = (targetId && document.getElementById(targetId)) || document.querySelector('form[data-skyfly-form],[data-skyfly-checkout]');
+    if (!target) return;
+    track('InitiateCheckout');
+    if (code) {
+      var co = target.matches('[data-skyfly-checkout]') ? target : target.querySelector('[data-skyfly-checkout]');
+      if (co && co.__skyflySelect) co.__skyflySelect(code);
+      var sel = target.matches('form') ? marked(target, 'product')[0] || target.elements.product : null;
+      if (sel && sel.options) {
+        for (var i = 0; i < sel.options.length; i++) if (sel.options[i].getAttribute('data-product') === code) { sel.selectedIndex = i; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      } else if (target.matches('form')) target.setAttribute('data-product', code);
+    }
+    if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var first = target.querySelector('input:not([type=hidden]),select,textarea');
+    if (first && first.focus) setTimeout(function () { try { first.focus({ preventScroll: true }); } catch (x) { /* older browsers */ } }, 400);
+  }
 
   // ---------- drop-in checkout: <div data-skyfly-checkout></div> ----------
   // Package -> quantity -> details -> review -> submit -> confirmation, with prices from Skyfly.
@@ -378,6 +422,8 @@
         });
       };
     }
+    // A purchase button elsewhere on the page chose a product.
+    box.__skyflySelect = function (code) { st8.product = code; if (cat && !store(doneKey)) form(); };
     function render() {
       var saved = store(doneKey);
       if (saved) { try { return showConfirmation(JSON.parse(saved)); } catch (e) { /* show the form */ } }

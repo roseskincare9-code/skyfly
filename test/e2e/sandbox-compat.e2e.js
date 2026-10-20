@@ -19,7 +19,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR
 const FONT = (await import('node:fs')).readFileSync(path.join(root, 'src/static/fonts/dm-sans-v17-latin.woff2'));
 const HTML = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="css/site.css">
 <script type="module" src="js/mod.js"></script><script src="js/classic.js"></script></head>
-<body><h1 id="h">Compat</h1><img id="rel" src="img/a.png"><img id="abs" src="/img/a.png"><form id="f" action="https://example.com/x" method="post"><input name="a"></form>
+<body><h1 id="h">Compat</h1><img id="rel" src="img/a.png"><img id="abs" src="/img/a.png"><form id="f" action="https://example.com/x" method="post"><input name="a"></form><div data-skyfly-checkout></div>
 <script>
 window.R = {};
 try { localStorage.setItem('k','1'); R.localStorage = 'works'; } catch (e) { R.localStorage = 'blocked'; }
@@ -56,6 +56,9 @@ const c2 = await csrfToken(owner, `/businesses/${biz}/landing-pages`);
 const up = await owner.post(`/businesses/${biz}/landing-pages/upload`).field('_csrf', c2).field('name', 'compat').attach('file', buf, 'compat.zip');
 const pageId = up.headers.location.match(/landing-pages\/(\d+)/)[1];
 const v = (await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1', [pageId])).rows[0].id;
+// Published pages need something to order (publishing is refused otherwise).
+const item = (await pool.query("INSERT INTO products (business_id, code, name, price_minor) VALUES ($1, 'compat-item', 'Compat item', 100000) RETURNING id", [biz])).rows[0].id;
+await pool.query('INSERT INTO landing_page_products (landing_page_id, product_id) VALUES ($1, $2)', [pageId, item]);
 const c3 = await csrfToken(owner, `/businesses/${biz}/landing-pages`);
 await owner.post(`/businesses/${biz}/landing-pages/${pageId}/publish`).type('form').send({ _csrf: c3, version_id: String(v) });
 await pool.end();

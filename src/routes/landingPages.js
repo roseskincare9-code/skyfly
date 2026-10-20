@@ -7,7 +7,9 @@ import { audit } from '../lib/audit.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { clearOriginCache } from '../lib/origins.js';
 import { importUpload, ImportError } from '../hosting/importer.js';
-import { saveVersion } from '../hosting/storage.js';
+import { saveVersion, readFile } from '../hosting/storage.js';
+import { detectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
+import { validateVersion, publishVersion, checkLive, businessCatalogue } from '../hosting/validate.js';
 import { LIMITS } from '../hosting/files.js';
 import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
@@ -197,7 +199,7 @@ export function landingPageRoutes({ pool, config }) {
     res.redirect(`${res.locals.base}/landing-pages`);
   }));
 
-  async function renderPage(req, res, page, { error = null, notice = null, status = 200 } = {}) {
+  async function renderPage(req, res, page, { error = null, notice = null, status = 200, validationFor = null } = {}) {
     const { rows: versions } = await pool.query(
       `SELECT id, source_name, entry_path, file_count, total_bytes, report, created_at FROM page_versions
         WHERE landing_page_id = $1 ORDER BY id DESC LIMIT 10`,
@@ -219,16 +221,38 @@ export function landingPageRoutes({ pool, config }) {
       `SELECT sc.name, lp.sheet_connection_id IS NOT NULL AS own FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
          JOIN sheet_connections sc ON sc.business_id = lp.business_id AND sc.id = coalesce(lp.sheet_connection_id, b.default_sheet_connection_id)
         WHERE lp.id = $1`, [page.id]);
+    // Import → products → checkout → preview → checks → publish, for the latest version (or the one just refused).
+    const current = await pool.query('SELECT * FROM landing_pages WHERE id = $1', [page.id]).then((r) => ({ ...page, ...r.rows[0] }));
+    let workflow = null;
+    const target = versions.find((v) => v.id === Number(validationFor)) ?? versions[0];
+    if (target) {
+      const catalogue = await businessCatalogue(pool, req.business.id);
+      const html = (await readFile(pool, target.id, target.entry_path))?.data.toString('utf8') ?? '';
+      const detected = detectCheckout(html, catalogue);
+      const validation = await validateVersion(pool, config, current, target.id);
+      const check = (k) => validation.checks.find((c) => c.key === k)?.status;
+      workflow = {
+        version: target, detected, validation, catalogue, fieldLabels: FIELD_LABELS,
+        steps: [
+          { n: 1, label: 'Import', done: true },
+          { n: 2, label: 'Products', done: check('products') === 'PASS' },
+          { n: 3, label: 'Checkout', done: ['PASS', 'WARNING'].includes(check('checkout')) && check('mapping') !== 'BLOCKED' && check('fields') !== 'BLOCKED' },
+          { n: 4, label: 'Preview', done: true },
+          { n: 5, label: 'Checks', done: !validation.blocked },
+          { n: 6, label: 'Publish', done: current.status === 'active' && Number(current.published_version_id) === target.id },
+        ],
+      };
+    }
     res.set('Cache-Control', 'no-store');
     res.status(status).render('landing-page-form', {
-      page, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting, sheet: sheet ?? null,
+      page: current, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting, sheet: sheet ?? null, workflow,
     });
   }
 
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.' }[req.query.done] ?? null;
+    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.', connected: 'Checkout connected as a new version: the page now saves orders in Skyfly. Preview it, check the results below, then publish.' }[req.query.done] ?? null;
     const error = typeof req.query.error === 'string' ? req.query.error.slice(0, 300) : null;
     await renderPage(req, res, page, { notice, error });
   }));
@@ -275,20 +299,28 @@ export function landingPageRoutes({ pool, config }) {
     const versionId = Number(req.body.version_id);
     const { rows: [version] } = await pool.query('SELECT id FROM page_versions WHERE id = $1 AND landing_page_id = $2', [versionId, page.id]);
     if (!version) return renderPage(req, res, page, { error: 'Choose a version to publish.', status: 400 });
+    // Server-side checks first: a version customers could not order from is not published.
+    const validation = await validateVersion(pool, config, page, version.id);
+    if (validation.blocked) {
+      const why = validation.checks.filter((c) => c.status === 'BLOCKED').map((c) => `${c.label}: ${c.message}`).join(' • ');
+      return renderPage(req, res, page, { error: `Not published. ${why}`, status: 400, validationFor: version.id });
+    }
     // A different version may have a different form, so its connection must be proven again.
-    await pool.query(
-      `UPDATE landing_pages SET status = 'active', updated_at = now(),
-              order_connected_at = CASE WHEN published_version_id IS DISTINCT FROM $1 THEN NULL ELSE order_connected_at END,
-              order_connected_reference = CASE WHEN published_version_id IS DISTINCT FROM $1 THEN NULL ELSE order_connected_reference END,
-              published_version_id = $1
-        WHERE id = $2`,
-      [version.id, page.id],
-    );
+    await publishVersion(pool, page, version.id);
     // WebP sizes for the page's images, in the background (the page is live either way).
     optimizeVersion(pool, version.id).catch((err) => console.error('Image optimization failed:', err.message));
     clearOriginCache();
     await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId } });
+    // The address is only shown as live once Skyfly has opened it like a visitor would.
+    if (config.liveCheck !== false) await checkLive(pool, config, page).catch(() => null);
     res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=published`);
+  }));
+
+  router.post('/:pageId/check-live', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    if (page.status === 'active' && page.published_version_id) await checkLive(pool, config, page);
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}#hosting`);
   }));
 
   router.post('/:pageId/unpublish', asyncHandler(async (req, res) => {

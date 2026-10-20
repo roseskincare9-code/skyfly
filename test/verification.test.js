@@ -74,7 +74,7 @@ describe('order connection is only verified by a real saved submission', () => {
     const path = `/businesses/${businessId}/landing-pages/${lp.id}`;
     const _csrf = await csrfToken(owner, path);
     await owner.post(`${path}/upload`).field('_csrf', _csrf)
-      .attach('file', Buffer.from('<html><head></head><body><form data-skyfly-form><input name="name"></form></body></html>'), 'index.html').expect(302);
+      .attach('file', Buffer.from('<html><head></head><body><h1>Larose order page (verification test)</h1><form data-skyfly-form data-product="package-1"><input name="name"><input name="phone"><input name="address"><button>Order</button></form></body></html>'), 'index.html').expect(302);
     const { rows: [v] } = await pool.query('SELECT id FROM page_versions WHERE landing_page_id = $1', [lp.id]);
     const pub = await post(`${path}/publish`, { version_id: v.id });
     assert.equal(pub.status, 302);
