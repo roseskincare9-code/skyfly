@@ -14,8 +14,9 @@ import { checkLive } from '../src/hosting/validate.js';
 
 const { pool, app, config } = setup({ pagesBaseUrl: '', allowedOrigins: [] });
 const SAMPLE = readFileSync(new URL('../src/demo/import-sample/index.html', import.meta.url), 'utf8');
-const CATALOGUE = [{ id: 1, code: 'radiance-serum', name: 'Radiance Serum', price: 15000 }, { id: 2, code: 'glow-duo', name: 'Glow Duo Set', price: 27500 }];
-let owner; let other; let aurora; let pageId; let slug;
+const SIZE = (d) => [{ name: 'Size', values: [{ label: '30ml', delta_minor: 0 }, { label: '50ml', delta_minor: d }] }];
+const CATALOGUE = [{ id: 1, code: 'radiance-serum', name: 'Radiance Serum', price: 15000, options: SIZE(500000) }, { id: 2, code: 'glow-duo', name: 'Glow Duo Set', price: 27500, options: SIZE(800000) }];
+let owner; let other; let aurora; let pageId; let slug; let first;
 let n = 0;
 
 async function post(agent, path, fields, status) {
@@ -29,7 +30,7 @@ const latest = async () => (await pool.query('SELECT id FROM page_versions WHERE
 const order = (fields = {}, key = null) => request(app).post('/api/public/orders').set('Origin', 'null').send({
   landingPage: slug, idempotencyKey: key ?? `universal-import-${String(n += 1).padStart(6, '0')}`,
   customer: { name: 'TEST ORDER universal import', phone: '08031234567', address: '1 Test Road, Ikeja', state: 'Lagos' },
-  items: [{ product: 'radiance-serum', quantity: 1, unitPrice: 15000 }], ...fields,
+  items: [{ product: 'radiance-serum', quantity: 1, unitPrice: 15000, options: { Size: '30ml' } }], ...fields,
 });
 
 before(async () => {
@@ -43,7 +44,7 @@ before(async () => {
   aurora = Number(res.headers.location.match(/businesses\/(\d+)/)[1]);
   await pool.query("UPDATE businesses SET subscription_status = 'active', subscription_expires_on = NULL, whatsapp_number = '+2349049206695' WHERE id = $1", [aurora]);
   for (const [i, p] of CATALOGUE.entries()) {
-    await pool.query('INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES ($1, $2, $3, $4, $5)', [aurora, p.code, p.name, p.price * 100, i]);
+    await pool.query('INSERT INTO products (business_id, code, name, price_minor, sort_order, options) VALUES ($1, $2, $3, $4, $5, $6)', [aurora, p.code, p.name, p.price * 100, i, JSON.stringify(p.options)]);
   }
 });
 after(() => pool.end());
@@ -60,7 +61,7 @@ describe('adapter (pure)', () => {
   test('finds the order form, its fields, the WhatsApp purchase buttons and the products; leaves "chat" links alone', () => {
     const d = detectCheckout(SAMPLE, CATALOGUE);
     assert.equal(d.forms.length, 1);
-    assert.deepEqual(d.forms[0].fields.map((f) => f.field), ['product', 'name', 'phone', 'address', 'state']);
+    assert.deepEqual(d.forms[0].fields.map((f) => f.field), ['product', 'option', 'name', 'phone', 'address', 'state']);
     assert.equal(d.forms[0].sendsTo, 'its own script');
     assert.deepEqual(d.buttons.map((b) => [b.text, b.goesTo]), [['Order on WhatsApp', 'WhatsApp'], ['Buy now', 'WhatsApp'], ['Order now', 'WhatsApp']]);
     assert.ok(d.candidates.every((c) => c.match?.confidence === 'high'), JSON.stringify(d.candidates));
@@ -69,7 +70,7 @@ describe('adapter (pure)', () => {
 
   test('connecting adds attributes only: design, text and other links stay byte-for-byte', () => {
     const { html } = connectCheckout(SAMPLE, { slug: 'aurora', catalogue: CATALOGUE });
-    const strip = (h) => h.replace(/\s(data-skyfly-[a-z-]+(="[^"]*")?|data-product="[^"]*"|data-price="[^"]*"|required)(?=[\s>])/g, '')
+    const strip = (h) => h.replace(/\s(data-skyfly-[a-z-]+(="[^"]*")?|data-product="[^"]*"|data-price="[^"]*"|data-option-value="[^"]*"|required)(?=[\s>])/g, '')
       .replace(/href="#orderForm"/g, 'HREF').replace(/href="https:\/\/wa\.me\/[^"]*(order|Order)[^"]*"/g, 'HREF').replace(/\stype="submit"/g, ' type="button"').replace(/\s(onclick|onsubmit)="[^"]*"/g, '');
     assert.equal(strip(html), strip(SAMPLE));
     assert.match(html, /<a href="https:\/\/wa\.me\/2349049206695">Chat with us on WhatsApp<\/a>/, 'support link unchanged');
@@ -96,14 +97,24 @@ describe('import → products → checkout → checks → publish', () => {
     assert.match(page.text, /data-check="checkout"[\s\S]*?BLOCKED/);
   });
 
-  test('publishing is refused while the page would not save orders', async () => {
-    const res = await post(owner, `${base()}/publish`, { version_id: String(await latest()) }, 400);
-    assert.match(res.text, /Not published\./);
-    assert.equal((await pool.query('SELECT status FROM landing_pages WHERE id = $1', [pageId])).rows[0].status, 'draft');
+  test('Publish on a page that is not connected yet connects its checkout itself (every match confident) and publishes', async () => {
+    first = await latest();
+    await post(owner, `${base()}/publish`, { version_id: String(first) }, 302);
+    const { rows: [lp] } = await pool.query('SELECT status, published_version_id FROM landing_pages WHERE id = $1', [pageId]);
+    assert.equal(lp.status, 'active');
+    assert.notEqual(Number(lp.published_version_id), first, 'a new, connected version was published');
+    clearOriginCache();
+    const live = await request(app).get(`/p/${slug}/`).expect(200);
+    assert.match(live.text, /data-skyfly-form="[^"]+" data-skyfly-exclusive/);
+    assert.match(live.text, /data-skyfly-option="Size"/);
+    const { rows: linked } = await pool.query('SELECT p.code FROM landing_page_products l JOIN products p ON p.id = l.product_id WHERE l.landing_page_id = $1 ORDER BY 1', [pageId]);
+    assert.deepEqual(linked.map((r) => r.code), ['glow-duo', 'radiance-serum']);
+    await post(owner, `${base()}/unpublish`, {}, 302);
+    await pool.query('DELETE FROM page_versions WHERE landing_page_id = $1 AND id <> $2', [pageId, first]); // back to the original upload
+    await pool.query('UPDATE landing_pages SET published_version_id = NULL WHERE id = $1', [pageId]);
   });
 
-  test('an unmatched product blocks publishing with a clear reason', async () => {
-    const first = await latest();
+  test('an unmatched product blocks publishing with a clear reason (and Publish does not guess)', async () => {
     await post(owner, `${base()}/versions/${first}/connect`, { 'product__option:0.2': '' }, 302);
     const res = await post(owner, `${base()}/publish`, { version_id: String(await latest()) }, 400);
     assert.match(res.text, /Product mapping: Orders would be refused: &#34;Glow Duo Set – ₦27,500&#34; is not matched to a product/);
@@ -111,13 +122,20 @@ describe('import → products → checkout → checks → publish', () => {
     assert.equal(await latest(), first);
   });
 
+  test('a size on the page that the product does not have blocks publishing', async () => {
+    await pool.query("UPDATE products SET options = '[]' WHERE business_id = $1 AND code = 'glow-duo'", [aurora]);
+    await post(owner, `${base()}/versions/${first}/connect`, {}, 302);
+    const res = await post(owner, `${base()}/publish`, { version_id: String(await latest()) }, 400);
+    assert.match(res.text, /&#34;Size&#34; is not an option of Glow Duo Set/);
+    await pool.query('DELETE FROM page_versions WHERE id = $1', [await latest()]);
+    await pool.query('UPDATE products SET options = $2 WHERE business_id = $1 AND code = \'glow-duo\'', [aurora, JSON.stringify(SIZE(800000))]);
+  });
+
   test('connect checkout automatically: one new version, products connected, every check passes', async () => {
     const v = await latest();
     await post(owner, `${base()}/versions/${v}/connect`, {}, 302);
     const v2 = await latest();
     assert.notEqual(v2, v);
-    const { rows: linked } = await pool.query('SELECT p.code FROM landing_page_products l JOIN products p ON p.id = l.product_id WHERE l.landing_page_id = $1 ORDER BY 1', [pageId]);
-    assert.deepEqual(linked.map((r) => r.code), ['glow-duo', 'radiance-serum']);
     const page = await owner.get(base()).expect(200);
     assert.match(page.text, /The checkout is connected to Skyfly/);
     assert.doesNotMatch(page.text, /data-check="[a-z]+"><td>[^<]+<\/td>\s*<td><span class="pill cancelled">BLOCKED/);
@@ -159,7 +177,7 @@ describe('import → products → checkout → checks → publish', () => {
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders WHERE reference = $1', [ok.body.reference])).rows[0].n, 1);
     const bad = await order({ customer: { name: 'TEST ORDER', phone: '', address: '' } }).expect(400);
     assert.ok(bad.body.fields.phone && bad.body.fields.address);
-    await order({ items: [{ product: 'radiance-serum', quantity: 1, unitPrice: 1 }] }).expect(409); // a tampered price
+    await order({ items: [{ product: 'radiance-serum', quantity: 1, unitPrice: 1, options: { Size: '30ml' } }] }).expect(409); // a tampered price
   });
 
   test('isolation: no business can order another business\'s products, see its page or its orders', async () => {
@@ -211,7 +229,7 @@ describe('import test site on the live service', () => {
     assert.match(page.text, /data-skyfly-form="skyfly-import-test" data-skyfly-exclusive id="orderForm"/);
     const res = await request(app).post('/api/public/orders').set('Origin', 'null').send({
       landingPage: 'skyfly-import-test', idempotencyKey: 'import-test-site-0001',
-      customer: { name: 'Ada Test', phone: '08031234567', address: '1 Test Road, Ikeja' }, items: [{ product: 'glow-duo', quantity: 1, unitPrice: 27500 }],
+      customer: { name: 'Ada Test', phone: '08031234567', address: '1 Test Road, Ikeja' }, items: [{ product: 'glow-duo', quantity: 1, unitPrice: 27500, options: { Size: '50ml' } }],
     }).expect(201);
     assert.equal(res.body.business, 'skyfly-import-test');
     assert.equal(res.body.test, true, 'every order from a test-mode page is a test order');

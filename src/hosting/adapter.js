@@ -42,17 +42,22 @@ const FIELD_RULES = [
   ['email', (c) => c.type === 'email' || /e-?mail/.test(c.hint)],
   ['phone', (c) => c.type === 'tel' || /phone|tel\b|mobile|whatsapp|gsm|contact number|number/.test(c.hint)],
   ['quantity', (c) => /\bqty\b|quantity|how many/.test(c.hint) || (c.type === 'number' && !/price|amount/.test(c.hint))],
-  ['product', (c) => c.tag === 'select' && (c.optionPrices > 0 || /package|product|bundle|plan|option|size|item|offer|kit|set/.test(c.hint))],
+  // A product's own choice (size, colour…), not the product itself.
+  ['option', (c) => c.tag === 'select' && OPTION_WORDS.test(c.hint) && !/package|bundle|product|plan|kit|offer/.test(c.hint)],
+  ['product', (c) => c.tag === 'select' && (c.optionPrices > 0 || /package|product|bundle|plan|item|offer|kit|set/.test(c.hint))],
   ['state', (c) => /\bstate\b|city|region|\blga\b|province|county|town/.test(c.hint)],
   ['address', (c) => /address|street|delivery|location|house|shipping/.test(c.hint)],
   ['notes', (c) => c.tag === 'textarea' || /note|message|comment|instruction|request/.test(c.hint)],
   ['name', (c) => /name|customer|buyer/.test(c.hint) && !/user ?name|company|business|brand/.test(c.hint)],
 ];
-export const FIELD_LABELS = { name: 'Full name', phone: 'Phone number', address: 'Delivery address', state: 'State / city', email: 'Email', notes: 'Notes', quantity: 'Quantity', product: 'Product / package', ignore: 'Not used by Skyfly' };
+export const FIELD_LABELS = { option: 'Product option (size, colour…)', name: 'Full name', phone: 'Phone number', address: 'Delivery address', state: 'State / city', email: 'Email', notes: 'Notes', quantity: 'Quantity', product: 'Product / package', ignore: 'Not used by Skyfly' };
 export const REQUIRED_FIELDS = ['name', 'phone', 'address'];
 
+const OPTION_WORDS = /\b(size|sizes|variant|colou?r|shade|scent|flavou?r|volume|style|length|weight|type|option)\b/;
 const ORDER_WORDS = /\b(order|buy|shop now|purchase|check ?out|add to (cart|bag)|get (it|yours|mine|now|started)|claim|reserve|pre-?order|i want (it|this|one)|place)\b/i;
 const SUPPORT_WORDS = /\b(chat|question|ask|support|help|contact|enquir|inquir|talk to|speak)\b/i;
+// Links about an order already placed (on a thank-you message), not purchase buttons.
+const AFTER_ORDER_WORDS = /\b(view|track|details|another|receipt|status)\b/i;
 const EXTERNAL_CHECKOUT = /selar\.(co|com)|paystack\.(com|shop)|flutterwave\.com\/pay|buy\.stripe\.com|checkout\.stripe\.com|paypal\.(com|me)|gumroad\.com|shopify\.com|jumia\.com|konga\.com|bumpa|flutterwave\.com\/store/i;
 const WHATSAPP = /wa\.me\/|api\.whatsapp\.com\/send|whatsapp:\/\//i;
 
@@ -71,10 +76,12 @@ function purchaseKind(node) {
   const external = EXTERNAL_CHECKOUT.test(href) || EXTERNAL_CHECKOUT.test(onclick);
   const orderish = ORDER_WORDS.test(text) || ORDER_WORDS.test(prefillOf(href)) || ORDER_WORDS.test(attr(node, 'aria-label') || '');
   const support = SUPPORT_WORDS.test(text) && !ORDER_WORDS.test(text);
-  if (support) return null;
+  if (support || AFTER_ORDER_WORDS.test(text)) return null;
   if (external) return 'an external checkout';
   if (orderish && wa) return 'WhatsApp';
-  if (orderish && (node.tagName === 'button' || /^#|^$|^javascript:/i.test(href) || /order|checkout|buy/i.test(href))) return 'the order section';
+  // In-page buttons that already lead to the page's own order section (href="#order") keep working as they are.
+  if (/^#[A-Za-z]/.test(href)) return null;
+  if (orderish && (node.tagName === 'button' || /^#?$|^javascript:/i.test(href) || /order|checkout|buy/i.test(href))) return 'the order section';
   return null;
 }
 // Purchase links/buttons outside forms, in document order (with their ancestors).
@@ -299,24 +306,40 @@ export function connectCheckout(html, { slug, catalogue, mapping = {} }) {
     used.add(id);
     target = target ?? id;
     let formProduct = null;
+    const fieldOf = (fd, i) => mapping.fields?.[`${f.id}.${i}`] ?? fd.field;
+    const optionsOf = (sel) => (sel?.childNodes ?? []).flatMap((o) => (o.tagName === 'optgroup' ? o.childNodes : [o])).filter((o) => o.tagName === 'option');
+    // The products this form can order: its product list's matches, or the one product it is for.
+    const productIndex = f.fields.findIndex((fd, i) => fieldOf(fd, i) === 'product');
+    const formProducts = [];
+    if (productIndex >= 0) optionsOf(inputs[productIndex]).forEach((o, oi) => { const p = productFor(`option:${f.id}.${oi}`); if (p) formProducts.push(p); });
+    else { formProduct = productFor(`form:${f.id}`); if (formProduct) formProducts.push(formProduct); }
     f.fields.forEach((fd, i) => {
-      const field = mapping.fields?.[`${f.id}.${i}`] ?? fd.field;
+      const field = fieldOf(fd, i);
       const c = inputs[i];
       if (!c || field === 'ignore') return;
       const set = { 'data-skyfly-field': field };
       if (field === 'phone' && attr(c, 'required') === undefined) set.required = true;
+      if (field === 'option') {
+        // Which of the product's options this list chooses (e.g. "Size"), and each entry's value.
+        const groups = formProducts.flatMap((p) => p.options ?? []);
+        const group = groups.find((g) => fd.hint.includes(norm(g.name))) ?? groups.find((g) => g.values.length > 1) ?? null;
+        const word = fd.hint.match(OPTION_WORDS)?.[1] ?? 'option';
+        set['data-skyfly-option'] = group?.name ?? word.charAt(0).toUpperCase() + word.slice(1);
+        optionsOf(c).forEach((o) => {
+          const text = textOf(o);
+          const v = group?.values.find((x) => norm(text) === norm(x.label) || norm(text).startsWith(`${norm(x.label)} `));
+          if (v) setAttrs(o, { 'data-option-value': v.label });
+        });
+        changes.push(`"${fd.name || fd.hint}" → ${set['data-skyfly-option']} option${group ? '' : ' (not set up on the product yet)'}`);
+      }
       setAttrs(c, set);
       if (field === 'product') {
-        const options = (c.childNodes ?? []).flatMap((o) => (o.tagName === 'optgroup' ? o.childNodes : [o])).filter((o) => o.tagName === 'option');
-        options.forEach((o, oi) => {
+        optionsOf(c).forEach((o, oi) => {
           const p = productFor(`option:${f.id}.${oi}`);
           if (p) { setAttrs(o, { 'data-product': p.code, 'data-price': String(p.price) }); changes.push(`"${textOf(o).slice(0, 50)}" → ${p.name}`); }
         });
       }
     });
-    if (!f.fields.some((fd, i) => (mapping.fields?.[`${f.id}.${i}`] ?? fd.field) === 'product')) {
-      formProduct = productFor(`form:${f.id}`);
-    }
     setAttrs(node, {
       'data-skyfly-form': slug, 'data-skyfly-exclusive': true, ...(attr(node, 'id') ? {} : { id }),
       ...(formProduct ? { 'data-product': formProduct.code, 'data-price': String(formProduct.price) } : {}),
@@ -336,6 +359,8 @@ export function connectCheckout(html, { slug, catalogue, mapping = {} }) {
   const needsDropIn = !target && !alreadyConnected && !detected.dropIn && !detected.customApi;
   if (!target) target = 'skyfly-order';
   for (const b of detected.buttons) {
+    // A page whose own code already sends orders to Skyfly keeps its in-page buttons as they are.
+    if (detected.customApi && b.goesTo === 'the order section') continue;
     const node = buttonNodes[b.id];
     if (!node) continue;
     const p = productFor(`button:${b.id}`);

@@ -43,6 +43,7 @@
     <% items.forEach((i) => { %>
       <div class="line"><span><%= i.product_name %> <span class="muted">× <%= i.quantity %><%= i.is_upsell ? ' (add-on)' : '' %></span></span><span><%= formatMoney(i.line_total_minor, order.currency) %></span></div>
     <% }) %>
+    <% if (Number(order.delivery_fee_minor) > 0) { %><div class="line"><span>Delivery</span><span id="delivery"><%= formatMoney(order.delivery_fee_minor, order.currency) %></span></div><% } %>
     <div class="line total"><span>Total</span><span id="total"><%= formatMoney(order.total_minor, order.currency) %></span></div>
     <p class="muted" style="font-size:13px;margin:8px 0 0">Pay on delivery unless our team tells you otherwise.</p>
   </section>

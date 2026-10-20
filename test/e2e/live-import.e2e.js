@@ -79,6 +79,7 @@ let reference = null; let confirmation = null;
 await step('D. A labelled test order (double-clicked) is saved once under the import test business; the thank-you page follows the save', async () => {
   await page.fill('#phone_number', '08031234567');
   await page.fill('#city', 'Lagos');
+  await page.selectOption('#size', { label: '50ml (+₦5,000 serum / +₦8,000 duo)' });
   const before = posts.length;
   await Promise.all([
     page.waitForURL(/\/o\/IT-[A-Z0-9]+/, { timeout: 120000 }),
@@ -87,22 +88,24 @@ await step('D. A labelled test order (double-clicked) is saved once under the im
   const ok = replies.filter((r) => r.status === 201 || r.status === 200);
   assert(ok.length >= 1, `replies ${JSON.stringify(replies.slice(-3))}`);
   const r = ok[0].body;
-  assert(r.saved === true && r.business === 'skyfly-import-test' && r.test === true && r.total === 27500 && r.currency === 'NGN', `reply ${JSON.stringify({ ...r, confirmationUrl: undefined })}`);
+  // Glow Duo Set ₦27,500 + 50ml ₦8,000 + delivery ₦2,500 (free only from ₦50,000), all priced by Skyfly.
+  assert(r.saved === true && r.business === 'skyfly-import-test' && r.test === true && r.total === 38000 && r.deliveryFee === 2500 && r.currency === 'NGN', `reply ${JSON.stringify({ ...r, confirmationUrl: undefined })}`);
+  assert(r.items?.[0]?.name === 'Glow Duo Set (Size: 50ml)', `items ${JSON.stringify(r.items)}`);
   assert(new Set(ok.map((x) => x.body.reference)).size === 1, 'two different orders from a double click');
   reference = r.reference; confirmation = page.url();
-  return `${reference}, ₦27,500 (Glow Duo Set, priced by Skyfly), business skyfly-import-test, test order; ${posts.length - before} submission(s) for the double click, 1 order`;
+  return `${reference}, Glow Duo Set (Size: 50ml) ₦35,500 + delivery ₦2,500 = ₦38,000 (priced by Skyfly), business skyfly-import-test, test order; ${posts.length - before} submission(s) for the double click, 1 order`;
 });
 
 await step('E. The thank-you page shows the reference, the order summary and the WhatsApp button (optional, after the save)', async () => {
   assert(reference, 'no order');
   const text = (await page.textContent('body')).replace(/\s+/g, ' ');
-  assert(text.includes(reference) && /Glow Duo Set/.test(text) && /₦27,500/.test(text), 'reference/summary missing');
+  assert(text.includes(reference) && /Glow Duo Set \(Size: 50ml\)/.test(text) && /Delivery\s*₦2,500/.test(text) && /₦38,000/.test(text), 'reference/summary missing');
   const wa = await page.getAttribute('a[href*="wa.me"]', 'href');
   assert(wa && new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`).test(decodeURIComponent(wa)), `WhatsApp link ${wa}`);
   assert(!toWhatsApp().length, 'opened WhatsApp automatically');
   mkdirSync('live-screenshots', { recursive: true });
   await page.screenshot({ path: 'live-screenshots/import-test-thank-you.png' });
-  return `${reference}, Glow Duo Set × 1, ₦27,500; WhatsApp button to 09049206695 with the reference (not opened automatically)`;
+  return `${reference}, Glow Duo Set (Size: 50ml) × 1, delivery ₦2,500, total ₦38,000; WhatsApp button to 09049206695 with the reference (not opened automatically)`;
 });
 
 await step('F. Sending the same submission again returns the same order (no duplicate)', async () => {

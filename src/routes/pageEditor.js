@@ -1,17 +1,16 @@
 // Edit a hosted page version in the browser (text, title, prices, colours, images,
 // sections) and preview versions on phone and desktop. Each save is a new version.
 import { Router } from 'express';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import multer from 'multer';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { requireCsrf } from '../lib/csrf.js';
-import { readFile, saveVersion } from '../hosting/storage.js';
+import { readFile } from '../hosting/storage.js';
 import { previewToken } from '../hosting/preview.js';
-import { analyzeFiles } from '../hosting/report.js';
 import { analyzePage, applyChanges, EditError } from '../hosting/editor.js';
-import { connectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
+import { FIELD_LABELS } from '../hosting/adapter.js';
+import { deriveVersion as deriveShared, connectVersion } from '../hosting/connect.js';
 import { businessCatalogue } from '../hosting/validate.js';
 
 const IMAGE_TYPES = { 'image/jpeg': [0xff, 0xd8], 'image/png': [0x89, 0x50], 'image/gif': [0x47, 0x49], 'image/webp': [0x52, 0x49] };
@@ -68,23 +67,7 @@ export function pageEditorRoutes({ pool, config }) {
   }
 
   // New version from an existing one: unchanged files keep their stored content; changed ones are added.
-  async function deriveVersion(v, entryHtml, replaced, sourceName, userId) {
-    const { rows: files } = await pool.query('SELECT path, content_type, size, sha256 FROM page_files WHERE version_id = $1 ORDER BY path', [v.id]);
-    const newFiles = [];
-    for (const f of files) {
-      let data = null;
-      if (f.path === v.entry_path) data = Buffer.from(entryHtml);
-      else if (replaced.has(f.path)) data = replaced.get(f.path);
-      else if (/\.(html?|css|m?js)$/i.test(f.path)) data = (await readFile(pool, v.id, f.path)).data;
-      const sha256 = data ? createHash('sha256').update(data).digest('hex') : f.sha256;
-      newFiles.push({ path: f.path, contentType: f.content_type, size: data ? data.length : f.size, sha256, data });
-    }
-    const upload = {
-      sourceName: sourceName.slice(0, 200), entryPath: v.entry_path, files: newFiles,
-      totalBytes: newFiles.reduce((n, f) => n + f.size, 0), report: analyzeFiles(newFiles.filter((f) => f.data), v.entry_path),
-    };
-    return saveVersion(pool, { pageId: v.page_id, userId, upload });
-  }
+  const deriveVersion = (v, entryHtml, replaced, sourceName, userId) => deriveShared(pool, v, entryHtml, replaced, sourceName, userId);
 
   // Adds Skyfly's drop-in checkout to a page that has no connected order form, as a new version.
   router.post('/:pageId/versions/:versionId/add-checkout', asyncHandler(async (req, res) => {
@@ -107,23 +90,15 @@ export function pageEditorRoutes({ pool, config }) {
     const v = await load(req);
     if (!v) return res.status(404).render('error', { message: 'Version not found.' });
     const base = `${res.locals.base}/landing-pages/${v.page_id}`;
-    const html = (await readFile(pool, v.id, v.entry_path)).data.toString('utf8');
     const catalogue = await businessCatalogue(pool, req.business.id);
     const mapping = { products: {}, fields: {} };
     for (const [k, val] of Object.entries(req.body ?? {})) {
       if (k.startsWith('product__')) mapping.products[k.slice(9)] = catalogue.some((p) => p.code === String(val)) ? String(val) : '';
       if (k.startsWith('field__')) mapping.fields[k.slice(7)] = Object.hasOwn(FIELD_LABELS, String(val)) ? String(val) : 'ignore';
     }
-    const { html: updated, changes } = connectCheckout(html, { slug: v.slug, catalogue, mapping });
-    if (updated === html) return res.redirect(`${base}?error=${encodeURIComponent('Nothing left to connect in this version: its checkout is already connected to Skyfly.')}#workflow`);
-    const versionId = await deriveVersion(v, updated, new Map(), `Checkout connected (from ${v.source_name})`, req.session.userId);
-    // The products the page now orders are connected to it (this business's products only).
-    const codes = [...new Set([...updated.matchAll(/data-product="([^"]+)"/g)].map((m) => m[1]))];
-    if (codes.length) {
-      await pool.query(
-        `INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE business_id = $2 AND code = ANY($3::text[])
-         ON CONFLICT DO NOTHING`, [v.page_id, req.business.id, codes]);
-    }
+    const result = await connectVersion(pool, { page: { id: v.page_id, business_id: req.business.id, slug: v.slug }, version: v, userId: req.session.userId, mapping });
+    if (!result) return res.redirect(`${base}?error=${encodeURIComponent('Nothing left to connect in this version: its checkout is already connected to Skyfly.')}#workflow`);
+    const { versionId, changes } = result;
     await audit(pool, req, { action: 'page.checkout_connected', businessId: req.business.id, entityType: 'landing_page', entityId: v.page_id, details: { from: v.id, versionId, changes: changes.slice(0, 20) } });
     res.redirect(`${base}?done=connected#workflow`);
   }));

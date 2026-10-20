@@ -96,7 +96,8 @@ describe('import', () => {
     // Refused while customers could not order: no products, no checkout connected to Skyfly.
     let _csrf = await csrfToken(owner, base);
     const refused = await owner.post(`${base}/publish`).type('form').send({ _csrf, version_id: v.id }).expect(400);
-    assert.match(refused.text, /Not published\. .*Products: No products are connected.*Checkout connected: The page has no order form connected to Skyfly/s);
+    assert.match(refused.text, /Not published\. .*Products: No products are connected/s);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM page_versions WHERE landing_page_id = $1', [pageId])).rows[0].n, 1, 'no automatic version kept when publishing is still refused');
     assert.equal((await pool.query('SELECT status FROM landing_pages WHERE id = $1', [pageId])).rows[0].status, 'draft');
     await pool.query("INSERT INTO landing_page_products (landing_page_id, product_id) SELECT $1, id FROM products WHERE code = 'package-1'", [pageId]);
     _csrf = await csrfToken(owner, base);

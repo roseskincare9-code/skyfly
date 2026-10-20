@@ -224,6 +224,14 @@
         website: form.elements.website ? String(form.elements.website.value || '') : '',
       };
       if (displayed) order.items[0].unitPrice = Number(displayed);
+      // The product's options chosen on the page (size, colour…): Skyfly checks and prices them.
+      var chosen = {}; var anyChoice = false;
+      Array.prototype.forEach.call(form.querySelectorAll('select[data-skyfly-option]'), function (sel) {
+        var o = sel.options[sel.selectedIndex];
+        var v = o ? (o.getAttribute('data-option-value') || '') : '';
+        if (v) { chosen[sel.getAttribute('data-skyfly-option')] = v; anyChoice = true; }
+      });
+      if (anyChoice) order.items[0].options = chosen;
       Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
       var btn = form.querySelector('[type=submit],button:not([type])');
       var label = btn && btn.textContent;
@@ -309,19 +317,28 @@
     box.classList.add('sky-co');
     var page = box.getAttribute('data-skyfly-checkout') || pageKey;
     var doneKey = 'skyfly_done_' + page;
-    var cat = null; var st8 = { product: box.getAttribute('data-product') || '', qty: 1, c: {}, addon: false }; var started = false;
+    var cat = null; var st8 = { product: box.getAttribute('data-product') || '', qty: 1, c: {}, addon: false, opts: {} }; var started = false;
     box.innerHTML = '<p class="sky-muted">Loading the order form…</p>';
     function start() { if (!started) { started = true; track('InitiateCheckout'); } }
     function product() { for (var i = 0; i < cat.products.length; i++) if (cat.products[i].code === st8.product) return cat.products[i]; return null; }
     function wa() { return cat.whatsapp ? '<p class="sky-muted" style="margin-top:14px">Questions? <a href="https://wa.me/' + esc(cat.whatsapp) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a> (optional)</p>' : ''; }
     // The page's optional add-on, when the customer has added it.
     function addon() { return st8.addon && cat.upsell ? cat.upsell : null; }
-    function sum() { var p = product(); return p ? p.price * st8.qty + (addon() ? addon().price : 0) : 0; }
+    // Options of the chosen product: each group's chosen value (the first one until the customer picks).
+    function groups() { var p = product(); return (p && p.options) || []; }
+    function choice(g) { var v = st8.opts[g.name]; for (var i = 0; i < g.values.length; i++) if (g.values[i].label === v) return g.values[i]; return g.values[0]; }
+    function unit() { var p = product(); if (!p) return 0; return Math.max(0, p.price + groups().reduce(function (n, g) { return n + (choice(g).delta || 0); }, 0)); }
+    function optionText() { return groups().map(function (g) { return g.name + ': ' + choice(g).label; }).join(', '); }
+    function subtotal() { return product() ? unit() * st8.qty + (addon() ? addon().price : 0) : 0; }
+    // Delivery as the business set it (Skyfly charges it again when saving the order).
+    function delivery() { var d = cat.delivery || {}; var sub = subtotal(); if (!d.fee || (d.freeFrom !== null && d.freeFrom !== undefined && sub >= d.freeFrom)) return 0; return d.fee; }
+    function sum() { return product() ? subtotal() + delivery() : 0; }
     function showConfirmation(r) {
       // Shown only for Skyfly's reply for a saved order; WhatsApp is optional (the order is already saved).
       box.innerHTML = '<div class="sky-ok" role="status"><h3>Thank you! We have received your order.</h3><div class="sky-rows">' +
         '<div><span>Order reference</span><b data-skyfly-reference>' + esc(r.reference) + '</b></div>' +
         (r.summary ? '<div><span>Order</span><b>' + esc(r.summary) + '</b></div>' : '') +
+        (r.deliveryFee ? '<div><span>Delivery</span><b>' + esc(money(r.deliveryFee, r.currency)) + '</b></div>' : '') +
         '<div><span>Total</span><b data-skyfly-total>' + esc(money(r.total, r.currency)) + '</b></div></div>' +
         '<p>Our team will contact you shortly to confirm the details and delivery. You can speak with our representative on WhatsApp using the button below. Please keep your order reference for follow-up.</p>' +
         (r.whatsappUrl ? '<a class="sky-btn" style="background:#25d366;text-align:center;text-decoration:none" data-skyfly-whatsapp href="' + esc(r.whatsappUrl) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a>' : '') +
@@ -340,12 +357,17 @@
     function form() {
       var opts = cat.products.map(function (p) {
         return '<label class="sky-opt' + (p.code === st8.product ? ' on' : '') + '"><input type="radio" name="sky_product" value="' + esc(p.code) + '"' + (p.code === st8.product ? ' checked' : '') + '>' +
-          esc(p.name) + '<b>' + esc(money(p.price, cat.currency)) + '</b></label>';
+          '<span>' + esc(p.name) + (p.description ? '<br><span class="sky-muted">' + esc(p.description) + '</span>' : '') + '</span>' +
+          '<b>' + (p.compareAt ? '<s class="sky-muted" style="font-weight:400">' + esc(money(p.compareAt, cat.currency)) + '</s> ' : '') + esc(money(p.price, cat.currency)) + '</b></label>';
+      }).join('');
+      var optHtml = groups().map(function (g, gi) {
+        return '<label for="sky-o' + gi + '">' + esc(g.name) + '</label><select id="sky-o' + gi + '" name="sky_opt" data-group="' + esc(g.name) + '">' +
+          g.values.map(function (v) { return '<option' + (choice(g).label === v.label ? ' selected' : '') + ' value="' + esc(v.label) + '">' + esc(v.label) + (v.delta ? ' (' + (v.delta > 0 ? '+' : '−') + esc(money(Math.abs(v.delta), cat.currency)) + ')' : '') + '</option>'; }).join('') + '</select>';
       }).join('');
       var q = ''; for (var i = 1; i <= 10; i++) q += '<option' + (i === st8.qty ? ' selected' : '') + '>' + i + '</option>';
       var c = st8.c;
       box.innerHTML = '<form novalidate><h3>' + esc(box.getAttribute('data-title') || 'Place your order') + '</h3>' +
-        '<label>Choose your package</label>' + opts +
+        '<label>Choose your package</label>' + opts + optHtml +
         '<label for="sky-qty">Quantity</label><select id="sky-qty" name="qty">' + q + '</select>' +
         '<label for="sky-name">Full name *</label><input id="sky-name" name="name" autocomplete="name" value="' + esc(c.name) + '">' +
         '<label for="sky-phone">Phone number *</label><input id="sky-phone" name="phone" type="tel" autocomplete="tel" value="' + esc(c.phone) + '">' +
@@ -361,7 +383,8 @@
       var f = box.querySelector('form');
       function total() {
         var p = product();
-        box.querySelector('[data-total]').innerHTML = p ? '<div class="sky-muted">' + esc(p.name) + ' × ' + st8.qty + (addon() ? ' + ' + esc(addon().name) : '') + '</div>' +
+        box.querySelector('[data-total]').innerHTML = p ? '<div class="sky-muted">' + esc(p.name) + (optionText() ? ' (' + esc(optionText()) + ')' : '') + ' × ' + st8.qty + (addon() ? ' + ' + esc(addon().name) : '') + '</div>' +
+          (cat.delivery && cat.delivery.fee ? '<div class="sky-muted">Delivery: ' + (delivery() ? esc(money(delivery(), cat.currency)) : 'free') + '</div>' : '') +
           'Total: <b data-skyfly-total>' + esc(money(sum(), cat.currency)) + '</b> <span class="sky-muted">(confirmed by our system when you order)</span>' : '';
       }
       var addBtn = box.querySelector('[data-addon]');
@@ -370,6 +393,14 @@
       f.addEventListener('change', function (e) {
         if (e.target.name === 'sky_product') { st8.product = e.target.value; Array.prototype.forEach.call(f.querySelectorAll('.sky-opt'), function (o) { o.classList.toggle('on', o.querySelector('input').checked); }); }
         if (e.target.name === 'qty') st8.qty = parseInt(e.target.value, 10) || 1;
+        if (e.target.name === 'sky_opt') st8.opts[e.target.getAttribute('data-group')] = e.target.value;
+        // A different package has its own options: show them.
+        if (e.target.name === 'sky_product' && cat.products.some(function (x) { return x.options; })) {
+          // Keep what the customer typed, then show the new package's options.
+          ['name', 'phone', 'address', 'state', 'email', 'notes'].forEach(function (n) { st8.c[n] = String(f.elements[n].value || ''); });
+          st8.opts = {}; return form();
+        }
+        if (e.target.name === 'sky_product') st8.opts = {};
         total();
       });
       total();
@@ -392,6 +423,8 @@
       var p = product(); var c = st8.c;
       box.innerHTML = '<h3>Review your order</h3><div class="sky-rows">' +
         '<div><span>Package</span><b>' + esc(p.name) + ' × ' + st8.qty + '</b></div>' +
+        (optionText() ? '<div><span>Options</span><b>' + esc(optionText()) + '</b></div>' : '') +
+        (cat.delivery && cat.delivery.fee ? '<div><span>Delivery</span><b>' + (delivery() ? esc(money(delivery(), cat.currency)) : 'Free') + '</b></div>' : '') +
         (addon() ? '<div><span>Add-on</span><b>' + esc(addon().name) + ' (' + esc(money(addon().price, cat.currency)) + ')</b></div>' : '') +
         '<div><span>Total</span><b>' + esc(money(sum(), cat.currency)) + '</b></div>' +
         '<div><span>Name</span><b>' + esc(c.name) + '</b></div><div><span>Phone</span><b>' + esc(c.phone) + '</b></div>' +
@@ -406,13 +439,14 @@
         if (btn.disabled) return;
         btn.disabled = true; btn.textContent = 'Placing your order…';
         var items = [{ product: st8.product, quantity: st8.qty }];
+        if (groups().length) { items[0].options = {}; groups().forEach(function (g) { items[0].options[g.name] = choice(g).label; }); }
         if (addon()) items.push({ product: addon().code, quantity: 1, upsell: true });
         submitOrder({ landingPage: page, customer: st8.c, items: items, website: st8.website || '' }).then(function (r) {
           // Success only when Skyfly has saved the order and returned its reference.
           if (r && r.ok === true && r.reference) {
             // The summary and total are Skyfly's (what was saved and priced), not the browser's.
             var saved = (r.items || []).map(function (i) { return i.name + ' × ' + i.quantity + (i.upsell ? ' (add-on)' : ''); }).join(', ');
-            var conf = { reference: r.reference, total: r.total, currency: r.currency, confirmationUrl: r.confirmationUrl, whatsappUrl: r.whatsappUrl, summary: saved || p.name + ' × ' + st8.qty };
+            var conf = { reference: r.reference, total: r.total, deliveryFee: r.deliveryFee || 0, currency: r.currency, confirmationUrl: r.confirmationUrl, whatsappUrl: r.whatsappUrl, summary: saved || p.name + ' × ' + st8.qty };
             store(doneKey, JSON.stringify(conf));
             showConfirmation(conf);
             return;

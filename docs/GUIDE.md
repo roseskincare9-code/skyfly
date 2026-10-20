@@ -29,6 +29,18 @@ pixels, and manage orders.
    **Unpublish** takes it offline immediately; **Republish** brings the same version back. Uploading or
    editing creates a new version; the live page doesn't change until you publish it.
 
+**Create a page instead:** **Pages → Create a page** starts from Skyfly's template (hero, benefits, photos,
+questions and the Skyfly checkout with your products). Change its text, images and colours with **Edit**.
+
+**Publish connects the checkout itself** when every product and form field on the page was matched with
+confidence; otherwise it asks you (step 3) instead of guessing.
+
+**Product details at checkout** (Products screen): a description, a "was" price (shown crossed out), and
+options with their own price, one group per line, e.g. `Size: 30ml, 50ml (+5000)`. An imported page's
+size/colour list is connected to these options; Skyfly checks every choice and prices it. **Delivery**
+(Settings): a fee per order and, optionally, free delivery from an order amount. Skyfly adds it to the
+total; customers pay on delivery (Skyfly takes no online payments).
+
 **Supported files:** a single `.html` file, or a `.zip` with `index.html` and its CSS, JavaScript, images, fonts
 and data files (max 25 MB). Server code (PHP, Python…) is never run: a page must work as plain HTML/JS.
 **Known limits:** forms built entirely by JavaScript after the page loads (no `<form>` in the HTML) are not

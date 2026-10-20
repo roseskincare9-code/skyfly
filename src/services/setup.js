@@ -155,22 +155,40 @@ export async function ensureImportTestSite(pool, config, log = console) {
   if (!config.demoSite || !config.publicBaseUrl) return null;
   const { rows: [admin] } = await pool.query('SELECT id FROM users WHERE is_platform_admin ORDER BY id LIMIT 1');
   if (!admin) return null;
-  if ((await pool.query('SELECT 1 FROM landing_pages WHERE slug = $1', [IMPORT_TEST])).rows[0]) return null;
+  const data = readFileSync(new URL('../demo/import-sample/index.html', import.meta.url));
+  const sha = createHash('sha256').update(data).digest('hex');
   const { detectCheckout, connectCheckout } = await import('../hosting/adapter.js');
   const { validateVersion, publishVersion, checkLive, businessCatalogue } = await import('../hosting/validate.js');
-  const { rows: [b] } = await pool.query(
-    `INSERT INTO businesses (owner_id, name, slug, currency, order_prefix, subscription_status, whatsapp_number)
-     VALUES ($1, 'Skyfly Import Test (test)', $2, 'NGN', 'IT', 'internal', '+2349049206695') ON CONFLICT (slug) DO NOTHING RETURNING id`, [admin.id, IMPORT_TEST]);
-  if (!b) return null;
-  await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, admin.id]);
+  let { rows: [page] } = await pool.query(
+    `SELECT lp.* FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND b.slug = $1`, [IMPORT_TEST]);
+  let b;
+  if (page) {
+    // Rebuilt (same address, same business) only when the bundled test page changed.
+    const { rows: [orig] } = await pool.query(
+      `SELECT f.sha256 FROM page_versions v JOIN page_files f ON f.version_id = v.id AND f.path = 'index.html'
+        WHERE v.landing_page_id = $1 AND v.source_name = 'import-sample/index.html' ORDER BY v.id DESC LIMIT 1`, [page.id]);
+    if (orig?.sha256 === sha) return null;
+    b = { id: page.business_id };
+  } else {
+    if ((await pool.query('SELECT 1 FROM landing_pages WHERE slug = $1', [IMPORT_TEST])).rows[0]) return null;
+    ({ rows: [b] } = await pool.query(
+      `INSERT INTO businesses (owner_id, name, slug, currency, order_prefix, subscription_status, whatsapp_number)
+       VALUES ($1, 'Skyfly Import Test (test)', $2, 'NGN', 'IT', 'internal', '+2349049206695') ON CONFLICT (slug) DO NOTHING RETURNING id`, [admin.id, IMPORT_TEST]));
+    if (!b) return null;
+    await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, admin.id]);
+    ({ rows: [page] } = await pool.query(
+      `INSERT INTO landing_pages (business_id, slug, name, status, test_mode, notes)
+       VALUES ($1, $2, 'Import test: AI-generated page', 'draft', true, 'Created automatically to test the universal import on the live service. Orders are test orders.')
+       RETURNING *`, [b.id, IMPORT_TEST]));
+  }
+  // The test catalogue: two products with a Size option each (own price differences), and a delivery fee.
   await pool.query(
-    `INSERT INTO products (business_id, code, name, price_minor, sort_order) VALUES
-       ($1, 'radiance-serum', 'Radiance Serum', 1500000, 1), ($1, 'glow-duo', 'Glow Duo Set', 2750000, 2)`, [b.id]);
-  const { rows: [page] } = await pool.query(
-    `INSERT INTO landing_pages (business_id, slug, name, status, test_mode, notes)
-     VALUES ($1, $2, 'Import test: AI-generated page', 'draft', true, 'Created automatically to test the universal import on the live service. Orders are test orders.')
-     RETURNING *`, [b.id, IMPORT_TEST]);
-  const data = readFileSync(new URL('../demo/import-sample/index.html', import.meta.url));
+    `INSERT INTO products (business_id, code, name, price_minor, sort_order, description, compare_at_price_minor, options) VALUES
+       ($1, 'radiance-serum', 'Radiance Serum', 1500000, 1, '30ml vitamin C serum', 1800000, '[{"name":"Size","values":[{"label":"30ml","delta_minor":0},{"label":"50ml","delta_minor":500000}]}]'),
+       ($1, 'glow-duo', 'Glow Duo Set', 2750000, 2, 'Serum + gentle cleanser', NULL, '[{"name":"Size","values":[{"label":"30ml","delta_minor":0},{"label":"50ml","delta_minor":800000}]}]')
+     ON CONFLICT (business_id, code) DO UPDATE SET name = EXCLUDED.name, price_minor = EXCLUDED.price_minor, description = EXCLUDED.description,
+       compare_at_price_minor = EXCLUDED.compare_at_price_minor, options = EXCLUDED.options, active = true`, [b.id]);
+  await pool.query('UPDATE businesses SET delivery_fee_minor = 250000, free_delivery_from_minor = 5000000 WHERE id = $1', [b.id]);
   const file = (buf) => [{ path: 'index.html', contentType: 'text/html; charset=utf-8', size: buf.length, sha256: createHash('sha256').update(buf).digest('hex'), data: buf }];
   const upload = (buf, sourceName) => ({ sourceName, entryPath: 'index.html', files: file(buf), totalBytes: buf.length, report: analyzeFiles(file(buf), 'index.html') });
   await saveVersion(pool, { pageId: page.id, userId: admin.id, upload: upload(data, 'import-sample/index.html') });

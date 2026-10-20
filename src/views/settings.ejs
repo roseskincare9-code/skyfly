@@ -19,6 +19,12 @@
     <label for="order_prefix">Order reference prefix</label>
     <input id="order_prefix" name="order_prefix" value="<%= business.order_prefix %>" required pattern="[A-Za-z]{2,5}" maxlength="5">
     <p class="muted" style="font-size:13px;margin:4px 0 0">New orders look like <code><%= business.order_prefix %>-7KQ3M9X</code>.</p>
+    <h2 style="margin-top:18px">Delivery</h2>
+    <label for="delivery_fee">Delivery fee per order (<%= business.currency %>, empty = free delivery)</label>
+    <input id="delivery_fee" name="delivery_fee" inputmode="decimal" value="<%= Number(business.delivery_fee_minor) ? business.delivery_fee_minor / 100 : '' %>" placeholder="e.g. 2500">
+    <label for="free_delivery_from">Free delivery for orders from (optional)</label>
+    <input id="free_delivery_from" name="free_delivery_from" inputmode="decimal" value="<%= business.free_delivery_from_minor !== null && business.free_delivery_from_minor !== undefined ? business.free_delivery_from_minor / 100 : '' %>" placeholder="e.g. 50000">
+    <p class="muted" style="font-size:13px;margin:4px 0 0">Shown at checkout and added to the order total by Skyfly. Customers pay on delivery.</p>
     <p><button type="submit">Save settings</button></p>
   </form>
   <div class="card">

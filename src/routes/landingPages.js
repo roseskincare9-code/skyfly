@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { analyzeFiles } from '../hosting/report.js';
 import { asyncHandler } from '../lib/http.js';
 import { slugify } from '../lib/auth.js';
 import { LANDING_PAGE_STATUSES } from '../lib/statuses.js';
@@ -10,6 +13,7 @@ import { importUpload, ImportError } from '../hosting/importer.js';
 import { saveVersion, readFile } from '../hosting/storage.js';
 import { detectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
 import { validateVersion, publishVersion, checkLive, businessCatalogue } from '../hosting/validate.js';
+import { connectVersion } from '../hosting/connect.js';
 import { LIMITS } from '../hosting/files.js';
 import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
@@ -43,6 +47,10 @@ function safeUrl(input) {
 
 // Where a published page opens: the pages address when one is configured, else a stable
 // path on the Skyfly address (served in a browser sandbox, see hosting/server.js).
+const TEMPLATE_FILES = [['index.html', 'text/html; charset=utf-8'], ['style.css', 'text/css; charset=utf-8'], ['hero.jpg', 'image/jpeg'],
+  ['product-1.jpg', 'image/jpeg'], ['product-2.jpg', 'image/jpeg'], ['product-3.jpg', 'image/jpeg']];
+const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 export function publishedUrl(config, page) {
   if (config.pagesBaseUrl) return `${config.pagesBaseUrl}/${page.slug}/`;
   return config.publicBaseUrl ? `${config.publicBaseUrl}/p/${page.slug}/` : null;
@@ -252,9 +260,28 @@ export function landingPageRoutes({ pool, config }) {
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', published: 'Published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.', connected: 'Checkout connected as a new version: the page now saves orders in Skyfly. Preview it, check the results below, then publish.' }[req.query.done] ?? null;
+    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', template: 'Page created from the starter template with your products and Skyfly checkout. Edit its text and images (Edit), preview it, then publish.', published: 'Published.', published_connected: 'Checkout connected to Skyfly automatically (new version) and published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.', connected: 'Checkout connected as a new version: the page now saves orders in Skyfly. Preview it, check the results below, then publish.' }[req.query.done] ?? null;
     const error = typeof req.query.error === 'string' ? req.query.error.slice(0, 300) : null;
     await renderPage(req, res, page, { notice, error });
+  }));
+
+  // A new page from Skyfly's starter template (Skyfly checkout included), with all of the
+  // business's products connected; edit its text, images and colours, then publish.
+  router.post('/template', asyncHandler(async (req, res) => {
+    const name = String(req.body.name ?? '').trim().slice(0, 200) || `${req.business.name} page`;
+    const files = TEMPLATE_FILES.map(([file, contentType]) => {
+      let data = readFileSync(new URL(`../templates/product/${file}`, import.meta.url));
+      if (file === 'index.html') data = Buffer.from(data.toString('utf8').replaceAll('{{BUSINESS}}', escapeHtml(req.business.name)));
+      return { path: file, contentType, size: data.length, sha256: createHash('sha256').update(data).digest('hex'), data };
+    });
+    const slug = await uniqueSlug(slugify(name) || 'page');
+    const { rows: all } = await pool.query('SELECT id FROM products WHERE business_id = $1 AND active ORDER BY sort_order, id', [req.business.id]);
+    const pageId = await savePage(req.business.id, { name, slug, url: null, status: 'draft', notes: null, productIds: all.map((p) => String(p.id)) });
+    const versionId = await saveVersion(pool, { pageId, userId: req.session.userId, upload: {
+      sourceName: 'Skyfly starter template', entryPath: 'index.html', files, totalBytes: files.reduce((n, f) => n + f.size, 0), report: analyzeFiles(files, 'index.html'),
+    } });
+    await audit(pool, req, { action: 'page.created_from_template', businessId: req.business.id, entityType: 'landing_page', entityId: pageId, details: { versionId } });
+    res.redirect(`${res.locals.base}/landing-pages/${pageId}?done=template`);
   }));
 
   // Import a new page from a ZIP or HTML file (creates the page record too).
@@ -300,7 +327,28 @@ export function landingPageRoutes({ pool, config }) {
     const { rows: [version] } = await pool.query('SELECT id FROM page_versions WHERE id = $1 AND landing_page_id = $2', [versionId, page.id]);
     if (!version) return renderPage(req, res, page, { error: 'Choose a version to publish.', status: 400 });
     // Server-side checks first: a version customers could not order from is not published.
-    const validation = await validateVersion(pool, config, page, version.id);
+    let validation = await validateVersion(pool, config, page, version.id);
+    let autoConnected = false;
+    if (validation.blocked && validation.checks.find((c) => c.key === 'checkout')?.status === 'BLOCKED') {
+      // Not connected yet: Publish connects the checkout itself when every product and field was matched confidently.
+      const { rows: [full] } = await pool.query('SELECT id, entry_path, source_name FROM page_versions WHERE id = $1', [version.id]);
+      const connected = await connectVersion(pool, { page, version: full, userId: req.session.userId, onlyIfConfident: true });
+      if (connected?.needsAnswers) {
+        return renderPage(req, res, page, { error: 'Not published yet: some products or form fields on this page need your answer. Choose them in step 3, click "Connect checkout automatically", then publish.', status: 400, validationFor: version.id });
+      }
+      if (connected?.versionId) {
+        version.id = connected.versionId;
+        autoConnected = true;
+        await audit(pool, req, { action: 'page.checkout_connected', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { from: full.id, versionId: version.id, changes: connected.changes.slice(0, 20), automatic: true } });
+        validation = await validateVersion(pool, config, { ...page, ...(await pool.query('SELECT * FROM landing_pages WHERE id = $1', [page.id])).rows[0] }, version.id);
+        if (validation.blocked) {
+          // Still not publishable: the automatic version is not kept (nothing changes until the owner fixes the rest).
+          await pool.query('DELETE FROM page_versions WHERE id = $1 AND landing_page_id = $2', [version.id, page.id]);
+          version.id = full.id;
+          autoConnected = false;
+        }
+      }
+    }
     if (validation.blocked) {
       const why = validation.checks.filter((c) => c.status === 'BLOCKED').map((c) => `${c.label}: ${c.message}`).join(' • ');
       return renderPage(req, res, page, { error: `Not published. ${why}`, status: 400, validationFor: version.id });
@@ -310,10 +358,10 @@ export function landingPageRoutes({ pool, config }) {
     // WebP sizes for the page's images, in the background (the page is live either way).
     optimizeVersion(pool, version.id).catch((err) => console.error('Image optimization failed:', err.message));
     clearOriginCache();
-    await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId } });
+    await audit(pool, req, { action: 'page.published', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { versionId: version.id } });
     // The address is only shown as live once Skyfly has opened it like a visitor would.
     if (config.liveCheck !== false) await checkLive(pool, config, page).catch(() => null);
-    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=published`);
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=${autoConnected ? 'published_connected' : 'published'}`);
   }));
 
   router.post('/:pageId/check-live', asyncHandler(async (req, res) => {

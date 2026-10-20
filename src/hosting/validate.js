@@ -18,14 +18,14 @@ function walk(node, visit) {
 
 export async function pageCatalogue(pool, page) {
   const { rows } = await pool.query(
-    `SELECT p.id, p.code, p.name, p.price_minor::bigint AS price_minor, p.active FROM products p
+    `SELECT p.id, p.code, p.name, p.price_minor::bigint AS price_minor, p.active, p.options FROM products p
        JOIN landing_page_products lpp ON lpp.product_id = p.id WHERE lpp.landing_page_id = $1 AND p.business_id = $2 ORDER BY p.sort_order, p.id`,
     [page.id, page.business_id]);
-  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, price: Number(r.price_minor) / 100, active: r.active }));
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, price: Number(r.price_minor) / 100, active: r.active, options: r.options ?? [] }));
 }
 export async function businessCatalogue(pool, businessId) {
-  const { rows } = await pool.query('SELECT id, code, name, price_minor::bigint AS price_minor FROM products WHERE business_id = $1 AND active ORDER BY sort_order, id', [businessId]);
-  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, price: Number(r.price_minor) / 100 }));
+  const { rows } = await pool.query('SELECT id, code, name, price_minor::bigint AS price_minor, options FROM products WHERE business_id = $1 AND active ORDER BY sort_order, id', [businessId]);
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, price: Number(r.price_minor) / 100, options: r.options ?? [] }));
 }
 
 // What the connected parts of the page will send: product codes and prices, and each form's fields.
@@ -38,9 +38,19 @@ function connectedParts(html) {
     if (!n.tagName) return true;
     if (n.attrs.some((a) => a.name === 'data-skyfly-checkout')) dropIn = true;
     if (n.tagName === 'form' && n.attrs.some((a) => a.name === 'data-skyfly-form')) {
-      const f = { key: attr(n, 'data-skyfly-form'), fields: new Set(), names: new Set(), options: [], product: attr(n, 'data-product') || null, hasSelect: false };
+      const f = { key: attr(n, 'data-skyfly-form'), fields: new Set(), names: new Set(), options: [], product: attr(n, 'data-product') || null, hasSelect: false, choices: [] };
       walk(n, (c) => {
         if (!c.tagName) return true;
+        if (c.tagName === 'select' && attr(c, 'data-skyfly-option')) {
+          const choice = { name: attr(c, 'data-skyfly-option'), entries: [] };
+          walk(c, (o) => {
+            if (o.tagName !== 'option') return true;
+            const label = (o.childNodes ?? []).map((t) => t.value ?? '').join('').trim();
+            choice.entries.push({ label, value: attr(o, 'data-option-value') ?? null, placeholder: !attr(o, 'value') && !attr(o, 'data-option-value') || /^[-—–\s]*(select|choose|pick)\b/i.test(label) });
+            return false;
+          });
+          f.choices.push(choice);
+        }
         if (attr(c, 'data-skyfly-field')) f.fields.add(attr(c, 'data-skyfly-field'));
         if (attr(c, 'name')) f.names.add(attr(c, 'name'));
         if (c.tagName === 'select' && (attr(c, 'data-skyfly-field') === 'product' || attr(c, 'name') === 'product')) {
@@ -124,6 +134,24 @@ export async function validateVersion(pool, config, page, versionId) {
       }
     } else if (!f.product) {
       problems.push('an order form does not say which product it orders');
+    }
+  }
+  // Product options (size, colour…): every choice on the page must be one of the product's own,
+  // and every choice a product needs must be on the page.
+  const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  for (const f of parts.forms) {
+    const codes = f.hasSelect ? f.options.filter((o) => o.code).map((o) => o.code) : [f.product].filter(Boolean);
+    for (const p of codes.map((c) => byCode.get(c)).filter(Boolean)) {
+      for (const g of (p.options ?? []).filter((x) => x.values.length > 1)) {
+        if (!f.choices.some((ch) => same(ch.name, g.name))) problems.push(`the page has no ${g.name} choice for ${p.name}`);
+      }
+      for (const ch of f.choices) {
+        const g = (p.options ?? []).find((x) => same(x.name, ch.name));
+        if (!g) { problems.push(`"${ch.name}" is not an option of ${p.name} (add it under Products)`); continue; }
+        for (const e of ch.entries.filter((x) => !x.placeholder)) {
+          if (!e.value || !g.values.some((v) => same(v.label, e.value))) problems.push(`"${e.label}" is not one of ${p.name}'s ${g.name} values`);
+        }
+      }
     }
   }
   for (const c of parts.codes) {

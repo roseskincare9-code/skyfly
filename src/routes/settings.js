@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { normalizePhone } from '../lib/phone.js';
 import { audit } from '../lib/audit.js';
+import { parseMajorToMinor } from '../lib/money.js';
 
 export const CURRENCIES = ['NGN', 'GBP', 'USD', 'EUR'];
 
@@ -31,13 +32,20 @@ export function settingsRoutes({ pool }) {
     if (!name) errors.push('Business name is required.');
     if (rawPhone && !whatsapp) errors.push('Enter a valid WhatsApp number, e.g. 09049206695.');
     if (!/^[A-Z]{2,5}$/.test(prefix)) errors.push('Order prefix must be 2–5 letters.');
+    // Delivery: a fee per order (empty or 0 = free), optionally free from an order subtotal.
+    const rawFee = String(req.body.delivery_fee ?? '').trim();
+    const rawFree = String(req.body.free_delivery_from ?? '').trim();
+    const deliveryFee = rawFee ? parseMajorToMinor(rawFee) : 0;
+    const freeFrom = rawFree ? parseMajorToMinor(rawFree) : null;
+    if (deliveryFee === null) errors.push('Enter a valid delivery fee, e.g. 2500 (or leave it empty for free delivery).');
+    if (rawFree && freeFrom === null) errors.push('Enter a valid amount for free delivery, or leave it empty.');
     if (errors.length) return page(req, res, { error: errors.join(' '), status: 400 });
 
     await pool.query(
-      'UPDATE businesses SET name = $1, whatsapp_number = $2, order_prefix = $3, currency = $4 WHERE id = $5',
-      [name, whatsapp, prefix, currency, req.business.id],
+      'UPDATE businesses SET name = $1, whatsapp_number = $2, order_prefix = $3, currency = $4, delivery_fee_minor = $6, free_delivery_from_minor = $7 WHERE id = $5',
+      [name, whatsapp, prefix, currency, req.business.id, deliveryFee, freeFrom],
     );
-    await audit(pool, req, { action: 'settings.updated', businessId: req.business.id, details: { name, whatsapp, prefix, currency } });
+    await audit(pool, req, { action: 'settings.updated', businessId: req.business.id, details: { name, whatsapp, prefix, currency, deliveryFee, freeFrom } });
     res.redirect(`${res.locals.base}/settings?saved=1`);
   }));
 

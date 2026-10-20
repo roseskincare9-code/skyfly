@@ -16,9 +16,13 @@
       <div><label>Name</label><input name="name" value="<%= p.name %>" required maxlength="200"></div>
       <div><label>Price (<%= business.currency %>)</label><input name="price" value="<%= p.price_minor / 100 %>" inputmode="decimal" required></div>
       <div><label>Sort order</label><input name="sort_order" type="number" value="<%= p.sort_order %>"></div>
+      <div><label>"Was" price (optional)</label><input name="compare_at" value="<%= p.compare_at_price_minor ? p.compare_at_price_minor / 100 : '' %>" inputmode="decimal" placeholder="shown crossed out"></div>
       <div><label><input type="checkbox" name="active" <%= p.active ? 'checked' : '' %>> Available to order</label></div>
-      <div><button type="submit" class="secondary">Save</button></div>
     </div>
+    <label>Description (shown at checkout, optional)</label><input name="description" value="<%= p.description || '' %>" maxlength="500">
+    <label>Options (optional, one group per line, e.g. <code>Size: 30ml, 50ml (+5000)</code>)</label>
+    <textarea name="options" rows="2" placeholder="Size: 30ml, 50ml (+5000)"><%= formatOptionsText(p.options) %></textarea>
+    <p style="margin-bottom:0"><button type="submit" class="secondary">Save</button></p>
   </form>
   <% }) %>
 
@@ -30,8 +34,12 @@
       <div><label for="code">Code (used by landing pages)</label><input id="code" name="code" placeholder="e.g. package-1" maxlength="50"></div>
       <div><label for="price">Price (<%= business.currency %>)</label><input id="price" name="price" inputmode="decimal" required placeholder="23500"></div>
       <div><label for="sort_order">Sort order</label><input id="sort_order" name="sort_order" type="number" value="0"></div>
-      <div><button type="submit">Add product</button></div>
+      <div><label for="compare_at">"Was" price (optional)</label><input id="compare_at" name="compare_at" inputmode="decimal"></div>
     </div>
+    <label for="description">Description (optional)</label><input id="description" name="description" maxlength="500">
+    <label for="options">Options (optional, one group per line, e.g. <code>Size: 30ml, 50ml (+5000)</code>)</label>
+    <textarea id="options" name="options" rows="2"></textarea>
+    <p style="margin-bottom:0"><button type="submit">Add product</button></p>
   </form>
 </main>
 </body></html>

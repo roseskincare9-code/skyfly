@@ -31,6 +31,7 @@
       <% items.forEach((i) => { %>
         <tr><td><%= i.product_name %> <span class="muted">(<%= i.product_code %>)</span><% if (i.is_upsell) { %> <span class="pill pending">Add-on</span><% } %></td><td><%= formatMoney(i.unit_price_minor, order.currency) %></td><td><%= i.quantity %></td><td><%= formatMoney(i.line_total_minor, order.currency) %></td></tr>
       <% }) %>
+        <% if (Number(order.delivery_fee_minor) > 0) { %><tr><td colspan="3">Delivery</td><td><%= formatMoney(order.delivery_fee_minor, order.currency) %></td></tr><% } %>
         <tr><td colspan="3"><strong>Order total</strong></td><td><strong><%= formatMoney(order.total_minor, order.currency) %></strong></td></tr>
       </tbody>
     </table></div>

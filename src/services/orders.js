@@ -1,3 +1,4 @@
+import { resolveOptions, optionsLabel } from '../lib/options.js';
 import { createHash } from 'node:crypto';
 import { normalizePhone } from '../lib/phone.js';
 import { generateReference, generateToken } from '../lib/reference.js';
@@ -67,8 +68,19 @@ export function validateOrderInput(body) {
         fields.items = 'Select a valid package.';
         break;
       }
+      // Chosen product options, e.g. { Size: "50ml" }: names and values are checked against the product.
+      const rawOptions = raw?.options ?? null;
+      let options = null;
+      if (rawOptions !== null) {
+        const entries = typeof rawOptions === 'object' && !Array.isArray(rawOptions) ? Object.entries(rawOptions) : null;
+        if (!entries || entries.length > 5 || entries.some(([k, v]) => typeof v !== 'string' || !k.trim() || k.length > 40 || v.length > 60)) {
+          fields.items = 'Select valid product options.';
+          break;
+        }
+        options = Object.fromEntries(entries.map(([k, v]) => [k.trim(), v.trim()]).filter(([, v]) => v));
+      }
       seen.add(code);
-      items.push({ code, quantity, upsell, displayedPrice: displayed === undefined || displayed === null ? null : Number(displayed) });
+      items.push({ code, quantity, upsell, options, displayedPrice: displayed === undefined || displayed === null ? null : Number(displayed) });
     }
     // An add-on is only ever offered with a package.
     if (!fields.items && !fields.quantity && !items.some((i) => !i.upsell)) fields.items = 'Select a package.';
@@ -103,14 +115,15 @@ export function validateOrderInput(body) {
 
 function fingerprint(input) {
   const { customer, items, landingPage } = input;
-  const canonical = JSON.stringify([landingPage, customer, items.map((i) => (i.upsell ? [i.code, i.quantity, 'upsell'] : [i.code, i.quantity]))]);
+  const canonical = JSON.stringify([landingPage, customer, items.map((i) => [i.code, i.quantity, ...(i.upsell ? ['upsell'] : []), ...(i.options && Object.keys(i.options).length ? [Object.entries(i.options).map(([k, v]) => `${k.toLowerCase()}=${v.toLowerCase()}`).sort()] : [])])]);
   return createHash('sha256').update(canonical).digest('hex');
 }
 
 async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
     `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode, lp.upsell_product_id,
-            (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain
+            (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain,
+            b.delivery_fee_minor, b.free_delivery_from_minor
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
     [slug],
@@ -123,7 +136,7 @@ async function loadLandingPage(client, slug) {
 async function loadPricedItems(client, page, items) {
   const codes = items.map((i) => i.code);
   const { rows } = await client.query(
-    `SELECT p.id, p.code, p.name, p.price_minor, (lpp.product_id IS NOT NULL) AS on_page
+    `SELECT p.id, p.code, p.name, p.price_minor, p.options, (lpp.product_id IS NOT NULL) AS on_page
        FROM products p
        LEFT JOIN landing_page_products lpp ON lpp.product_id = p.id AND lpp.landing_page_id = $1
       WHERE p.active AND p.business_id = $2 AND p.code = ANY($3::text[]) AND (lpp.product_id IS NOT NULL OR p.id = $4)`,
@@ -141,8 +154,12 @@ async function loadPricedItems(client, page, items) {
         fields: { items: item.upsell ? 'This add-on is not available.' : 'This package is not available.' },
       });
     }
-    const unit = Number(product.price_minor);
-    if (item.displayedPrice !== null && Math.round(item.displayedPrice * 100) !== unit) {
+    const picked = resolveOptions(product.options, item.options ?? {});
+    if (picked.error) throw new OrderError(400, 'VALIDATION', picked.error, { fields: { items: picked.error } });
+    const base = Number(product.price_minor);
+    // The page shows the product's own price; options add (or take off) their difference here.
+    const unit = Math.max(0, base + picked.chosen.reduce((sum, c) => sum + c.delta_minor, 0));
+    if (item.displayedPrice !== null && Math.round(item.displayedPrice * 100) !== base) {
       throw new OrderError(409, 'PRICE_CHANGED', 'The price of this package has changed. Please refresh the page to see the current price.', {
         product: item.code,
       });
@@ -150,7 +167,9 @@ async function loadPricedItems(client, page, items) {
     return {
       productId: product.id,
       code: product.code,
-      name: product.name,
+      // The chosen options are part of the saved name, so every list, sheet and email shows them.
+      name: picked.chosen.length ? `${product.name} (${optionsLabel(picked.chosen)})`.slice(0, 200) : product.name,
+      options: picked.chosen.length ? picked.chosen : null,
       unitPrice: unit,
       quantity: item.quantity,
       lineTotal: unit * item.quantity,
@@ -161,7 +180,7 @@ async function loadPricedItems(client, page, items) {
 
 async function findByIdempotencyKey(client, businessId, key) {
   const { rows } = await client.query(
-    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test
+    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test, delivery_fee_minor
        FROM orders WHERE business_id = $1 AND idempotency_key = $2`,
     [businessId, key],
   );
@@ -181,10 +200,10 @@ async function insertOrder(client, o) {
        business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
        customer_name, phone, email, address, state, customer_notes, currency, total_minor,
        source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent, delivery_fee_minor)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
-     RETURNING id, reference, access_token, total_minor, currency, is_test`,
+     RETURNING id, reference, access_token, total_minor, currency, is_test, delivery_fee_minor`,
     [
       o.businessId, o.landingPageId, generateReference(o.prefix), generateToken(), o.idempotencyKey, o.fingerprint,
       o.customer.name, o.customer.phone, o.customer.email, o.customer.address, o.customer.state, o.customer.notes,
@@ -193,16 +212,16 @@ async function insertOrder(client, o) {
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
       o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
       o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
-      isTestName(o.customer.name) || o.testMode === true, o.customer.marketingConsent === true,
+      isTestName(o.customer.name) || o.testMode === true, o.customer.marketingConsent === true, o.deliveryFee ?? 0,
     ],
   );
   const order = inserted.rows[0];
   if (!order) return null;
   for (const item of o.items) {
     await client.query(
-      `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor, is_upsell)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal, item.isUpsell === true],
+      `INSERT INTO order_items (order_id, product_id, product_code, product_name, unit_price_minor, quantity, line_total_minor, is_upsell, options)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [order.id, item.productId, item.code, item.name, item.unitPrice, item.quantity, item.lineTotal, item.isUpsell === true, item.options ? JSON.stringify(item.options) : null],
     );
   }
   await client.query(
@@ -216,6 +235,14 @@ async function insertOrder(client, o) {
     );
   }
   return order;
+}
+
+// The business's delivery fee, free once the subtotal reaches its free-delivery amount (if set).
+export function deliveryFor(b, subtotalMinor) {
+  const fee = Number(b.delivery_fee_minor ?? 0);
+  if (!fee) return 0;
+  if (b.free_delivery_from_minor !== null && b.free_delivery_from_minor !== undefined && subtotalMinor >= Number(b.free_delivery_from_minor)) return 0;
+  return fee;
 }
 
 // Retries the whole transaction if the random reference collides (extremely rare).
@@ -257,11 +284,13 @@ export async function createOrder(pool, input, auth, config) {
     if (existing) return replay(existing, print);
 
     const items = await loadPricedItems(client, page, input.items);
+    const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
+    const deliveryFee = deliveryFor(page, subtotal);
     await client.query('BEGIN');
     const order = await insertOrder(client, {
       businessId: page.business_id, landingPageId: page.id, prefix: page.order_prefix, currency: page.currency,
       idempotencyKey: input.idempotencyKey, fingerprint: print, customer: input.customer, attribution: input.attribution,
-      items, total: items.reduce((sum, i) => sum + i.lineTotal, 0),
+      items, total: subtotal + deliveryFee, deliveryFee,
       status: 'pending', paymentStatus: 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
       client: auth.client, testMode: page.test_mode,
     });

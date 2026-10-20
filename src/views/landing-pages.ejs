@@ -6,10 +6,19 @@
     <a class="btn secondary" href="<%= base %>/landing-pages/new">Register an external page</a>
   </div>
   <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form class="card" method="post" action="<%= base %>/landing-pages/template">
+    <%- include('partials/csrf') %>
+    <h2>Create a page</h2>
+    <p class="muted" style="margin-top:0">Start from Skyfly's page template: hero, benefits, photos, questions and the Skyfly checkout with your products. Edit the text, images and colours, preview on phone and desktop, then publish.</p>
+    <label for="tpl-name">Page name</label>
+    <input id="tpl-name" name="name" maxlength="200" placeholder="e.g. October promo">
+    <p style="margin-bottom:0"><button type="submit">Create page</button></p>
+  </form>
+
   <form class="card" method="post" action="<%= base %>/landing-pages/upload" enctype="multipart/form-data">
     <%- include('partials/csrf') %>
     <h2>Import a landing page</h2>
-    <p class="muted" style="margin-top:0">Upload a <strong>.zip</strong> with your page (index.html) and its CSS, JavaScript, images and fonts, or a single <strong>.html</strong> file. Skyfly hosts it exactly as it is and tells you what to check before publishing.</p>
+    <p class="muted" style="margin-top:0">Upload a page made anywhere (ChatGPT, Claude, another tool or a developer): a <strong>.zip</strong> with index.html and its CSS, JavaScript, images and fonts, or a single <strong>.html</strong> file. Skyfly keeps its design, connects its order form and buttons to Skyfly's checkout (WhatsApp stays only as a support button), and checks it before publishing.</p>
     <label for="imp-name">Page name</label>
     <input id="imp-name" name="name" maxlength="200" placeholder="e.g. Larose October promo">
     <label for="imp-file">File (.zip or .html, max 25 MB)</label>
