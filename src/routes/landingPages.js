@@ -146,6 +146,11 @@ export function landingPageRoutes({ pool, config }) {
          FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.business_id = $1 ORDER BY lp.status = 'archived', lp.created_at`,
       [req.business.id],
     );
+    // The exact public address of each published page, so nobody has to guess it from the form key.
+    for (const p of rows) {
+      const live = p.status === 'active' && p.published_version_id;
+      p.public_url = live ? (p.custom_domain && p.domain_status?.startsWith('ok') ? `https://${p.custom_domain}/` : publishedUrl(config, p)) : null;
+    }
     res.render('landing-pages', { pages: rows, error: req.query.error ?? null });
   }));
 

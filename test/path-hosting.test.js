@@ -46,7 +46,20 @@ after(() => pool.end());
 
 describe('pages on the Skyfly address', () => {
   test('an unpublished page is not public', async () => {
-    await request(app).get('/p/glow-path/').expect(404);
+    const res = await request(app).get('/p/glow-path/').expect(404);
+    assert.match(res.text, /not published on Skyfly/);
+    const list = await owner.get(`/businesses/${businessId}/landing-pages`).expect(200);
+    assert.match(list.text, /Not public yet: publish it under Manage/);
+  });
+
+  test('the pages list shows each published page\'s exact public address; capitals in the address still open it', async () => {
+    await form(`/${pageId}/publish`, { version_id: String(await latestVersion()) });
+    const list = await owner.get(`/businesses/${businessId}/landing-pages`).expect(200);
+    assert.match(list.text, new RegExp(`id="pub-url-${pageId}" readonly value="http://skyfly\\.test/p/glow-path/"`));
+    assert.match(list.text, /Not hosted by Skyfly/, 'the external Larose page is labelled');
+    await request(app).get('/p/Glow-Path/').expect(301).expect('Location', '/p/glow-path/');
+    await request(app).get('/p/GLOW-PATH').expect(301).expect('Location', '/p/glow-path/');
+    await request(app).get('/p/no-such-page/').expect(404).expect(/^Page not found$/);
   });
 
   test('publishing gives a stable public address, shown in the dashboard', async () => {

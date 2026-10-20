@@ -75,6 +75,22 @@ try {
       line(`safety copy: ${r.table_name}`, (await one(`SELECT count(*)::int AS n FROM backup_before_012.${r.table_name}`))[0].n);
     }
   } catch (err) { line('safety copy', err.message.slice(0, 80)); }
+  console.log('\n== Landing pages (published = has a public address)');
+  for (const r of await one(`SELECT lp.slug, b.slug AS business, lp.status, lp.published_version_id IS NOT NULL AS hosted, lp.test_mode, lp.url IS NOT NULL AS external
+                               FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id ORDER BY lp.id`)) {
+    const where = r.status === 'active' && r.hosted ? `PUBLISHED at /p/${r.slug}/` : r.hosted ? 'hosted, not published' : r.external ? 'external page (not hosted by Skyfly)' : 'not hosted';
+    line(`page: ${r.slug}`, `business ${r.business}; status ${r.status}; ${where}${r.test_mode ? '; test mode' : ''}`);
+  }
+  // Labelled TEST ORDERs only (never real customers): what the business's Orders page lists for them.
+  console.log('\n== Latest TEST ORDERs (as listed in each business\'s Orders page)');
+  for (const r of await one(`SELECT o.reference, b.slug AS business, lp.slug AS page, o.status, o.total_minor, o.currency, o.sheet_sync_status, o.created_at,
+                                    (SELECT string_agg(i.product_name || ' x' || i.quantity || CASE WHEN i.is_upsell THEN ' (add-on)' ELSE '' END, ', ' ORDER BY i.id)
+                                       FROM order_items i WHERE i.order_id = o.id) AS items,
+                                    (SELECT count(*)::int FROM orders d WHERE d.business_id = o.business_id AND d.idempotency_key = o.idempotency_key) AS copies
+                               FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+                              WHERE o.is_test ORDER BY o.id DESC LIMIT 6`)) {
+    line(`order: ${r.reference}`, `business ${r.business}; page ${r.page ?? '-'}; ${r.items}; total ${(r.total_minor / 100).toLocaleString('en-NG')} ${r.currency}; status ${r.status}; sheet ${r.sheet_sync_status}; orders for this submission: ${r.copies}; ${r.created_at.toISOString()}`);
+  }
   await client.query('ROLLBACK');
 } finally {
   await client.end();

@@ -26,7 +26,15 @@
       <a href="<%= base %>/orders?page=<%= p.id %>"><%= p.order_count %> orders →</a>
     </div>
     <dl class="kv" style="margin-top:10px">
-      <% if (p.published_version_id) { %><dt>Hosted by Skyfly</dt><dd><%= p.custom_domain ? 'https://' + p.custom_domain + '/' : 'yes' %></dd><% } %>
+      <dt>Public address</dt><dd>
+        <% if (p.public_url) { %>
+          <input id="pub-url-<%= p.id %>" readonly value="<%= p.public_url %>" style="max-width:420px" aria-label="Public address for ads">
+          <button type="button" class="secondary" data-copy="pub-url-<%= p.id %>">Copy link</button>
+          <a href="<%= p.public_url %>" target="_blank" rel="noopener">Open ↗</a>
+        <% } else if (p.published_version_id) { %>Not public: this page is unpublished. Publish it under Manage to give it an address.
+        <% } else if (p.url) { %>Not hosted by Skyfly (it runs at its external URL below)
+        <% } else { %>Not public yet: publish it under Manage to get its address<% } %>
+      </dd>
       <dt>External URL</dt><dd><% if (p.url) { %><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.url %></a><% } else { %>—<% } %></dd>
       <dt>Form key</dt><dd><code><%= p.slug %></code></dd>
       <dt>Products</dt><dd><%= p.product_names || 'None connected' %></dd>
@@ -53,4 +61,5 @@
     <p><button type="submit" class="secondary">Import as draft</button></p>
   </form>
 </main>
+<script src="/static/copy.js" defer></script>
 </body></html>

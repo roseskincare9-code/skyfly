@@ -96,11 +96,14 @@ export function pathPages({ pool, transformHtml = null }) {
   const send = makeSender(pool, transformHtml);
   router.get(/^\/p\/([^/]+)(\/.*)?$/, asyncHandler(async (req, res) => {
     const slug = req.params[0];
+    // Addresses typed or pasted with capitals (e.g. /p/Larose-Skincare/) open the page.
+    if (slug !== slug.toLowerCase() && SLUG_RE.test(slug.toLowerCase())) return res.redirect(301, `/p/${slug.toLowerCase()}${req.params[1] ?? '/'}`);
     if (!SLUG_RE.test(slug)) return notFound(res);
     if (req.params[1] === undefined) return res.redirect(301, `/p/${slug}/`);
     const { rows: [page] } = await pool.query(
       'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE slug = $1', [slug]);
-    if (!page || page.status !== 'active' || !page.published_version_id) return notFound(res);
+    if (!page) return notFound(res);
+    if (page.status !== 'active' || !page.published_version_id) return notFound(res, 'This page is not published on Skyfly.');
     res.set('Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
     // Files are loaded by the sandboxed (cross-origin) page.
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');
