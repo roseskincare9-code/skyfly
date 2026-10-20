@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
+import { testOrderSummary } from './services/orders.js';
 import { ensureLaroseForOwner, ensureDemoSite, ensureDemoUpsell, ensureLaroseHostedPage } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
 import { startSheetWorker, recheckGoogleConnections, compareHeldGoogleConnections } from './services/sheets.js';
@@ -63,7 +64,8 @@ const server = app.listen(config.port, () => {
     .then(() => ensureDemoSite(pool, config)).then(() => (config.demoSite ? ensureDemoUpsell(pool) : null)).catch((err) => console.error('Demo site setup failed:', err.message))
     .then(() => ensureLaroseHostedPage(pool, config)).catch((err) => console.error('Larose hosted page setup failed:', err.message))
     // WebP sizes for published pages that do not have them yet (e.g. published before this feature).
-    .then(() => optimizePublished(pool));
+    .then(() => optimizePublished(pool))
+    .then(() => testOrderSummary(pool, 8)).then((lines) => lines.forEach((l) => console.log(l))).catch((err) => console.error('Orders check failed:', err.message));
 });
 
 function shutdown() {

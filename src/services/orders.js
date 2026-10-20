@@ -359,3 +359,21 @@ function replay(existing, print) {
   }
   return { order: existing, replayed: true };
 }
+
+// Read-only summary of the latest TEST ORDERs, logged at start-up so a deployment can be checked
+// against the database without signing in: per order, what its business's Orders page lists
+// (business, page, items, total, status, sheet copy) and how many orders that list shows for the
+// reference and for the same submission. Test orders only: no real customer data.
+export async function testOrderSummary(pool, limit = 5) {
+  const { rows } = await pool.query(
+    `SELECT o.reference, b.slug AS business, lp.slug AS page, o.status, o.total_minor, o.currency, o.sheet_sync_status, o.created_at,
+            (SELECT string_agg(i.product_name || ' x' || i.quantity || CASE WHEN i.is_upsell THEN ' (add-on)' ELSE '' END, ', ' ORDER BY i.id)
+               FROM order_items i WHERE i.order_id = o.id) AS items,
+            (SELECT count(*)::int FROM orders d WHERE d.business_id = o.business_id AND d.reference ILIKE o.reference) AS listed,
+            (SELECT count(*)::int FROM orders d WHERE d.business_id = o.business_id AND d.idempotency_key = o.idempotency_key) AS submissions
+       FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
+      WHERE o.is_test ORDER BY o.id DESC LIMIT $1`, [limit]);
+  return rows.map((r) => `Orders check (test orders, read-only): ${r.reference} — business ${r.business}, page ${r.page ?? '-'}, ${r.items}, `
+    + `total ${(Number(r.total_minor) / 100).toLocaleString('en-NG')} ${r.currency}, status ${r.status}, sheet copy ${r.sheet_sync_status}, `
+    + `listed ${r.listed}x in ${r.business} Orders, ${r.submissions} order(s) for this submission, saved ${r.created_at.toISOString()}`);
+}

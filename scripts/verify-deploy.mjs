@@ -153,6 +153,9 @@ if (process.env.RENDER_API_KEY) {
         const appAll = ((await render(`${base}&type=app`)).logs || []).map((l) => l.message || '');
         const g = appAll.filter((m) => /^Google Sheets( API)?:/.test(m));
         report(null, 'Render logs: Google Sheets lines (latest 100 app lines)', g.length ? g.slice(0, 30).map((m) => mask(m)).join(' | ') : 'none');
+        // Start-up summary of the latest TEST ORDERs read from the database (no real customer data).
+        const oc = appAll.filter((m) => m.startsWith('Orders check'));
+        report(null, 'Render logs: test orders in the database (start-up check, latest)', oc.length ? oc.slice(0, 8).map((m) => m.replace(/^Orders check \(test orders, read-only\): /, '').slice(0, 300)).join(' | ') : 'none');
       } catch (err) { report(null, 'Render logs', err.message); }
       // FIND_ORDER=<reference> [FIND_AT=<ISO time>]: read-only search of the request logs around that time
       // for the order's own pages (/o/<reference>, read from the database) and the order submissions.
