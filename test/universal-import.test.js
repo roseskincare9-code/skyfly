@@ -235,3 +235,31 @@ describe('import test site on the live service', () => {
     assert.equal(res.body.test, true, 'every order from a test-mode page is a test order');
   });
 });
+
+describe('live-test account', () => {
+  test('signs in only with the hash the test workflow sets, and opens only the two test businesses', async () => {
+    const { ensureE2eAccount, E2E_EMAIL } = await import('../src/services/setup.js');
+    const { hashPassword } = await import('../src/lib/passwords.js');
+    const quiet = { log: () => {} };
+    delete process.env.SKYFLY_E2E_PASSWORD_HASH;
+    assert.equal(await ensureE2eAccount(pool, quiet), false);
+    const login = async (password) => {
+      const agent = request.agent(app);
+      const _csrf = await csrfToken(agent, '/login');
+      return agent.post('/login').type('form').send({ _csrf, email: E2E_EMAIL, password });
+    };
+    assert.notEqual((await login('anything-at-all')).status, 302, 'disabled without the setting');
+    assert.notEqual((await login('disabled')).status, 302, 'the placeholder is not a password');
+    process.env.SKYFLY_E2E_PASSWORD_HASH = await hashPassword('a-fresh-random-password-123');
+    assert.equal(await ensureE2eAccount(pool, quiet), true);
+    const res = await login('a-fresh-random-password-123');
+    assert.equal(res.status, 302);
+    const { rows } = await pool.query('SELECT b.slug, m.role FROM business_members m JOIN businesses b ON b.id = m.business_id JOIN users u ON u.id = m.user_id WHERE u.email = $1 ORDER BY 1', [E2E_EMAIL]);
+    assert.deepEqual(rows, [{ slug: 'skyfly-import-test', role: 'manager' }], 'test businesses only (the demo shop is not set up in this test)');
+    const { rows: [u] } = await pool.query('SELECT is_platform_admin FROM users WHERE email = $1', [E2E_EMAIL]);
+    assert.equal(u.is_platform_admin, false);
+    delete process.env.SKYFLY_E2E_PASSWORD_HASH;
+    await ensureE2eAccount(pool, quiet);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1', [E2E_EMAIL])).rows[0].n, 0);
+  });
+});

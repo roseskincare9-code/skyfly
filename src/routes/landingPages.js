@@ -13,7 +13,7 @@ import { importUpload, ImportError } from '../hosting/importer.js';
 import { saveVersion, readFile } from '../hosting/storage.js';
 import { detectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
 import { validateVersion, publishVersion, checkLive, businessCatalogue } from '../hosting/validate.js';
-import { connectVersion } from '../hosting/connect.js';
+import { connectVersion, needsAnswers } from '../hosting/connect.js';
 import { LIMITS } from '../hosting/files.js';
 import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
@@ -239,8 +239,12 @@ export function landingPageRoutes({ pool, config }) {
       const detected = detectCheckout(html, catalogue);
       const validation = await validateVersion(pool, config, current, target.id);
       const check = (k) => validation.checks.find((c) => c.key === k)?.status;
+      // Publish can connect the checkout itself (every match confident) when that is all that blocks it.
+      const blockedKeys = validation.checks.filter((c) => c.status === 'BLOCKED').map((c) => c.key);
+      const autoConnect = validation.blocked && check('checkout') === 'BLOCKED' && blockedKeys.every((k) => ['checkout', 'products'].includes(k))
+        && !needsAnswers(detected).any && (detected.candidates.length > 0 || check('products') !== 'BLOCKED');
       workflow = {
-        version: target, detected, validation, catalogue, fieldLabels: FIELD_LABELS,
+        version: target, detected, validation, catalogue, fieldLabels: FIELD_LABELS, autoConnect,
         steps: [
           { n: 1, label: 'Import', done: true },
           { n: 2, label: 'Products', done: check('products') === 'PASS' },

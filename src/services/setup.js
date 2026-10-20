@@ -212,3 +212,29 @@ export async function ensureImportTestSite(pool, config, log = console) {
   log.log(`Import test site published at ${config.publicBaseUrl}/p/${IMPORT_TEST}/ (business #${b.id}, test mode); live check: ${live}`);
   return page.id;
 }
+
+// The automated live tests (GitHub Actions) sign in as their own account, never as the owner.
+// It can open only the two labelled test businesses (as Manager: pages, products, orders), can't
+// create businesses, and isn't a platform admin. The test workflow picks a new random password on
+// each run and gives the server only its hash (SKYFLY_E2E_PASSWORD_HASH, set through the Render
+// deployment settings); the password is never stored. Without that setting it cannot sign in.
+export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
+const E2E_BUSINESSES = ['skyfly-import-test', 'skyfly-demo'];
+export async function ensureE2eAccount(pool, log = console) {
+  const hash = String(process.env.SKYFLY_E2E_PASSWORD_HASH || '').trim();
+  const usable = /^scrypt:[0-9a-f]{32}:[0-9a-f]{128}$/.test(hash);
+  const { rows: [user] } = await pool.query(
+    `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, 'Automated live tests', false)
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_platform_admin = false RETURNING id`,
+    [E2E_EMAIL, usable ? hash : 'disabled']);
+  await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [user.id, E2E_BUSINESSES]);
+  if (usable) {
+    await pool.query(
+      `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, 'manager' FROM businesses WHERE slug = ANY($2::text[])
+       ON CONFLICT (business_id, user_id) DO UPDATE SET role = 'manager'`, [user.id, E2E_BUSINESSES]);
+  } else {
+    await pool.query('DELETE FROM business_members WHERE user_id = $1', [user.id]);
+  }
+  log.log(`Live-test account: ${usable ? `can sign in (test businesses only: ${E2E_BUSINESSES.join(', ')})` : 'disabled (no SKYFLY_E2E_PASSWORD_HASH)'}`);
+  return usable;
+}

@@ -70,7 +70,11 @@
   </tbody></table></div>
 
   <h3 style="font-size:1rem;margin-top:16px">6. Publish</h3>
-  <% if (w.validation.blocked) { %>
+  <% if (w.autoConnect) { %>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/publish"><%- include('csrf') %><input type="hidden" name="version_id" value="<%= v.id %>">
+      <button type="submit">Connect checkout &amp; publish</button>
+      <span class="muted">Every product and field was matched with confidence: Skyfly connects the checkout (new version), checks it again and publishes at <code>/p/<%= page.slug %>/</code>.</span></form>
+  <% } else if (w.validation.blocked) { %>
     <p class="warn-box" style="margin:0">Publishing is available when no check is BLOCKED (see the fixes above).</p>
   <% } else if (live && Number(page.published_version_id) === v.id) { %>
     <p class="notice" style="margin:0">This version is published. See the address and its live check under Hosting.</p>

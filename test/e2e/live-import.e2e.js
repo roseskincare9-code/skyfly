@@ -126,19 +126,130 @@ await step("G. Another business's products can't be ordered through this page, a
   return `Larose product on the import test page → HTTP ${a.status}; import test product on Larose's page → HTTP ${b.status}`;
 });
 
-await step('H. The order appears exactly once in the import test business dashboard', async () => {
-  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets (platform owner) to sign in; the start-up "Orders check" log lists it from the database');
-  const d = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
-  await d.goto(`${SKYFLY}/login`);
-  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
-  await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
+// ---------- the dashboard, signed in as the restricted live-test account ----------
+let dash = null; let bizHref = null;
+async function signIn() {
+  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('no dashboard sign-in for the tests (run the "Live import test" workflow, which signs in as the restricted live-test account)');
+  if (dash) return dash;
+  dash = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  await dash.goto(`${SKYFLY}/login`);
+  await dash.fill('#email', process.env.SKYFLY_OWNER_EMAIL); await dash.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await Promise.all([dash.waitForLoadState('load'), dash.click('button[type=submit]')]);
+  assert(!dash.url().endsWith('/login'), 'sign-in refused');
+  await dash.goto(`${SKYFLY}/?all=1`);
+  bizHref = await dash.getAttribute('a:text-is("Skyfly Import Test (test)")', 'href');
+  assert(bizHref, 'import test business not listed');
+  return dash;
+}
+const money = (n) => `₦${n.toLocaleString('en-NG')}`;
+async function orderRow(ref, expect) {
+  const d = await signIn();
+  await d.goto(`${SKYFLY}${bizHref}/orders?q=${ref}`);
+  const rows = await d.getByRole('link', { name: ref, exact: true }).count();
+  assert(rows === 1, `${rows} rows for ${ref} in ${bizHref}/orders`);
+  await d.getByRole('link', { name: ref, exact: true }).click();
+  const text = (await d.textContent('main')).replace(/\s+/g, ' ');
+  for (const e of expect) assert(text.includes(e), `order page lacks "${e}"`);
+  return `1 row in ${bizHref}/orders; order page shows ${expect.join(', ')}`;
+}
+
+await step('H. The order appears exactly once in the import test business\'s Orders, with its options, delivery and total', () =>
+  orderRow(reference, ['Glow Duo Set (Size: 50ml)', 'Delivery', money(2500), money(38000), 'TEST ORDER']));
+
+let pageUrl = null; let liveUrl = null; let ref2 = null;
+const PAGE_NAME = 'Dashboard import test';
+await step('I. Owner: import an AI-made page in the dashboard; Publish connects its checkout itself and gives a checked public address', async () => {
+  const d = await signIn();
+  await d.goto(`${SKYFLY}${bizHref}/landing-pages`);
+  const original = (await import('node:fs')).readFileSync(new URL('../../src/demo/import-sample/index.html', import.meta.url), 'utf8')
+    .replace('Aurora Glow Radiance Serum</h1>', `Aurora Glow Radiance Serum</h1><p data-run>Dashboard import, run ${RUN}</p>`);
+  const existing = d.locator(`.card:has(h2:has-text("${PAGE_NAME}")) a:text-is("Manage")`);
+  if (await existing.count()) {
+    await Promise.all([d.waitForURL(/landing-pages\/\d+(\?|$)/), existing.first().click()]);
+    pageUrl = d.url().split('?')[0];
+    await d.setInputFiles('#file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(original) });
+    await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[action$="/upload"] button[type=submit]')]);
+  } else {
+    await d.fill('#imp-name', PAGE_NAME);
+    await d.setInputFiles('#imp-file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(original) });
+    await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[enctype][action$="/landing-pages/upload"] button[type=submit]')]);
+    pageUrl = d.url().split('?')[0];
+  }
+  const before = (await d.textContent('#workflow')).replace(/\s+/g, ' ');
+  assert(/Button "Order on WhatsApp" goes to WhatsApp/.test(before), 'WhatsApp purchase button not detected');
+  await Promise.all([d.waitForURL(/done=published_connected/), d.click('#workflow form[action$="/publish"] button[type=submit]')]);
+  liveUrl = await d.getAttribute('#live-url', 'href');
+  const check = (await d.textContent('[data-live-check]')).replace(/\s+/g, ' ');
+  assert(/Live ✓/.test(check), `live check: ${check}`);
+  assert(await d.inputValue('#live-url-text') === liveUrl, 'copy-link field differs');
+  const res = await fetch(liveUrl);
+  const html = await res.text();
+  assert(res.status === 200 && html.includes(`run ${RUN}`) && /data-skyfly-form="[^"]+" data-skyfly-exclusive/.test(html) && /data-skyfly-option="Size"/.test(html), `published page HTTP ${res.status}`);
+  return `${liveUrl} — connected automatically on Publish (form, 3 WhatsApp buttons, Size option), "Live ✓", Copy link shown`;
+});
+
+await step('J. A phone order on that page saves under the import test business (Glow Duo 30ml + delivery), shown once in Orders', async () => {
+  assert(liveUrl, 'no page');
+  const p = await ctx.newPage();
+  p.on('framenavigated', (f) => { if (f === p.mainFrame()) navigations.push(f.url()); });
+  let reply = null;
+  p.on('response', async (r) => { if (r.request().method() === 'POST' && r.url().startsWith(`${SKYFLY}/api/public/orders`)) reply = await r.json().catch(() => null); });
+  await p.goto(liveUrl, { waitUntil: 'load' });
+  await p.waitForFunction('window.Skyfly && window.Skyfly.version', null, { timeout: 30000 });
+  await p.click('button:has-text("Order now")');
+  await p.selectOption('#size', { label: '30ml' });
+  await p.fill('#fullname', `${NAME} dashboard`); await p.fill('#phone_number', '08031234567');
+  await p.fill('#addr', 'TEST ORDER - do not deliver, automated check'); await p.fill('#city', 'Lagos');
+  await Promise.all([p.waitForURL(/\/o\/IT-[A-Z0-9]+/, { timeout: 120000 }), p.click('button:has-text("Send my order")')]);
+  assert(reply?.saved && reply.business === 'skyfly-import-test' && reply.total === 30000 && reply.test === true, `reply ${JSON.stringify({ ...reply, confirmationUrl: undefined })}`);
+  ref2 = reply.reference;
+  const text = (await p.textContent('body')).replace(/\s+/g, ' ');
+  assert(text.includes(ref2) && /Glow Duo Set \(Size: 30ml\)/.test(text), 'confirmation');
+  assert(!toWhatsApp().length, 'went to WhatsApp');
+  await p.close();
+  return `${ref2}: Glow Duo Set (Size: 30ml) ₦27,500 + delivery ₦2,500 = ₦30,000; ${await orderRow(ref2, ['Glow Duo Set (Size: 30ml)', money(30000)])}`;
+});
+
+await step('K. Owner: edit the page and republish (same address, still connected), unpublish (offline), republish (back)', async () => {
+  assert(pageUrl && liveUrl, 'no page');
+  const d = await signIn();
+  await d.goto(pageUrl);
+  await Promise.all([d.waitForURL(/\/versions\/\d+\/edit$/), d.locator('a:text-is("Edit")').first().click()]);
+  const field = d.locator(`input[value="Dashboard import, run ${RUN}"], textarea:has-text("Dashboard import, run ${RUN}")`).first();
+  if (!(await field.count())) {
+    const found = await d.locator('input[name^="text_"]').evaluateAll((x) => x.map((e) => e.value).filter((v) => /run/.test(v)));
+    throw new Error(`run text not found in the editor (${d.url()}): ${found.join(' | ')}`);
+  }
+  // Texts sit in collapsible groups in the editor: the value is set directly, as typing would.
+  await field.evaluate((el, v) => { el.value = v; }, `Edited in the dashboard, run ${RUN}`);
+  await Promise.all([d.waitForURL(/done=edited/), d.locator('form[action$="/edit"] button[type=submit]').first().click()]);
+  await Promise.all([d.waitForURL(/done=published/), d.click('#workflow form[action$="/publish"] button[type=submit]')]);
+  assert(await d.getAttribute('#live-url', 'href') === liveUrl, 'address changed after editing');
+  const edited = await (await fetch(liveUrl)).text();
+  assert(edited.includes(`Edited in the dashboard, run ${RUN}`) && /data-skyfly-form=/.test(edited), 'edited version not served or not connected');
+  await Promise.all([d.waitForURL(/done=unpublished/), d.click('button:text-is("Unpublish")')]);
+  const off = await fetch(liveUrl);
+  assert(off.status === 404, `after unpublishing HTTP ${off.status}`);
+  await Promise.all([d.waitForURL(/done=published/), d.click('button:text-is("Republish")')]);
+  const back = await fetch(liveUrl);
+  assert(back.status === 200, `after republishing HTTP ${back.status}`);
+  return `${liveUrl}: edited version republished at the same address (still connected), unpublished → 404, republished → 200`;
+});
+
+await step('L. The test account sees only the two test businesses; other businesses (e.g. Larose) and their orders are refused', async () => {
+  const d = await signIn();
   await d.goto(`${SKYFLY}/?all=1`);
-  const href = await d.getAttribute('a:text-is("Skyfly Import Test (test)")', 'href');
-  assert(href, 'business not listed');
-  await d.goto(`${SKYFLY}${href}/orders?q=${reference}`);
-  const rows = await d.getByRole('link', { name: reference, exact: true }).count();
-  assert(rows === 1, `${rows} rows`);
-  return `1 row in ${href}/orders`;
+  const names = (await d.locator('main a').evaluateAll((as) => as.filter((a) => /^\/businesses\/\d+$/.test(a.getAttribute('href') || '')).map((a) => a.textContent.trim()))).filter(Boolean);
+  assert(!names.some((n) => /Larose/i.test(n)), `listed: ${names.join(', ')}`);
+  const mine = new Set((await d.locator('main a[href^="/businesses/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href').match(/^\/businesses\/(\d+)/)?.[1]))).filter(Boolean));
+  const refused = [];
+  for (let id = 1; id <= 8; id += 1) {
+    if (mine.has(String(id))) continue;
+    const r = await d.request.get(`${SKYFLY}/businesses/${id}/orders`, { maxRedirects: 0 });
+    assert(r.status() === 404, `business ${id} orders: HTTP ${r.status()}`);
+    refused.push(id);
+  }
+  return `listed: ${[...new Set(names)].join(', ')}; orders of businesses ${refused.join(', ')} → 404`;
 });
 
 await browser.close();
