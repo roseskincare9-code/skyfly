@@ -10,6 +10,9 @@ on:
       landing_url:
         description: Page to test (default the GitHub Pages Larose page; e.g. https://skyfly-gybf.onrender.com/p/larose-skincare/)
         default: ''
+      check_reference:
+        description: Check-only (places NO order) - an existing test order reference to look up, e.g. LR-MTX9YXT
+        default: ''
       restart_check:
         description: Also restart the live service to prove the order survives a restart (brief downtime)
         default: 'no'
@@ -32,6 +35,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RESTART_CHECK: ${{ inputs.restart_check }}
           LANDING_URL: ${{ inputs.landing_url }}
+          CHECK_REFERENCE: ${{ inputs.check_reference }}
           SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
           SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
       - uses: actions/upload-artifact@v4

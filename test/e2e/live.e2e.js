@@ -62,6 +62,31 @@ async function waitForSheetRows(text, want, seconds = 120) {
   return rows;
 }
 
+// The owner's dashboard lists the order exactly once under Larose (needs the owner sign-in secrets).
+async function dashboardCheck(reference) {
+  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in to the dashboard');
+  const owner = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const d = await owner.newPage();
+  await d.goto(`${SKYFLY}/login`);
+  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL);
+  await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
+  assert(!d.url().endsWith('/login'), 'sign-in refused');
+  await d.goto(`${SKYFLY}/`);
+  const href = await d.getAttribute('a:text-is("Larose Natural Skincare Nigeria")', 'href');
+  assert(href, 'Larose business not in the dashboard');
+  await d.goto(`${SKYFLY}${href}/orders?q=${encodeURIComponent(reference)}`);
+  const rows = await d.getByRole('link', { name: reference, exact: true }).count();
+  assert(rows === 1, `${rows} rows for ${reference} in the Larose orders list`);
+  await d.getByRole('link', { name: reference, exact: true }).click();
+  const sheet = (await d.textContent('#sheet')).replace(/\s+/g, ' ').trim();
+  const detail = (await d.textContent('main')).replace(/\s+/g, ' ');
+  assert(detail.includes(reference) && /TEST ORDER/.test(detail) && /₦[\d,]+/.test(detail), 'order page lacks the reference, the TEST ORDER customer or a total');
+  await d.screenshot({ path: 'live-screenshots/dashboard-test-order.png', fullPage: true });
+  await owner.close();
+  return `1 row in ${href}/orders; order page shows the reference, TEST ORDER customer and total ${detail.match(/₦[\d,]+/)[0]}; sheet copy: ${sheet.slice(0, 220)}`;
+}
+
 const ready = await step('A. Larose Natural Skincare Nigeria is set up on the live Skyfly (page, products, Meta Pixel)', async () => {
   const h = await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) });
   assert(h.ok, `/healthz HTTP ${h.status}`);
@@ -128,6 +153,62 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
   assert(width <= 400, `horizontal scroll on a phone (${width}px)`);
   return `${PAGE} (HTTP 200, Skyfly SDK loaded, all ${imgs.length} images loaded, fits a phone screen${HOSTED ? `, Skyfly-hosted sandbox, form key ${PAGE_KEY}` : ''})`;
 });
+
+// CHECK_REFERENCE=<order reference>: no order is placed. Checks the page's products and prices
+// against Skyfly, the order summary total (and the add-on box, simulated when none is set),
+// and that the given order is listed once in the Larose dashboard.
+const CHECK = (process.env.CHECK_REFERENCE || '').trim();
+if (CHECK) {
+  let catalog = null;
+  await step('P. The page offers exactly Skyfly\'s products for this page, at Skyfly\'s prices', async () => {
+    catalog = await (await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/catalog`)).json();
+    const shown = await page.$$eval('#pr option[data-product]', (os) => os.map((o) => ({ code: o.dataset.product, price: Number(o.dataset.price), label: o.textContent.trim() })));
+    const want = catalog.products.map((p) => `${p.code}=${p.price}`).sort().join(', ');
+    const got = shown.map((o) => `${o.code}=${o.price}`).sort().join(', ');
+    assert(shown.length && got === want, `page offers [${got}], Skyfly has [${want}]`);
+    for (const o of shown) assert(o.label.includes(`₦${o.price.toLocaleString('en-NG')}`), `label "${o.label}" does not show ₦${o.price}`);
+    return shown.map((o) => o.label.replace(/^\W+/, '')).join('; ');
+  });
+  await step('Q. Choosing a package and quantity shows the selected options and the right total (nothing submitted)', async () => {
+    const pick = catalog.products.find((p) => p.code === 'package-3') || catalog.products[0];
+    await page.selectOption('#pr', { index: 1 + catalog.products.indexOf(pick) });
+    await page.selectOption('#qty', '2');
+    const sum = (await page.textContent('#skySum')).replace(/\s+/g, ' ');
+    const total = `₦${(pick.price * 2).toLocaleString('en-NG')}`;
+    assert(sum.includes('× 2') && sum.includes(total), `summary "${sum}"`);
+    return `${pick.name} × 2 → ${total}`;
+  });
+  await step('R. Adding the optional add-on updates the total on the Larose page', async () => {
+    let up = catalog.upsell; let simulated = false;
+    if (!up) {
+      // No add-on is chosen for this page yet: the page is shown one in the browser only, to check its display and arithmetic.
+      simulated = true;
+      up = { code: 'sim-addon', name: 'Simulated add-on', price: 5000, headline: 'Add a simulated add-on', text: 'browser-only check' };
+      const p2 = await ctx.newPage();
+      await p2.route(`${SKYFLY}/api/public/pages/${PAGE_KEY}/catalog`, (r) => r.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ...catalog, upsell: up }) }));
+      await p2.goto(`${PAGE}?skyfly_e2e=${RUN}-upsell`, { waitUntil: 'load' });
+      await p2.waitForSelector('#skyAddBtn', { timeout: 30000 });
+      var view = p2;
+    } else { var view = page; await view.waitForSelector('#skyAddBtn', { timeout: 30000 }); }
+    const pick = catalog.products.find((p) => p.code === 'package-3') || catalog.products[0];
+    await view.selectOption('#pr', { index: 1 + catalog.products.indexOf(pick) });
+    await view.selectOption('#qty', '2');
+    await view.click('#skyAddBtn');
+    const sum = (await view.textContent('#skySum')).replace(/\s+/g, ' ');
+    const total = `₦${(pick.price * 2 + up.price).toLocaleString('en-NG')}`;
+    assert(sum.includes(total), `summary after Add: "${sum}" (expected ${total})`);
+    await view.click('#skyAddBtn');
+    const back = (await view.textContent('#skySum')).replace(/\s+/g, ' ');
+    assert(back.includes(`₦${(pick.price * 2).toLocaleString('en-NG')}`) && !back.includes(total), `summary after removing: "${back}"`);
+    if (simulated) await view.close();
+    return `${pick.name} × 2 + ${up.name} → ${total}; removing it restores the total${simulated ? ' (SIMULATED add-on in the browser only: no add-on is chosen for Larose yet; nothing submitted)' : ''}`;
+  });
+  await step(`L. Order ${CHECK} is listed exactly once in the Larose Natural Skincare Nigeria dashboard, with its Google Sheet status`, () => dashboardCheck(CHECK));
+  await browser.close();
+  if (blockedSteps) console.log(`\n${blockedSteps} check(s) BLOCKED (provider limit or missing credential, see above)`);
+  console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks that could run passed (no order was placed)');
+  process.exit(failed ? 1 : 0);
+}
 
 let reference = null;
 let confirmationUrl = null;
@@ -333,27 +414,9 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   return `failed order → 0; saved reply → 1 Purchase (pixel ${p[0].id}, eventID ${p[0].eid}, value ${p[0].value} ${p[0].currency}); refresh + repeated reply → still 1 (intercepted, not sent to Meta)`;
 });
 
-await step('L. The test order appears exactly once in the Larose Natural Skincare Nigeria dashboard, with its Google Sheet status', async () => {
-  if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in to the dashboard');
+await step('L. The test order appears exactly once in the Larose Natural Skincare Nigeria dashboard, with its Google Sheet status', () => {
   assert(reference, 'no test order was placed');
-  const owner = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  const d = await owner.newPage();
-  await d.goto(`${SKYFLY}/login`);
-  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL);
-  await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
-  await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
-  assert(!d.url().endsWith('/login'), 'sign-in refused');
-  await d.goto(`${SKYFLY}/`);
-  const href = await d.getAttribute('a:text-is("Larose Natural Skincare Nigeria")', 'href');
-  assert(href, 'Larose business not in the dashboard');
-  await d.goto(`${SKYFLY}${href}/orders?q=${encodeURIComponent(reference)}`);
-  const rows = await d.getByRole('link', { name: reference, exact: true }).count();
-  assert(rows === 1, `${rows} rows for ${reference} in the Larose orders list`);
-  await d.getByRole('link', { name: reference, exact: true }).click();
-  const sheet = (await d.textContent('#sheet')).replace(/\s+/g, ' ').trim();
-  await d.screenshot({ path: 'live-screenshots/dashboard-test-order.png', fullPage: true });
-  await owner.close();
-  return `1 row in ${href}/orders; sheet copy: ${sheet.slice(0, 220)}`;
+  return dashboardCheck(reference);
 });
 
 await browser.close();

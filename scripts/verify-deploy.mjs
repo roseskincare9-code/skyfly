@@ -154,6 +154,29 @@ if (process.env.RENDER_API_KEY) {
         const g = appAll.filter((m) => /^Google Sheets( API)?:/.test(m));
         report(null, 'Render logs: Google Sheets lines (latest 100 app lines)', g.length ? g.slice(0, 30).map((m) => mask(m)).join(' | ') : 'none');
       } catch (err) { report(null, 'Render logs', err.message); }
+      // FIND_ORDER=<reference> [FIND_AT=<ISO time>]: read-only search of the request logs around that time
+      // for the order's own pages (/o/<reference>, read from the database) and the order submissions.
+      if (process.env.FIND_ORDER) {
+        try {
+          const ref = process.env.FIND_ORDER.trim();
+          const at = process.env.FIND_AT ? new Date(process.env.FIND_AT) : new Date();
+          const win = `&startTime=${new Date(at - 5 * 60000).toISOString()}&endTime=${new Date(+at + 5 * 60000).toISOString()}`;
+          const label = (l, n) => (l.labels || []).find((x) => x.name === n)?.value ?? '';
+          const fmt = (l) => `${l.timestamp} ${label(l, 'method')} ${label(l, 'path') || ''} ${label(l, 'statusCode')} ${l.message || ''}`
+            .replace(/([?&]t=)[^&\s"]+/g, '$1<token>').replace(/\s+/g, ' ').trim().slice(0, 220);
+          const logs = [];
+          for (let page = 0, end = ''; page < 5; page += 1) {
+            const r = await render(`/logs?ownerId=${encodeURIComponent(svc.ownerId)}&resource=${svc.id}&type=request&limit=100&direction=backward${win}${end}`);
+            logs.push(...(r.logs || []));
+            if (!r.hasMore || !r.nextEndTime) break;
+            end = `&endTime=${encodeURIComponent(r.nextEndTime)}`; // continue further back within the window
+          }
+          const hits = logs.filter((l) => fmt(l).includes(ref)).reverse();
+          const posts = logs.filter((l) => /\/api\/public\/orders/.test(fmt(l)) && /POST/.test(fmt(l))).reverse();
+          report(null, `Render logs: requests for order ${ref} (±5 min of ${at.toISOString()}, ${logs.length} requests read)`, hits.length ? hits.slice(0, 8).map(fmt).join(' | ') : 'none found');
+          report(null, 'Render logs: order submissions (POST /api/public/orders) in that window', posts.length ? posts.slice(0, 8).map(fmt).join(' | ') : 'none found');
+        } catch (err) { report(null, 'Render logs: order search', err.message); }
+      }
     }
     report(db ? db.status === 'available' : false, 'Render: skyfly-db database', db ? `${db.status}, plan ${db.plan}, region ${db.region}` : 'not found in any workspace');
   } catch (err) {

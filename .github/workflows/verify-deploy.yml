@@ -11,6 +11,14 @@ on:
         description: Name of an existing Render environment group to link to the skyfly service if it is not linked (empty = only report)
         required: false
         default: ''
+      find_order:
+        description: Read-only - an order reference to look for in the request logs (e.g. LR-MTX9YXT)
+        required: false
+        default: ''
+      find_at:
+        description: Approximate time of that order (ISO, e.g. 2026-10-20T02:58:30Z); searched within 5 minutes
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -34,3 +42,5 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           LINK_ENV_GROUP: ${{ inputs.link_env_group }}
+          FIND_ORDER: ${{ inputs.find_order }}
+          FIND_AT: ${{ inputs.find_at }}
