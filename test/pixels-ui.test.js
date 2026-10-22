@@ -30,6 +30,7 @@ describe('finding and managing pixels', () => {
 
   test('the home page links straight to each business\'s Pixels page', async () => {
     businessId = await seedLarose(pool, 'owner@larose.test');
+    await pool.query('DELETE FROM additional_pixels'); // these tests cover the main pixels only (see additional-pixels.test.js)
     const home = await owner.get('/').expect(200);
     assert.ok(home.text.includes(`href="/businesses/${businessId}/pixels"`));
   });

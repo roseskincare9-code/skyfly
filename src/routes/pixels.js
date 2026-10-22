@@ -29,23 +29,24 @@ export function pixelRoutes({ pool, config }) {
       [req.business.id],
     );
     const { rows: recent } = await pool.query(
-      `SELECT e.provider, e.status, e.event_name, e.last_error, e.created_at, e.sent_at, o.reference, o.id AS order_id
+      `SELECT e.provider, e.pixel_id, e.status, e.event_name, e.last_error, e.created_at, e.sent_at, o.reference, o.id AS order_id
          FROM conversion_events e JOIN orders o ON o.id = e.order_id WHERE o.business_id = $1 ORDER BY e.id DESC LIMIT 10`,
       [req.business.id],
     );
+    const { rows: extras } = await pool.query('SELECT * FROM additional_pixels WHERE business_id = $1 ORDER BY id', [req.business.id]);
     // A Skyfly-owned business without its own Meta pixel uses Skyfly's (set on the server).
     const { meta: inUse } = await effectiveSettings(pool, req.business.id, page?.id, config);
     const skyflyPixel = inUse?.platform ? inUse : null;
     res.set('Cache-Control', 'no-store');
     res.status(status).render('pixels', {
-      active: 'pixels', page, settings, skyflyPixel, pages, recent, error, notice, form, LABELS, PROVIDERS, BROWSER_EVENTS, PIXEL_ID_RULES,
+      active: 'pixels', page, settings, extras, skyflyPixel, pages, recent, error, notice, form, LABELS, PROVIDERS, BROWSER_EVENTS, PIXEL_ID_RULES,
       encryptionReady: Boolean(config.encryptionKey),
     });
   }
 
   router.get('/', asyncHandler(async (req, res) => {
     const { page } = await scope(req);
-    const notice = { saved: 'Saved.', removed: 'Page now uses the business defaults.', deleted: 'Pixel removed.' }[req.query.done] ?? null;
+    const notice = { saved: 'Saved.', added: 'Pixel added.', removed: 'Page now uses the business defaults.', deleted: 'Pixel removed.' }[req.query.done] ?? null;
     await render(req, res, { page, notice });
   }));
 
@@ -142,6 +143,74 @@ export function pixelRoutes({ pool, config }) {
       });
     }
     res.redirect(`${res.locals.base}/pixels?${page ? `page=${page.id}&` : ''}done=deleted`);
+  }));
+
+  // Additional named pixels (e.g. "Pixel New"): used on every page of the business, next to the
+  // main pixel above. Same rules as the main pixel; the access token is write-only and encrypted.
+  router.post('/additional', asyncHandler(async (req, res) => {
+    const id = /^\d+$/.test(String(req.body.id ?? '')) ? String(req.body.id) : null;
+    const { rows: [existing] } = id
+      ? await pool.query('SELECT * FROM additional_pixels WHERE id = $1 AND business_id = $2', [id, req.business.id])
+      : { rows: [] };
+    if (id && !existing) return res.status(404).render('error', { message: 'Pixel not found.' });
+    const provider = existing?.provider ?? String(req.body.provider);
+    if (!PROVIDERS.includes(provider)) return res.status(400).render('error', { message: 'Unknown provider.' });
+    const name = String(req.body.name ?? '').replace(/\s+/g, ' ').trim();
+    const raw = String(req.body.pixel_id ?? '').replace(/\s/g, '');
+    const pixelId = provider === 'tiktok' ? raw.toUpperCase() : raw;
+    const enabled = existing ? req.body.enabled === 'on' : true;
+    const events = existing ? [].concat(req.body.events ?? []).filter((e) => BROWSER_EVENTS.includes(e)) : [...BROWSER_EVENTS];
+    const serverPurchase = req.body.server_purchase === 'on';
+    const token = String(req.body.access_token ?? '').trim();
+    const testCode = String(req.body.test_event_code ?? '').trim();
+    const errors = [];
+    if (!name || name.length > 60) errors.push('Give the pixel a name (up to 60 characters), e.g. "Pixel New".');
+    if (!PIXEL_ID_RULES[provider].re.test(pixelId)) errors.push(`The ${LABELS[provider]} ID should be ${PIXEL_ID_RULES[provider].hint}.`);
+    if (token && !/^[\x21-\x7e]{20,1000}$/.test(token)) errors.push('That access token does not look right. Copy it again from the ad platform.');
+    if (token && !config.encryptionKey) errors.push('Access tokens can\'t be stored until SKYFLY_ENCRYPTION_KEY is set on the server.');
+    if (testCode && !/^[A-Za-z0-9_-]{3,40}$/.test(testCode)) errors.push('The test event code should be letters and numbers, e.g. TEST12345.');
+    const { rows: [main] } = await pool.query(
+      'SELECT 1 FROM pixel_settings WHERE business_id = $1 AND provider = $2 AND pixel_id = $3', [req.business.id, provider, pixelId]);
+    const { rows: [twin] } = await pool.query(
+      'SELECT 1 FROM additional_pixels WHERE business_id = $1 AND provider = $2 AND pixel_id = $3 AND id <> $4', [req.business.id, provider, pixelId, id ?? 0]);
+    if (main || twin) errors.push(`Pixel ${pixelId} is already set up for this business, so it would count every event twice.`);
+    let tokenEnc = existing?.access_token_enc ?? null;
+    if (req.body.remove_token === 'on') tokenEnc = null;
+    else if (token && !errors.length) tokenEnc = encrypt(config.encryptionKey, token);
+    if (serverPurchase && !tokenEnc) errors.push('Server-side Purchase needs an access token. Add the token or turn that option off.');
+    if (errors.length) return render(req, res, { page: null, error: errors.join(' '), status: 400 });
+
+    if (existing) {
+      const changed = existing.pixel_id !== pixelId || tokenEnc !== existing.access_token_enc;
+      await pool.query(
+        `UPDATE additional_pixels SET name = $1, pixel_id = $2, enabled = $3, events = $4, server_purchase = $5, access_token_enc = $6,
+                test_event_code = $7, updated_by = $8, updated_at = now(), server_verified_at = CASE WHEN $10 THEN NULL ELSE server_verified_at END
+          WHERE id = $9`,
+        [name, pixelId, enabled, events, serverPurchase, tokenEnc, testCode || null, req.session.userId, existing.id, changed],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO additional_pixels (business_id, provider, name, pixel_id, enabled, events, server_purchase, access_token_enc, test_event_code, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [req.business.id, provider, name, pixelId, enabled, events, serverPurchase, tokenEnc, testCode || null, req.session.userId],
+      );
+    }
+    await audit(pool, req, {
+      action: existing ? 'pixel.updated' : 'pixel.added', businessId: req.business.id, entityType: 'pixel', entityId: `${provider}:${pixelId}`,
+      details: { name, pixelId, enabled, events, serverPurchase, tokenChanged: Boolean(token) || req.body.remove_token === 'on' },
+    });
+    res.redirect(`${res.locals.base}/pixels?done=${existing ? 'saved' : 'added'}#additional`);
+  }));
+
+  router.post('/additional/remove', asyncHandler(async (req, res) => {
+    const { rows: [removed] } = await pool.query(
+      'DELETE FROM additional_pixels WHERE id = $1 AND business_id = $2 RETURNING provider, name, pixel_id',
+      [/^\d+$/.test(String(req.body.id ?? '')) ? req.body.id : 0, req.business.id],
+    );
+    if (removed) {
+      await audit(pool, req, { action: 'pixel.removed', businessId: req.business.id, entityType: 'pixel', entityId: `${removed.provider}:${removed.pixel_id}`, details: { name: removed.name, pixelId: removed.pixel_id } });
+    }
+    res.redirect(`${res.locals.base}/pixels?done=deleted#additional`);
   }));
 
   router.post('/remove-override', asyncHandler(async (req, res) => {

@@ -13,7 +13,7 @@ t.src=v;s=b.getElementsByTagName(e)[0];
 s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
 fbq('init','1357015185691765');
-fbq('track','PageView');
+fbq('trackSingle','1357015185691765','PageView');
 </script>
 <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1357015185691765&ev=PageView&noscript=1"/></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -694,7 +694,7 @@ async function doSub(){
   if(res&&res.ok&&data&&data.ok&&data.reference){
     btn.textContent='Order saved ✓';
     if(!(data.replayed&&skyEarlierVisit)){
-    try{fbq('track','Lead',{value:data.total,currency:data.currency});}catch(e){}
+    try{fbq('trackSingle','1357015185691765','Lead',{value:data.total,currency:data.currency});}catch(e){}
     try{if(window.Skyfly&&Skyfly.trackLead)Skyfly.trackLead(data.total,data.currency,data.reference);}catch(e){}
     // One Purchase per saved order (never for test orders); Skyfly keeps it from repeating on retries or refreshes.
     try{if(window.Skyfly&&Skyfly.trackPurchase)Skyfly.trackPurchase(data);}catch(e){}

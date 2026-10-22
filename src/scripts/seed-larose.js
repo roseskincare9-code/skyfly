@@ -14,6 +14,7 @@ export const LAROSE_PACKAGES = [
   { code: 'package-5', name: 'Package 5 – Total Transformation VIP Luxury (5kg Soap)', price: 202000 },
 ];
 
+export const LAROSE_PIXEL_NEW_ID = '1087347357386553';
 export const LAROSE_META_PIXEL_ID = '1357015185691765';
 
 export async function seedLarose(pool, ownerEmail) {
@@ -62,6 +63,11 @@ export async function seedLarose(pool, ownerEmail) {
        VALUES ($1, 'meta', true, $2, ARRAY['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'])
        ON CONFLICT (business_id, provider) WHERE landing_page_id IS NULL DO NOTHING`,
       [businessId, LAROSE_META_PIXEL_ID],
+    );
+    // "Pixel New", added by the owner next to the main pixel (see migration 025).
+    await client.query(
+      `INSERT INTO additional_pixels (business_id, provider, name, pixel_id) VALUES ($1, 'meta', 'Pixel New', $2) ON CONFLICT DO NOTHING`,
+      [businessId, LAROSE_PIXEL_NEW_ID],
     );
     await client.query('COMMIT');
     return businessId;
