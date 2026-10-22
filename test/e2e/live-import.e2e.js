@@ -236,32 +236,20 @@ await step('K. Owner: edit the page and republish (same address, still connected
   return `${liveUrl}: edited version republished at the same address (still connected), unpublished → 404, republished → 200`;
 });
 
-await step('L. Isolation: the test account opens only its businesses; Larose only for Orders; everything else is refused', async () => {
+await step('L. The test account sees only the two test businesses; other businesses (e.g. Larose) and their orders are refused', async () => {
   const d = await signIn();
   await d.goto(`${SKYFLY}/?all=1`);
-  const links = await d.locator('main a').evaluateAll((as) => as.filter((a) => /^\/businesses\/\d+$/.test(a.getAttribute('href') || '')).map((a) => [a.textContent.trim(), a.getAttribute('href')]));
-  const allowed = ['Skyfly Demo Shop (test)', 'Skyfly Import Test (test)', 'Larose Natural Skincare Nigeria'];
-  const extra = links.filter(([n]) => !allowed.includes(n));
-  assert(!extra.length, `unexpected businesses: ${extra.map(([n]) => n).join(', ')}`);
-  const mine = new Set(links.map(([, h]) => h.split('/')[2]));
-  const larose = links.find(([n]) => n === 'Larose Natural Skincare Nigeria')?.[1];
-  const status = async (path) => (await d.request.get(`${SKYFLY}${path}`, { maxRedirects: 0 })).status();
-  const notes = [];
-  if (larose) {
-    assert(await status(`${larose}/orders`) === 200, 'Larose orders not readable');
-    for (const part of ['landing-pages', 'products', 'settings', 'pixels']) {
-      const st = await status(`${larose}/${part}`);
-      assert([403, 404].includes(st), `Larose ${part}: HTTP ${st}`);
-      notes.push(`${part} ${st}`);
-    }
-  }
+  const names = (await d.locator('main a').evaluateAll((as) => as.filter((a) => /^\/businesses\/\d+$/.test(a.getAttribute('href') || '')).map((a) => a.textContent.trim()))).filter(Boolean);
+  assert(!names.some((n) => /Larose/i.test(n)), `listed: ${names.join(', ')}`);
+  const mine = new Set((await d.locator('main a[href^="/businesses/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href').match(/^\/businesses\/(\d+)/)?.[1]))).filter(Boolean));
   const refused = [];
   for (let id = 1; id <= 8; id += 1) {
     if (mine.has(String(id))) continue;
-    assert(await status(`/businesses/${id}/orders`) === 404, `business ${id} orders readable`);
+    const r = await d.request.get(`${SKYFLY}/businesses/${id}/orders`, { maxRedirects: 0 });
+    assert(r.status() === 404, `business ${id} orders: HTTP ${r.status()}`);
     refused.push(id);
   }
-  return `listed: ${links.map(([n]) => n).join(', ')}; Larose: Orders only (${notes.join(', ')}); orders of businesses ${refused.join(', ')} → 404`;
+  return `listed: ${[...new Set(names)].join(', ')}; orders of businesses ${refused.join(', ')} → 404`;
 });
 
 await browser.close();

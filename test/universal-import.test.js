@@ -255,7 +255,7 @@ describe('live-test account', () => {
     const res = await login('a-fresh-random-password-123');
     assert.equal(res.status, 302);
     const { rows } = await pool.query('SELECT b.slug, m.role FROM business_members m JOIN businesses b ON b.id = m.business_id JOIN users u ON u.id = m.user_id WHERE u.email = $1 ORDER BY 1', [E2E_EMAIL]);
-    assert.deepEqual(rows, [{ slug: 'larose-nigeria', role: 'staff' }, { slug: 'skyfly-import-test', role: 'manager' }], 'test businesses, and Larose orders only (the demo shop is not set up in this test)');
+    assert.deepEqual(rows, [{ slug: 'skyfly-import-test', role: 'manager' }], 'test businesses only (the demo shop is not set up in this test)');
     const { rows: [u] } = await pool.query('SELECT is_platform_admin FROM users WHERE email = $1', [E2E_EMAIL]);
     assert.equal(u.is_platform_admin, false);
     delete process.env.SKYFLY_E2E_PASSWORD_HASH;

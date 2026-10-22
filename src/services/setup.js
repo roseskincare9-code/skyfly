@@ -214,15 +214,12 @@ export async function ensureImportTestSite(pool, config, log = console) {
 }
 
 // The automated live tests (GitHub Actions) sign in as their own account, never as the owner.
-// It can open only the businesses below, can't create businesses, and isn't a platform admin.
-// The test workflow picks a new random password on each run and gives the server only its hash
-// (SKYFLY_E2E_PASSWORD_HASH, set through the Render deployment settings); the password is never
-// stored. Without that setting it cannot sign in.
+// It can open only the two labelled test businesses (as Manager: pages, products, orders), can't
+// create businesses, and isn't a platform admin. The test workflow picks a new random password on
+// each run and gives the server only its hash (SKYFLY_E2E_PASSWORD_HASH, set through the Render
+// deployment settings); the password is never stored. Without that setting it cannot sign in.
 export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
-// Manager of the two labelled test businesses; Staff (Orders only) of Larose, so a live test can
-// confirm its own TEST ORDER in Larose → Orders (no access to Larose's pages, products or settings).
-const E2E_ROLES = { 'skyfly-import-test': 'manager', 'skyfly-demo': 'manager', 'larose-nigeria': 'staff' };
-const E2E_BUSINESSES = Object.keys(E2E_ROLES);
+const E2E_BUSINESSES = ['skyfly-import-test', 'skyfly-demo'];
 export async function ensureE2eAccount(pool, log = console) {
   const hash = String(process.env.SKYFLY_E2E_PASSWORD_HASH || '').trim();
   const usable = /^scrypt:[0-9a-f]{32}:[0-9a-f]{128}$/.test(hash);
@@ -232,14 +229,12 @@ export async function ensureE2eAccount(pool, log = console) {
     [E2E_EMAIL, usable ? hash : 'disabled']);
   await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [user.id, E2E_BUSINESSES]);
   if (usable) {
-    for (const [slug, role] of Object.entries(E2E_ROLES)) {
-      await pool.query(
-        `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, $3 FROM businesses WHERE slug = $2
-         ON CONFLICT (business_id, user_id) DO UPDATE SET role = EXCLUDED.role`, [user.id, slug, role]);
-    }
+    await pool.query(
+      `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, 'manager' FROM businesses WHERE slug = ANY($2::text[])
+       ON CONFLICT (business_id, user_id) DO UPDATE SET role = 'manager'`, [user.id, E2E_BUSINESSES]);
   } else {
     await pool.query('DELETE FROM business_members WHERE user_id = $1', [user.id]);
   }
-  log.log(`Live-test account: ${usable ? `can sign in (${Object.entries(E2E_ROLES).map(([b, r]) => `${b}: ${r}`).join(', ')})` : 'disabled (no SKYFLY_E2E_PASSWORD_HASH)'}`);
+  log.log(`Live-test account: ${usable ? `can sign in (test businesses only: ${E2E_BUSINESSES.join(', ')})` : 'disabled (no SKYFLY_E2E_PASSWORD_HASH)'}`);
   return usable;
 }
