@@ -1,0 +1,35 @@
+# Checks Larose's Meta pixels (main + "Pixel New") on the live page. Places NO order and sends
+# nothing to Meta (pixel hits are intercepted and counted). Manual only.
+name: Live pixel check (Larose)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com)
+        required: true
+      landing_url:
+        description: Page to test (default the GitHub Pages Larose page)
+        default: ''
+permissions:
+  contents: read
+jobs:
+  pixels:
+    runs-on: ubuntu-24.04 # Playwright's Chromium does not support ubuntu-latest (26.04) yet
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: mkdir -p live-screenshots && node test/e2e/live-pixels.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          LANDING_URL: ${{ inputs.landing_url }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pixel-screenshots
+          path: live-screenshots/
+          retention-days: 7

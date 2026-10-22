@@ -15,6 +15,8 @@ const PAGE = process.env.LANDING_URL || 'https://roseskincare9-code.github.io/La
 // requests carry "Origin: null" and it has its own form key.
 const HOSTED = PAGE.startsWith(SKYFLY);
 const PAGE_KEY = process.env.PAGE_KEY || (HOSTED ? 'larose-skincare' : 'larosenigeria');
+// Larose's Meta pixels: the main one (in the page's own code) and "Pixel New" (added in Skyfly).
+const LAROSE_PIXELS = ['1357015185691765', '1087347357386553'];
 const PAGE_ORIGIN = HOSTED ? 'null' : 'https://roseskincare9-code.github.io';
 const SHEET = 'https://sheetdb.io/api/v1/m111fq96ve953';
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());
@@ -300,18 +302,23 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
   return `1 row in ${again[0].tab}: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
 });
 
-await step('I. Meta Pixel 1357015185691765: Purchase counted at save is configured; this TEST ORDER sends PageView once per page load, Lead once and no Purchase (test orders never count)', async () => {
+await step('I. Meta Pixels 1357015185691765 (main) and 1087347357386553 ("Pixel New"): Purchase counted at save is configured; this TEST ORDER sends each pixel PageView once per page load, InitiateCheckout, Lead once and no Purchase (test orders never count)', async () => {
   const cfg = await (await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`)).json();
-  const metaCfg = (cfg.pixels || []).find((p) => p.provider === 'meta');
-  assert(metaCfg?.id === '1357015185691765' && metaCfg.events.includes('Purchase'), `live config: ${JSON.stringify(cfg.pixels)}`);
-  const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === '1357015185691765');
-  const count = (ev) => meta.filter((e) => e.ev === ev).length;
-  const summary = [...new Set(meta.map((e) => e.ev))].map((ev) => `${ev}×${count(ev)}`).join(', ');
-  // One PageView per load of the landing page (the refresh check reloads it once).
-  assert(count('PageView') === landingLoads, `PageView ${count('PageView')} for ${landingLoads} page loads (${summary}); requests seen: ${pixelSeen.slice(0, 8).join(', ') || 'none'}`);
-  assert(count('Lead') === 1, `Lead ${count('Lead')} (${summary})`);
-  assert(count('Purchase') === 0, `Purchase ${count('Purchase')} (${summary})`);
-  return `${summary} (intercepted, not sent to Meta)`;
+  const out = [];
+  for (const id of LAROSE_PIXELS) {
+    const metaCfg = (cfg.pixels || []).find((p) => p.provider === 'meta' && p.id === id);
+    assert(metaCfg?.events.includes('Purchase'), `pixel ${id} in the live config: ${JSON.stringify(cfg.pixels)}`);
+    const meta = pixelEvents.filter((e) => e.host.endsWith('facebook.com') && e.id === id);
+    const count = (ev) => meta.filter((e) => e.ev === ev).length;
+    const summary = [...new Set(meta.map((e) => e.ev))].map((ev) => `${ev}×${count(ev)}`).join(', ');
+    // One PageView per load of the landing page (the refresh check reloads it once).
+    assert(count('PageView') === landingLoads, `${id}: PageView ${count('PageView')} for ${landingLoads} page loads (${summary}); requests seen: ${pixelSeen.slice(0, 8).join(', ') || 'none'}`);
+    assert(count('InitiateCheckout') >= 1 && count('InitiateCheckout') <= landingLoads, `${id}: InitiateCheckout ${count('InitiateCheckout')} (${summary})`);
+    assert(count('Lead') === 1, `${id}: Lead ${count('Lead')} (${summary})`);
+    assert(count('Purchase') === 0, `${id}: Purchase ${count('Purchase')} (${summary})`);
+    out.push(`${id}: ${summary}`);
+  }
+  return `${out.join('; ')} (intercepted, not sent to Meta)`;
 });
 
 if (process.env.RENDER_API_KEY && process.env.RESTART_CHECK === 'yes') {
@@ -390,9 +397,13 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
     throw new Error(`no confirmation for the simulated saved reply; page error: "${((await p3.textContent('#skyErr').catch(() => '')) || '').slice(0, 160)}", button: "${await p3.textContent('#sb').catch(() => '')}", replies seen: ${replies.join(', ')}`);
   });
   for (let i = 0; i < 20 && purchases().length === 0; i += 1) await sleep(500);
+  for (let i = 0; i < 10 && purchases().length < LAROSE_PIXELS.length; i += 1) await sleep(500);
   const p = purchases();
-  assert(p.length === 1, `${p.length} Purchase event(s) after the saved reply`);
-  assert(p[0].id === '1357015185691765' && p[0].eid === `purchase_${ref}` && Number(p[0].value) === 51500 && p[0].currency === 'NGN', `Purchase sent ${JSON.stringify(p[0])}`);
+  assert(p.length === LAROSE_PIXELS.length, `${p.length} Purchase event(s) after the saved reply: ${JSON.stringify(p)}`);
+  for (const id of LAROSE_PIXELS) {
+    const one = p.filter((e) => e.id === id);
+    assert(one.length === 1 && one[0].eid === `purchase_${ref}` && Number(one[0].value) === 51500 && one[0].currency === 'NGN', `Purchase for pixel ${id}: ${JSON.stringify(one)}`);
+  }
   await p3.reload({ waitUntil: 'load' });
   if (HOSTED) {
     // Sandboxed hosting has no browser storage: after a refresh the customer sees the form again.
@@ -409,10 +420,10 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
     await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
   }
   await sleep(3000);
-  assert(purchases().length === 1, `${purchases().length} Purchase events after a refresh and a repeated reply`);
+  assert(purchases().length === LAROSE_PIXELS.length, `${purchases().length} Purchase events after a refresh and a repeated reply`);
   await p3.screenshot({ path: 'live-screenshots/larose-simulated-purchase.png', fullPage: false });
   await p3.close();
-  return `failed order → 0; saved reply → 1 Purchase (pixel ${p[0].id}, eventID ${p[0].eid}, value ${p[0].value} ${p[0].currency}); refresh + repeated reply → still 1 (intercepted, not sent to Meta)`;
+  return `failed order → 0; saved reply → 1 Purchase per pixel (${p.map((e) => e.id).join(' and ')}, eventID ${p[0].eid}, value ${p[0].value} ${p[0].currency}); refresh + repeated reply → still 1 each (intercepted, not sent to Meta)`;
 });
 
 await step('L. The test order appears exactly once in the Larose Natural Skincare Nigeria dashboard, with its Google Sheet status', () => {

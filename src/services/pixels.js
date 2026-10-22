@@ -1,5 +1,5 @@
 // Pixel settings, browser tracking config, and server-side Purchase events
-// (Meta Conversions API, TikTok Events API). Purchase is sent once per order and provider, when
+// (Meta Conversions API, TikTok Events API). Purchase is sent once per order and pixel, when
 // the order is saved or marked Paid (per pixel setting); test orders go only to Test events.
 import { createHash } from 'node:crypto';
 import { decrypt, encrypt } from '../lib/secrets.js';
@@ -41,14 +41,25 @@ export async function platformPixel(pool, config, businessId) {
   };
 }
 
+// Every pixel used for a page: the main one per provider (above), then the business's additional
+// named pixels (e.g. "Pixel New"). A pixel ID is listed once, whichever row names it first.
+export async function pagePixels(pool, businessId, landingPageId, config = null) {
+  const settings = await effectiveSettings(pool, businessId, landingPageId, config);
+  const { rows: extra } = await pool.query(
+    'SELECT *, true AS extra FROM additional_pixels WHERE business_id = $1 ORDER BY id', [businessId]);
+  const list = [];
+  for (const s of [...PROVIDERS.map((p) => settings[p]), ...extra]) {
+    if (s && !list.some((x) => x.provider === s.provider && x.pixel_id === s.pixel_id)) list.push(s);
+  }
+  return list;
+}
+
 // What the browser needs: only enabled pixels with valid IDs. No secrets.
 export async function browserConfig(pool, page, config = null) {
-  const settings = await effectiveSettings(pool, page.business_id, page.id, config);
   const pixels = [];
-  for (const provider of PROVIDERS) {
-    const s = settings[provider];
-    if (s?.enabled && s.pixel_id && PIXEL_ID_RULES[provider].re.test(s.pixel_id)) {
-      pixels.push({ provider, id: s.pixel_id, events: s.events.filter((e) => BROWSER_EVENTS.includes(e)) });
+  for (const s of await pagePixels(pool, page.business_id, page.id, config)) {
+    if (s.enabled && s.pixel_id && PIXEL_ID_RULES[s.provider].re.test(s.pixel_id)) {
+      pixels.push({ provider: s.provider, id: s.pixel_id, events: s.events.filter((e) => BROWSER_EVENTS.includes(e)) });
     }
   }
   return { page: page.slug, pixels };
@@ -164,14 +175,13 @@ export async function recordPurchase(pool, config, orderId, { trigger = 'paid' }
   if (!order) return [];
   if (order.is_test) return trigger === 'saved' ? recordTestPurchase(pool, config, order, items) : [];
   if (trigger === 'paid' && order.payment_status !== 'paid') return [];
-  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id, config);
   const results = [];
-  for (const provider of PROVIDERS) {
-    const s = settings[provider];
+  for (const s of await pagePixels(pool, order.business_id, order.landing_page_id, config)) {
+    const { provider } = s;
     if (!serverReady(config, s)) continue;
     if ((trigger === 'saved') !== purchaseOnSave(s)) continue;
     const eventId = `purchase_${order.reference}`;
-    // The unique key (order, provider, event) means a second "Paid" never sends twice.
+    // The unique key (order, provider, pixel, event) means a second "Paid" never sends twice.
     const { rows: [event] } = await pool.query(
       `INSERT INTO conversion_events (order_id, provider, pixel_id, event_name, event_id)
        VALUES ($1, $2, $3, 'Purchase', $4) ON CONFLICT DO NOTHING RETURNING id`,
@@ -188,10 +198,9 @@ export async function recordPurchase(pool, config, orderId, { trigger = 'paid' }
 // events screen and never in real reporting. No test event code: nothing is sent.
 const TEST_PURCHASE = 'Purchase (test)';
 async function recordTestPurchase(pool, config, order, items) {
-  const settings = await effectiveSettings(pool, order.business_id, order.landing_page_id, config);
   const results = [];
-  for (const provider of PROVIDERS) {
-    const s = settings[provider];
+  for (const s of await pagePixels(pool, order.business_id, order.landing_page_id, config)) {
+    const { provider } = s;
     if (!serverReady(config, s) || !s.test_event_code) continue;
     const eventId = `test_purchase_${order.reference}`;
     const { rows: [event] } = await pool.query(
@@ -206,14 +215,14 @@ async function recordTestPurchase(pool, config, order, items) {
 }
 
 // The platform accepting an event is what makes server-side Purchase "verified".
-export async function markServerVerified(pool, settingsId) {
+export async function markServerVerified(pool, settingsId, extra = false) {
   if (!settingsId) return; // Skyfly's own pixel lives in the server config, not in pixel_settings
-  await pool.query('UPDATE pixel_settings SET server_verified_at = now() WHERE id = $1', [settingsId]);
+  await pool.query(`UPDATE ${extra ? 'additional_pixels' : 'pixel_settings'} SET server_verified_at = now() WHERE id = $1`, [settingsId]);
 }
 
 async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId, { test = false } = {}) {
   const r = await deliver(config, provider, settings, order, items, eventId, { test });
-  if (r.ok) await markServerVerified(pool, settings.id);
+  if (r.ok) await markServerVerified(pool, settings.id, Boolean(settings.extra));
   await pool.query(
     `UPDATE conversion_events SET attempts = attempts + 1, status = $2, response_code = $3, last_error = $4,
             sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END WHERE id = $1`,
@@ -231,7 +240,8 @@ export async function retryEvent(pool, config, eventRowId, businessId) {
   );
   if (!ev) return null;
   const { order, items } = await loadOrder(pool, ev.order_id);
-  const settings = (await effectiveSettings(pool, order.business_id, order.landing_page_id, config))[ev.provider];
+  const settings = (await pagePixels(pool, order.business_id, order.landing_page_id, config))
+    .find((s) => s.provider === ev.provider && s.pixel_id === ev.pixel_id);
   if (ev.test_mode) {
     if (!serverReady(config, settings) || !settings.test_event_code) return { ok: false, error: 'Add the access token and test event code again to resend this test event.' };
     return attempt(pool, config, ev.id, ev.provider, settings, order, items, ev.event_id, { test: true });

@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright's Chromium does not support ubuntu-latest (26.04) yet
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

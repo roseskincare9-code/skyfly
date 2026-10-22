@@ -125,6 +125,42 @@
   </div>
   <% }) %>
 
+  <% if (!page) { %>
+  <div class="card" id="additional">
+    <h2>Additional pixels</h2>
+    <p class="muted" style="margin-top:0">More pixels for this business, each with its own name. They are loaded on every page of the business next to the pixels above, and get the same events once each (Purchase only after Skyfly saves an order, never for test orders).</p>
+    <% extras.forEach((x) => { const xname = x.provider === 'meta' ? 'Meta' : 'TikTok'; %>
+      <form method="post" action="<%= base %>/pixels/additional" data-additional-pixel="<%= x.pixel_id %>" style="border-top:1px solid var(--line, #ddd);padding-top:10px;margin-top:10px">
+        <%- include('partials/csrf') %><input type="hidden" name="id" value="<%= x.id %>">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0;font-size:1rem"><%= x.name %> <span class="muted">· <%= xname %> pixel <%= x.pixel_id %></span></h3>
+          <span class="pill <%= x.enabled ? 'active' : '' %>"><%= x.enabled ? 'On' : 'Off' %></span></div>
+        <label for="x<%= x.id %>-name">Name</label><input id="x<%= x.id %>-name" name="name" value="<%= x.name %>" maxlength="60">
+        <label for="x<%= x.id %>-id"><%= xname %> Pixel ID</label><input id="x<%= x.id %>-id" name="pixel_id" value="<%= x.pixel_id %>" autocomplete="off">
+        <label class="toggle"><input type="checkbox" name="enabled" <%= x.enabled ? 'checked' : '' %>> Tracking on</label>
+        <label>Browser events</label>
+        <% BROWSER_EVENTS.forEach((e) => { %><label style="color:var(--text);display:inline-block;margin-right:12px"><input type="checkbox" name="events" value="<%= e %>" <%= x.events.includes(e) ? 'checked' : '' %>> <%= e %></label><% }) %>
+        <details><summary>Server-side Purchase (<%= x.server_purchase && x.access_token_enc ? (x.server_verified_at ? 'on, verified' : 'on, not verified yet') : 'off' %>)</summary>
+          <label><input type="checkbox" name="server_purchase" <%= x.server_purchase ? 'checked' : '' %> <%= encryptionReady ? '' : 'disabled' %>> Send Purchase from the server (same event ID as the browser, so it counts once)</label>
+          <label for="x<%= x.id %>-token">Access token <%= x.access_token_enc ? '(saved; leave blank to keep it)' : '' %></label>
+          <input id="x<%= x.id %>-token" name="access_token" type="password" autocomplete="new-password" placeholder="<%= x.access_token_enc ? '••••••••  saved' : 'Paste from the ad platform' %>" <%= encryptionReady ? '' : 'disabled' %>>
+          <% if (x.access_token_enc) { %><label style="color:var(--text)"><input type="checkbox" name="remove_token"> Remove saved token</label><% } %>
+          <label for="x<%= x.id %>-test">Test event code (optional)</label><input id="x<%= x.id %>-test" name="test_event_code" value="<%= x.test_event_code || '' %>">
+        </details>
+        <p style="margin-bottom:4px"><button type="submit">Save <%= x.name %></button></p>
+      </form>
+      <form method="post" action="<%= base %>/pixels/additional/remove"><%- include('partials/csrf') %><input type="hidden" name="id" value="<%= x.id %>"><button class="secondary" type="submit">Remove <%= x.name %></button></form>
+    <% }) %>
+    <form method="post" action="<%= base %>/pixels/additional" style="border-top:1px solid var(--line, #ddd);padding-top:10px;margin-top:10px">
+      <%- include('partials/csrf') %>
+      <h3 style="margin:0;font-size:1rem">Add a pixel</h3>
+      <label for="add-name">Name</label><input id="add-name" name="name" maxlength="60" placeholder="e.g. Pixel New">
+      <label for="add-provider">Platform</label><select id="add-provider" name="provider"><% PROVIDERS.forEach((p) => { %><option value="<%= p %>"><%= LABELS[p] %></option><% }) %></select>
+      <label for="add-id">Pixel ID</label><input id="add-id" name="pixel_id" autocomplete="off">
+      <p><button type="submit">Add pixel</button></p>
+    </form>
+  </div>
+  <% } %>
+
   <div class="card">
     <h2>Verification status</h2>
     <ul style="padding-left:18px;margin-top:0">
@@ -133,7 +169,7 @@
     </ul>
     <% if (recent.length === 0) { %><p class="muted">No Purchase events sent yet.</p><% } else { %>
       <div class="table-wrap"><table class="stack"><thead><tr><th>Order</th><th>Platform</th><th>Result</th><th>When</th></tr></thead><tbody>
-      <% recent.forEach((r) => { %><tr><td><a href="<%= base %>/orders/<%= r.order_id %>"><%= r.reference %></a></td><td><%= r.provider === 'meta' ? 'Meta' : 'TikTok' %></td>
+      <% recent.forEach((r) => { %><tr><td><a href="<%= base %>/orders/<%= r.order_id %>"><%= r.reference %></a></td><td><%= r.provider === 'meta' ? 'Meta' : 'TikTok' %> <span class="muted"><%= r.pixel_id %></span></td>
         <td><span class="pill <%= r.status === 'sent' ? 'delivered' : 'cancelled' %>"><%= r.status %></span> <span class="muted"><%= r.last_error || '' %></span></td><td class="muted"><%= formatDate(r.sent_at || r.created_at) %></td></tr><% }) %>
       </tbody></table></div>
     <% } %>

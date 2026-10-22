@@ -78,6 +78,7 @@ before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
   businessId = await seedLarose(pool, 'owner@larose.test');
+  await pool.query('DELETE FROM additional_pixels'); // these tests cover the main pixels only (see additional-pixels.test.js)
   await openClientSignup(pool);
 });
 after(() => pool.end());
