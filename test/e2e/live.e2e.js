@@ -274,6 +274,7 @@ await step('F. Sending the same submission again returns the same order (no dupl
 // the row checks when the sheet cannot take rows anyway.
 let sheetReady = false;
 await step('G. The Google Sheet (SheetDB) accepts rows: a tab has Skyfly\'s column row', async () => {
+  if (process.env.SHEET_CHECKS === 'off') throw new Blocked('skipped in this run: the historical Google Sheet is not touched (SHEET_CHECKS=off); test orders are never copied to a sheet');
   const found = [];
   const problems = [];
   for (const tab of TABS) {

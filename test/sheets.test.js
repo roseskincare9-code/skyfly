@@ -9,7 +9,7 @@ import { createPool } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { testDatabaseUrl } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
-import { syncDue, rowKey, adoptLegacyUrls } from '../src/services/sheets.js';
+import { syncDue, syncOrder, rowKey, adoptLegacyUrls } from '../src/services/sheets.js';
 
 const mock = await startSheetDbMock();
 const sheet = { get rows() { return mock.rows('testsheet01'); }, set down(v) { mock.state.down = v; }, set acceptButFail(v) { mock.state.acceptButFail = v; } };
@@ -148,10 +148,17 @@ describe('copying orders to the Google Sheet from the server', () => {
     assert.equal((await statusOf(res.body.reference)).sheet_sync_status, 'synced');
   });
 
-  test('test orders are copied and labelled as tests', async () => {
+  test('test orders are never copied to the sheet, and their saved status is left as it is', async () => {
+    const before = sheet.rows.length;
     const res = await order('TEST ORDER Skyfly E2E please ignore');
+    const o = await statusOf(res.body.reference);
+    assert.equal(o.is_test, true);
     await duePending(); await sync();
-    assert.match(sheet.rows.at(-1).source, new RegExp(`Skyfly ${res.body.reference} .*\\| TEST ORDER$`));
+    assert.equal(sheet.rows.length, before, 'no row added');
+    assert.equal(await syncOrder(pool, o.id, { key }), 'skipped', 'a direct call is refused too');
+    assert.equal(sheet.rows.length, before);
+    const after = await statusOf(res.body.reference);
+    assert.deepEqual([after.sheet_sync_status, after.sheet_sync_attempts], [o.sheet_sync_status, o.sheet_sync_attempts], 'nothing written');
   });
 
   test('with no sheet set, orders are marked "not copied" instead of failing', async () => {

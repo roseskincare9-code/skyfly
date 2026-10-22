@@ -315,6 +315,9 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
        FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
       WHERE o.id = $1`, [orderId]);
   if (!o) return null;
+  // Test orders never go to a Google Sheet (it holds real orders only). syncDue never picks them;
+  // this guards any other caller. Nothing is written, so existing rows keep their status.
+  if (o.is_test) return 'skipped';
   const conn = await targetFor(pool, key, o);
   if (!conn) {
     await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = NULL, sheet_connection_id = NULL WHERE id = $1", [orderId]);
@@ -406,7 +409,7 @@ export async function syncDue(pool, { limit = 10, key = null } = {}) {
   await adoptLegacyUrls(pool, key);
   const { rows } = await pool.query(
     `SELECT id FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
-        AND sheet_sync_attempts < $1 ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
+        AND sheet_sync_attempts < $1 AND NOT is_test ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
   for (const r of rows) await syncOrder(pool, r.id, { key });
   return rows.length;
 }
