@@ -301,11 +301,6 @@ export async function countOrderRows(pool, key, businessId, orderId) {
        FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
       WHERE o.id = $1 AND o.business_id = $2`, [orderId, businessId]);
   if (!o) return null;
-  // Test orders never go to a Google Sheet (the sheet holds real orders only).
-  if (o.is_test) {
-    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = 'Test order: not copied to the sheet' WHERE id = $1 AND sheet_sync_status IN ('pending', 'failed')", [orderId]);
-    return 'skipped';
-  }
   const conn = await targetFor(pool, key, o);
   if (!conn) throw new SheetError('No spreadsheet is set for this order.');
   if (!conn.url) throw new SheetError(conn.urlError);
@@ -320,6 +315,9 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
        FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
       WHERE o.id = $1`, [orderId]);
   if (!o) return null;
+  // Test orders never go to a Google Sheet (it holds real orders only). syncDue never picks them;
+  // this guards any other caller. Nothing is written, so existing rows keep their status.
+  if (o.is_test) return 'skipped';
   const conn = await targetFor(pool, key, o);
   if (!conn) {
     await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = NULL, sheet_connection_id = NULL WHERE id = $1", [orderId]);

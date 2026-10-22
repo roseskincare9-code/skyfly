@@ -190,11 +190,14 @@ try {
     assert.equal(o.sheet_sync_status, 'pending', 'queued for the server-side Google Sheet copy');
     // Exactly one Purchase, after the save, for the saved order's value, keyed by its reference.
     const p = purchases();
-    assert.equal(p.length, 1, `one Purchase (got ${JSON.stringify(p)}; all calls: ${JSON.stringify(fbCalls.map((a) => a.slice(0, 3)))})`);
-    assert.deepEqual([p[0][0], p[0][1], p[0][2]], ['trackSingle', '1357015185691765', 'Purchase']);
-    assert.equal(p[0][3].value, 103000);
-    assert.equal(p[0][3].currency, 'NGN');
-    assert.equal(p[0][4].eventID, `purchase_${reference}`);
+    // One per Larose pixel: the main pixel and "Pixel New".
+    assert.deepEqual(p.map((a) => [a[0], a[1], a[2]]), [['trackSingle', '1357015185691765', 'Purchase'], ['trackSingle', '1087347357386553', 'Purchase']],
+      `one Purchase per pixel (got ${JSON.stringify(p)}; all calls: ${JSON.stringify(fbCalls.map((a) => a.slice(0, 3)))})`);
+    for (const a of p) {
+      assert.equal(a[3].value, 103000);
+      assert.equal(a[3].currency, 'NGN');
+      assert.equal(a[4].eventID, `purchase_${reference}`);
+    }
   });
 
   await step('the saved order has trusted product, quantity, price and attribution', async () => {
@@ -242,7 +245,7 @@ try {
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     assert.equal(sheetRows.length, 0);
-    assert.equal(purchases().length, 1, 'refreshing is not a second Purchase');
+    assert.equal(purchases().length, 2, 'refreshing is not a second Purchase (still one per pixel)');
   });
 
   await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
@@ -265,9 +268,9 @@ try {
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");
     assert.equal(rows[0].n, 1, 'exactly one order');
     const lost = (await pool.query("SELECT reference FROM orders WHERE customer_name = 'Lost Reply'")).rows[0].reference;
-    assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, 1, 'one Purchase for the order whose reply was lost');
-    // J. two different orders: two Purchases, one per order.
-    assert.deepEqual(purchases().map((a) => a[4].eventID), [`purchase_${reference}`, `purchase_${lost}`]);
+    assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, 2, 'one Purchase per pixel for the order whose reply was lost');
+    // J. two different orders: two Purchases per pixel, one per order.
+    assert.deepEqual(purchases().map((a) => a[4].eventID), [`purchase_${reference}`, `purchase_${reference}`, `purchase_${lost}`, `purchase_${lost}`]);
     assert.equal(sheetRows.length, before, 'no fallback row: the order was saved in Skyfly');
     await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
     sheetRows.splice(before);

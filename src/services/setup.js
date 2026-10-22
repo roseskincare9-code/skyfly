@@ -215,8 +215,9 @@ export async function ensureImportTestSite(pool, config, log = console) {
 
 // The automated live tests (GitHub Actions) sign in as their own account, never as the owner.
 // It can open only the businesses below, can't create businesses, and isn't a platform admin.
-// The test workflow picks a new random password on each run and gives the server only its hash (SKYFLY_E2E_PASSWORD_HASH, set through the Render
-// deployment settings); the password is never stored. Without that setting it cannot sign in.
+// The test workflow picks a new random password on each run and gives the server only its hash
+// (SKYFLY_E2E_PASSWORD_HASH, set through the Render deployment settings); the password is never
+// stored. Without that setting it cannot sign in.
 export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
 // Manager of the two labelled test businesses; Staff (Orders only) of Larose, so a live test can
 // confirm its own TEST ORDER in Larose → Orders (no access to Larose's pages, products or settings).
