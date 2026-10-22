@@ -155,8 +155,18 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
   // Every product image loads (scrolling, so lazily loaded images load too).
   await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } window.scrollTo(0, 0); });
   await page.waitForTimeout(1500);
-  const imgs = await page.evaluate(() => [...document.images].filter((i) => !/facebook\.com\/tr/.test(i.src)).map((i) => i.complete && i.naturalWidth > 0));
-  assert(imgs.length && imgs.every(Boolean), `${imgs.filter((x) => !x).length} of ${imgs.length} images did not load`);
+  // Lazy images added after the page loaded (the add-on picture comes with Skyfly's catalogue reply) are
+  // brought on screen one by one, as a customer scrolling to them would, and given time to load.
+  await page.evaluate(async () => {
+    for (const i of [...document.images].filter((x) => !(x.complete && x.naturalWidth > 0))) {
+      i.scrollIntoView({ block: 'center' });
+      for (let t = 0; t < 50 && !(i.complete && i.naturalWidth > 0); t += 1) await new Promise((r) => setTimeout(r, 200));
+    }
+    window.scrollTo(0, 0);
+  });
+  const all = await page.evaluate(() => [...document.images].filter((i) => !/facebook\.com\/tr/.test(i.src)).map((i) => ({ ok: i.complete && i.naturalWidth > 0, src: (i.currentSrc || i.src).slice(0, 120) })));
+  const imgs = all.map((i) => i.ok);
+  assert(imgs.length && imgs.every(Boolean), `${imgs.filter((x) => !x).length} of ${imgs.length} images did not load: ${all.filter((i) => !i.ok).map((i) => i.src).join(', ')}`);
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   assert(width <= 400, `horizontal scroll on a phone (${width}px)`);
   return `${PAGE} (HTTP 200, Skyfly SDK loaded, all ${imgs.length} images loaded, fits a phone screen${HOSTED ? `, Skyfly-hosted sandbox, form key ${PAGE_KEY}` : ''})`;
