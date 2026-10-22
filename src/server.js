@@ -2,6 +2,7 @@ import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { testOrderSummary } from './services/orders.js';
+import { notificationReadiness } from './services/orderNotifications.js';
 import { ensureLaroseForOwner, ensureDemoSite, ensureDemoUpsell, ensureLaroseHostedPage, ensureImportTestSite, ensureE2eAccount } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
 import { startSheetWorker, recheckGoogleConnections, compareHeldGoogleConnections } from './services/sheets.js';
@@ -68,6 +69,7 @@ const server = app.listen(config.port, () => {
     // WebP sizes for published pages that do not have them yet (e.g. published before this feature).
     .then(() => optimizePublished(pool))
     .then(() => testOrderSummary(pool, 8)).then((lines) => lines.forEach((l) => console.log(l))).catch((err) => console.error('Orders check failed:', err.message));
+  notificationReadiness(pool, config).then((lines) => lines.forEach((l) => console.log(l))).catch((err) => console.error('Order notifications check failed:', err.message));
 });
 
 function shutdown() {

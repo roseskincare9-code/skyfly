@@ -266,3 +266,13 @@ describe('order destinations', () => {
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM orders WHERE reference = $1', [r.body.reference])).rows[0].n, 1);
   });
 });
+
+describe('start-up check (read-only, for checking a deployment without signing in)', () => {
+  test('says per business whether the address is verified and which sender is used, without keys or full addresses', async () => {
+    const { notificationReadiness } = await import('../src/services/orderNotifications.js');
+    const lines = await notificationReadiness(pool, config);
+    const line = lines.find((l) => l.startsWith('Order notifications: larose-nigeria'));
+    assert.match(line, /address lar…@gmail\.com, verified, on; sender: Skyfly sender \(resend\); latest order email: \w+/);
+    assert.ok(!lines.join(' ').includes('re_test_') && !lines.join(' ').includes('laroseskincare3@') && !lines.join(' ').includes('new-inbox@'), 'no key, no full address');
+  });
+});

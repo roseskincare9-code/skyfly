@@ -191,3 +191,21 @@ export async function notificationFor(pool, orderId) {
     "SELECT status, reason, to_email, sent_at, provider, attempts, next_attempt_at FROM email_messages WHERE order_id = $1 AND kind = 'order_notification'", [orderId]);
   return m ?? null;
 }
+
+// Read-only start-up summary, so a deployment can be checked without signing in: per business
+// with a notification address, whether it is verified and on, which sender would be used, and
+// the latest order email's state. Addresses are shortened; no keys are read or shown.
+export async function notificationReadiness(pool, config) {
+  const { rows } = await pool.query(
+    `SELECT b.id, b.slug, b.notify_email, b.notify_enabled, b.notify_verified_at, s.provider, s.from_email, s.verified_at AS sender_verified_at,
+            (s.api_key_enc IS NOT NULL) AS has_key,
+            (SELECT m.status || coalesce(' (' || left(m.reason, 80) || ')', '') FROM email_messages m WHERE m.business_id = b.id AND m.kind = 'order_notification' ORDER BY m.id DESC LIMIT 1) AS last
+       FROM businesses b LEFT JOIN email_settings s ON s.business_id = b.id WHERE b.notify_email IS NOT NULL ORDER BY b.id`);
+  const short = (e) => e.replace(/^(.{3}).*(@.*)$/, '$1…$2');
+  return rows.map((b) => {
+    const sender = b.has_key && b.from_email && config.encryptionKey
+      ? `${b.provider} (business's own; test email ${b.sender_verified_at ? `accepted ${new Date(b.sender_verified_at).toISOString()}` : 'never sent'})`
+      : config.notifyEmail ? `Skyfly sender (${config.notifyEmail.provider})` : 'none set up';
+    return `Order notifications: ${b.slug} — address ${short(b.notify_email)}, ${b.notify_verified_at ? 'verified' : 'NOT verified'}, ${b.notify_enabled ? 'on' : 'off'}; sender: ${sender}; latest order email: ${b.last ? b.last.replace(/[^\s()@]+@[^\s()]+/g, short) : 'none yet'}`;
+  });
+}
