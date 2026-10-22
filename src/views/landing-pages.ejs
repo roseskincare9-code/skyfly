@@ -22,8 +22,25 @@
     <label for="imp-name">Page name</label>
     <input id="imp-name" name="name" maxlength="200" placeholder="e.g. Larose October promo">
     <label for="imp-file">File (.zip or .html, max 25 MB)</label>
-    <input id="imp-file" name="file" type="file" accept=".zip,.html,.htm" required>
+    <div class="dropzone" data-dropzone style="border:2px dashed var(--line);border-radius:12px;padding:18px;text-align:center">
+      <p style="margin:0 0 8px">Drag and drop the file here, or choose it:</p>
+      <input id="imp-file" name="file" type="file" accept=".zip,.html,.htm" required>
+      <p class="muted" data-dropzone-name style="margin:8px 0 0"></p>
+    </div>
+    <progress data-upload-progress max="100" value="0" hidden style="width:100%;margin-top:10px"></progress>
+    <p class="muted" data-upload-status role="status" style="margin:4px 0 0"></p>
     <p style="margin-bottom:0"><button type="submit">Upload</button></p>
+  </form>
+
+  <form class="card" method="post" action="<%= base %>/landing-pages/import-url">
+    <%- include('partials/csrf') %>
+    <h2>Import from a web address</h2>
+    <p class="muted" style="margin-top:0">For a page that is already online. Skyfly copies the page itself; its images, styles and fonts keep loading from the original site, so leave that site up (or upload a .zip instead to host everything on Skyfly). Only public <strong>https://</strong> addresses can be imported.</p>
+    <label for="url-name">Page name</label>
+    <input id="url-name" name="name" maxlength="200" placeholder="e.g. October promo">
+    <label for="url-addr">Page address</label>
+    <input id="url-addr" name="page_url" type="url" required placeholder="https://example.com/my-page/" inputmode="url">
+    <p style="margin-bottom:0"><button type="submit">Import</button></p>
   </form>
 
   <p class="muted">Pages hosted by Skyfly, or hosted elsewhere (e.g. GitHub Pages), can send orders to Skyfly. Each page has a <strong>form key</strong> so orders are attributed to it. Only <strong>published/active</strong> pages take orders, and only for their connected products.</p>
@@ -71,4 +88,5 @@
   </form>
 </main>
 <script src="/static/copy.js" defer></script>
+<script src="/static/upload.js" defer></script>
 </body></html>

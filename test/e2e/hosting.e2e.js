@@ -109,6 +109,7 @@ try {
     await dash.click('button[type=submit]');
     await dash.waitForURL(`${DASH}/`);
     await seedLarose(pool, 'owner@larose.test');
+    await pool.query('DELETE FROM additional_pixels'); // this test covers the page's own pixels (see additional-pixels.test.js)
   });
 
   await step('import a ZIP landing page from the dashboard', async () => {

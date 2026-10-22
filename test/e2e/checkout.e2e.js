@@ -58,6 +58,7 @@ try {
     await dash.click('button[type=submit]');
     await dash.waitForURL(`${DASH}/`);
     businessId = await seedLarose(pool, 'owner@larose.test');
+    await pool.query('DELETE FROM additional_pixels'); // this test covers one pixel (see additional-pixels.test.js)
     await dash.goto(`${DASH}/businesses/${businessId}/landing-pages`);
     await dash.fill('#imp-name', 'Glow Drop');
     await dash.setInputFiles('#imp-file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(PAGE_HTML) });

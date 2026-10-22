@@ -10,6 +10,7 @@ import { audit } from '../lib/audit.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { clearOriginCache } from '../lib/origins.js';
 import { importUpload, ImportError } from '../hosting/importer.js';
+import { fileFromUrl } from '../hosting/urlImport.js';
 import { saveVersion, readFile } from '../hosting/storage.js';
 import { detectCheckout, FIELD_LABELS } from '../hosting/adapter.js';
 import { validateVersion, publishVersion, checkLive, businessCatalogue } from '../hosting/validate.js';
@@ -32,6 +33,13 @@ function receiveFile(req, res, next) {
     }
     requireCsrf(req, res, next);
   });
+}
+
+// The dashboard's upload script (progress bar) asks for the next address as JSON instead of a
+// redirect, and goes there itself; a normal form post still gets the redirect.
+function go(req, res, url) {
+  if (req.get('X-Skyfly-Upload') === '1') return res.json({ location: url });
+  return res.redirect(url);
 }
 
 function safeUrl(input) {
@@ -290,7 +298,7 @@ export function landingPageRoutes({ pool, config }) {
 
   // Import a new page from a ZIP or HTML file (creates the page record too).
   router.post('/upload', receiveFile, asyncHandler(async (req, res) => {
-    const fail = (message, problems = []) => res.redirect(`${res.locals.base}/landing-pages?error=${encodeURIComponent([message, ...problems.slice(0, 5)].join(' • '))}`);
+    const fail = (message, problems = []) => go(req, res, `${res.locals.base}/landing-pages?error=${encodeURIComponent([message, ...problems.slice(0, 5)].join(' • '))}`);
     if (req.uploadError) return fail(req.uploadError);
     const name = String(req.body.name ?? '').trim().slice(0, 200) || String(req.file?.originalname ?? 'Imported page').replace(/\.(zip|html?)$/i, '');
     let imported;
@@ -304,6 +312,27 @@ export function landingPageRoutes({ pool, config }) {
     const pageId = await savePage(req.business.id, { name, slug, url: null, status: 'draft', notes: null, productIds: [] });
     const versionId = await saveVersion(pool, { pageId, userId: req.session.userId, upload: imported });
     await audit(pool, req, { action: 'page.imported', businessId: req.business.id, entityType: 'landing_page', entityId: pageId, details: { versionId, file: imported.sourceName, files: imported.files.length } });
+    go(req, res, `${res.locals.base}/landing-pages/${pageId}?done=uploaded`);
+  }));
+
+  // Import a new page from its public https address (the HTML is fetched once, then checked
+  // exactly like an uploaded file; its images and styles keep loading from the original site).
+  router.post('/import-url', asyncHandler(async (req, res) => {
+    const fail = (message, problems = []) => res.redirect(`${res.locals.base}/landing-pages?error=${encodeURIComponent([message, ...problems.slice(0, 5)].join(' • '))}`);
+    let imported; let finalUrl;
+    try {
+      ({ file: req.file, finalUrl } = await fileFromUrl(req.body.page_url, { get: config.urlImportGet }));
+      imported = await importUpload(req.file);
+    } catch (err) {
+      if (err instanceof ImportError) return fail(err.message, err.problems);
+      throw err;
+    }
+    imported.sourceName = finalUrl.slice(0, 200);
+    const name = String(req.body.name ?? '').trim().slice(0, 200) || new URL(finalUrl).hostname;
+    const slug = await uniqueSlug(slugify(name) || 'page');
+    const pageId = await savePage(req.business.id, { name, slug, url: null, status: 'draft', notes: null, productIds: [] });
+    const versionId = await saveVersion(pool, { pageId, userId: req.session.userId, upload: imported });
+    await audit(pool, req, { action: 'page.imported', businessId: req.business.id, entityType: 'landing_page', entityId: pageId, details: { versionId, url: finalUrl } });
     res.redirect(`${res.locals.base}/landing-pages/${pageId}?done=uploaded`);
   }));
 

@@ -180,6 +180,15 @@ describe('import → products → checkout → checks → publish', () => {
     await order({ items: [{ product: 'radiance-serum', quantity: 1, unitPrice: 1, options: { Size: '30ml' } }] }).expect(409); // a tampered price
   });
 
+  test('dashboard: the order is listed once in its own business\'s Orders, and in no other business\'s', async () => {
+    const { rows: [o] } = await pool.query("SELECT reference FROM orders WHERE idempotency_key = 'universal-import-same-0001'");
+    const mine = await owner.get(`/businesses/${aurora}/orders?q=${o.reference}`).expect(200);
+    assert.equal(mine.text.split(`>${o.reference}<`).length - 1, 1, 'listed once');
+    const { rows: [larose] } = await pool.query("SELECT id FROM businesses WHERE slug = 'larose-nigeria'");
+    const theirs = await other.get(`/businesses/${larose.id}/orders?q=${o.reference}`).expect(200);
+    assert.equal(theirs.text.split(`>${o.reference}<`).length - 1, 0, 'not listed in another business');
+  });
+
   test('isolation: no business can order another business\'s products, see its page or its orders', async () => {
     await order({ items: [{ product: 'package-1', quantity: 1 }] }).expect(400); // Larose's product on Aurora's page
     await request(app).post('/api/public/orders').set('Origin', 'null').send({

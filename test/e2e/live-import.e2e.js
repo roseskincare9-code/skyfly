@@ -188,6 +188,23 @@ await step('I. Owner: import an AI-made page in the dashboard; Publish connects 
   return `${liveUrl} — connected automatically on Publish (form, 3 WhatsApp buttons, Size option), "Live ✓", Copy link shown`;
 });
 
+await step('I2. Owner: import a page from its public web address; it is saved as a draft under this business, its WhatsApp buttons found for connecting', async () => {
+  const d = await signIn();
+  await d.goto(`${SKYFLY}${bizHref}/landing-pages`);
+  const source = `${SKYFLY}/p/${SLUG}/`; // the published import test page (public, https)
+  await d.fill('#url-name', `URL import test ${RUN}`);
+  await d.fill('#url-addr', source);
+  await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[action$="/landing-pages/import-url"] button[type=submit]')]);
+  const draft = d.url().split('?')[0];
+  const flow = (await d.textContent('#workflow')).replace(/\s+/g, ' ');
+  assert(/goes to WhatsApp|saves orders in Skyfly|Skyfly checkout on the page/.test(flow), `workflow: ${flow.slice(0, 200)}`);
+  // Tidy up: archive the draft (never published).
+  const settings = d.locator(`form[action$="${new URL(draft).pathname}"]`);
+  await settings.locator('select[name=status]').selectOption('archived');
+  await Promise.all([d.waitForURL(/landing-pages$/), settings.locator('button[type=submit]').click()]);
+  return `${source} imported as a draft (${new URL(draft).pathname}); checkout detection shown; draft archived`;
+});
+
 await step('J. A phone order on that page saves under the import test business (Glow Duo 30ml + delivery), shown once in Orders', async () => {
   assert(liveUrl, 'no page');
   const p = await ctx.newPage();
