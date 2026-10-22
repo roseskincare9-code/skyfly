@@ -31,7 +31,7 @@ test('creates the Facial Set for Larose and offers it on both Larose pages; runn
   await pool.query(MIGRATION);
   const { rows: products } = await pool.query("SELECT business_id, name, price_minor, compare_at_price_minor, active FROM products WHERE code = 'facial-set'");
   assert.deepEqual(products.map((p) => [p.business_id, p.name, Number(p.price_minor), Number(p.compare_at_price_minor), p.active]), [[larose, 'Facial Set', 1700000, 2500000, true]]);
-  const { rows: pages } = await pool.query("SELECT lp.slug, p.code FROM landing_pages lp JOIN products p ON p.id = lp.upsell_product_id WHERE lp.business_id = $1 ORDER BY lp.slug", [larose]);
+  const { rows: pages } = await pool.query("SELECT lp.slug, p.code FROM landing_pages lp JOIN products p ON p.id = lp.upsell_product_id WHERE lp.business_id = $1 ORDER BY lp.slug COLLATE \"C\"", [larose]);
   assert.deepEqual(pages.map((r) => [r.slug, r.code]), [['larose-skincare', 'facial-set'], ['larosenigeria', 'facial-set']]);
   const { rows: [linked] } = await pool.query("SELECT count(*)::int AS n FROM landing_page_products x JOIN products p ON p.id = x.product_id WHERE p.code = 'facial-set'");
   assert.equal(linked.n, 0, 'an add-on, not one of the packages');
