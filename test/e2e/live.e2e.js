@@ -155,8 +155,9 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
   // Every product image loads (scrolling, so lazily loaded images load too).
   await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } window.scrollTo(0, 0); });
   await page.waitForTimeout(1500);
-  const imgs = await page.evaluate(() => [...document.images].filter((i) => !/facebook\.com\/tr/.test(i.src)).map((i) => i.complete && i.naturalWidth > 0));
-  assert(imgs.length && imgs.every(Boolean), `${imgs.filter((x) => !x).length} of ${imgs.length} images did not load`);
+  const all = await page.evaluate(() => [...document.images].filter((i) => !/facebook\.com\/tr/.test(i.src)).map((i) => ({ ok: i.complete && i.naturalWidth > 0, src: (i.currentSrc || i.src).slice(0, 120), lazy: i.loading, complete: i.complete, top: Math.round(i.getBoundingClientRect().top + scrollY), shown: i.offsetParent !== null })));
+  const imgs = all.map((i) => i.ok);
+  assert(imgs.length && imgs.every(Boolean), `${imgs.filter((x) => !x).length} of ${imgs.length} images did not load: ${JSON.stringify(all.filter((i) => !i.ok))}`);
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   assert(width <= 400, `horizontal scroll on a phone (${width}px)`);
   return `${PAGE} (HTTP 200, Skyfly SDK loaded, all ${imgs.length} images loaded, fits a phone screen${HOSTED ? `, Skyfly-hosted sandbox, form key ${PAGE_KEY}` : ''})`;
