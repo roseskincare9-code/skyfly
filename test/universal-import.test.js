@@ -271,4 +271,38 @@ describe('live-test account', () => {
     await ensureE2eAccount(pool, quiet);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1', [E2E_EMAIL])).rows[0].n, 0);
   });
+
+  test('each sign-in works only for its time window: then the account is disabled and signed out, even if the setting stays', async () => {
+    const { ensureE2eAccount, disableE2eAccount, E2E_EMAIL, E2E_WINDOW_MS } = await import('../src/services/setup.js');
+    const { hashPassword } = await import('../src/lib/passwords.js');
+    const quiet = { log: () => {}, error: () => {} };
+    const login = async (password) => {
+      const agent = request.agent(app);
+      const _csrf = await csrfToken(agent, '/login');
+      const res = await agent.post('/login').type('form').send({ _csrf, email: E2E_EMAIL, password });
+      return { agent, status: res.status };
+    };
+    process.env.SKYFLY_E2E_PASSWORD_HASH = await hashPassword('window-password-0123456789');
+    const start = Date.now();
+    assert.equal(await ensureE2eAccount(pool, quiet, { now: start }), true);
+    const { agent, status } = await login('window-password-0123456789');
+    assert.equal(status, 302);
+    assert.doesNotMatch((await agent.get('/')).headers.location ?? '', /\/login/, 'signed in');
+    // A restart inside the window (e.g. the free plan waking up) keeps it working…
+    assert.equal(await ensureE2eAccount(pool, quiet, { now: start + E2E_WINDOW_MS - 60000 }), true);
+    // …the window ending disables it and ends its signed-in sessions…
+    await disableE2eAccount(pool, quiet);
+    assert.match((await agent.get('/')).headers.location ?? '', /\/login/, 'signed out');
+    assert.notEqual((await login('window-password-0123456789')).status, 302);
+    // …and a later start with the same, now used, setting keeps it disabled.
+    assert.equal(await ensureE2eAccount(pool, quiet, { now: start + E2E_WINDOW_MS + 1000 }), false);
+    assert.notEqual((await login('window-password-0123456789')).status, 302);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1', [E2E_EMAIL])).rows[0].n, 0);
+    // A new run (new password) gets a new window.
+    process.env.SKYFLY_E2E_PASSWORD_HASH = await hashPassword('next-run-password-0123456789');
+    assert.equal(await ensureE2eAccount(pool, quiet), true);
+    assert.equal((await login('next-run-password-0123456789')).status, 302);
+    delete process.env.SKYFLY_E2E_PASSWORD_HASH;
+    await ensureE2eAccount(pool, quiet);
+  });
 });

@@ -4,7 +4,9 @@
 //                                         (SKYFLY_E2E_PASSWORD_HASH), the service is redeployed and,
 //                                         once live, the password is handed to later workflow steps
 //                                         as a masked variable (never printed, never stored).
-//   node scripts/e2e-login.mjs disable  → clears the hash (the account is disabled at the next start).
+//   node scripts/e2e-login.mjs disable  → clears the hash. The server itself disables each sign-in
+//                                         20 minutes after first seeing it (ending its sessions), and
+//                                         never accepts the same one again (see ensureE2eAccount).
 // Needs RENDER_API_KEY (already a repository secret, used by the other live checks).
 import { randomBytes } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
@@ -37,7 +39,7 @@ const mode = process.argv[2];
 const svc = await findService();
 if (mode === 'disable') {
   await render(`/services/${svc.id}/env-vars/${KEY}`, { method: 'PUT', body: { value: 'disabled' } });
-  console.log('Live-test sign-in setting cleared (the account is disabled from the next start).');
+  console.log('Live-test sign-in setting cleared. The server disables this run\'s sign-in 20 minutes after it started, and never accepts it again.');
 } else if (mode === 'enable') {
   const password = randomBytes(24).toString('base64url');
   console.log(`::add-mask::${password}`);

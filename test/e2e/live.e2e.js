@@ -135,6 +135,11 @@ page.on('request', (r) => {
   if (r.url().startsWith(SHEET) && r.method() === 'POST') sheetPosts.push(r.postData());
 });
 let landingLoads = 0;
+// Skyfly loads the business's other pixels (e.g. "Pixel New") just after the page has loaded, so
+// before leaving a page load the test waits until every Larose pixel has sent that load's PageView.
+async function pixelsSettled() {
+  for (let i = 0; i < 80 && !LAROSE_PIXELS.every((id) => pixelEvents.filter((e) => e.id === id && e.ev === 'PageView').length >= landingLoads); i += 1) await sleep(250);
+}
 page.on('framenavigated', (f) => { if (f === page.mainFrame()) { navigations.push(f.url()); if (f.url().startsWith(PAGE)) landingLoads += 1; } });
 page.on('response', async (r) => {
   if (r.url().startsWith(`${SKYFLY}/api/public/orders`) && r.request().method() === 'POST') apiReply = await r.json().catch(() => null);
@@ -146,6 +151,7 @@ await step('K. The live Larose page opens and points at this Skyfly service', as
   const api = await page.evaluate('typeof SKYFLY_API === "string" ? SKYFLY_API : null');
   assert(api === SKYFLY, `page SKYFLY_API is ${JSON.stringify(api)}`);
   await page.waitForFunction('window.Skyfly && window.Skyfly.version', null, { timeout: 30000 });
+  await pixelsSettled();
   // Every product image loads (scrolling, so lazily loaded images load too).
   await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } window.scrollTo(0, 0); });
   await page.waitForTimeout(1500);
@@ -252,12 +258,15 @@ await step('C/H. A test order placed through the real checkout is saved; the con
 
 await step('D. The order persists: the confirmation page (read from the database) still shows it after a refresh', async () => {
   await page.reload({ waitUntil: 'load' });
+  await pixelsSettled();
   if (await page.$('#skyRef')) assert((await page.textContent('#skyRef')).trim() === reference, 'on-page confirmation lost on refresh');
   await page.goto(confirmationUrl, { waitUntil: 'load' });
   await page.reload({ waitUntil: 'load' });
   const text = await page.textContent('body');
   assert(text.includes(reference) && text.includes('TEST ORDER Skyfly E2E'), 'order not shown after refresh');
-  return `${reference} shown after reload`;
+  // The confirmation is read from the database: the saved order belongs to Larose's business.
+  assert(text.includes('Larose Natural Skincare Nigeria'), 'the confirmation does not name the Larose business');
+  return `${reference} shown after reload, read from the database under Larose Natural Skincare Nigeria`;
 });
 
 await step('F. Sending the same submission again returns the same order (no duplicate)', async () => {

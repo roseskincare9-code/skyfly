@@ -220,21 +220,49 @@ export async function ensureImportTestSite(pool, config, log = console) {
 // deployment settings); the password is never stored. Without that setting it cannot sign in.
 export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
 const E2E_BUSINESSES = ['skyfly-import-test', 'skyfly-demo'];
-export async function ensureE2eAccount(pool, log = console) {
+// Each sign-in the test workflow sets (a new random password per run, given here only as its
+// hash) works for E2E_WINDOW_MS after it is first seen, once: a later start with the same hash
+// (e.g. if the workflow's "disable" step never ran) keeps the account disabled. When the window
+// ends the account is disabled again in the database and its signed-in sessions are ended.
+export const E2E_WINDOW_MS = 20 * 60000;
+let e2eTimer = null;
+export async function disableE2eAccount(pool, log = console) {
+  const { rows: [user] } = await pool.query("UPDATE users SET password_hash = 'disabled' WHERE email = $1 RETURNING id", [E2E_EMAIL]);
+  if (!user) return;
+  await pool.query('DELETE FROM business_members WHERE user_id = $1', [user.id]);
+  await pool.query("DELETE FROM user_sessions WHERE sess->>'userId' = $1", [String(user.id)]);
+  log.log('Live-test account: disabled (sign-in window over; its sessions were ended)');
+}
+
+export async function ensureE2eAccount(pool, log = console, { now = Date.now() } = {}) {
+  clearTimeout(e2eTimer);
   const hash = String(process.env.SKYFLY_E2E_PASSWORD_HASH || '').trim();
-  const usable = /^scrypt:[0-9a-f]{32}:[0-9a-f]{128}$/.test(hash);
-  const { rows: [user] } = await pool.query(
-    `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, 'Automated live tests', false)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_platform_admin = false RETURNING id`,
-    [E2E_EMAIL, usable ? hash : 'disabled']);
-  await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [user.id, E2E_BUSINESSES]);
+  const fingerprint = createHash('sha256').update(hash).digest('hex').slice(0, 32);
+  let usable = /^scrypt:[0-9a-f]{32}:[0-9a-f]{128}$/.test(hash);
+  let until = null;
   if (usable) {
-    await pool.query(
-      `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, 'manager' FROM businesses WHERE slug = ANY($2::text[])
-       ON CONFLICT (business_id, user_id) DO UPDATE SET role = 'manager'`, [user.id, E2E_BUSINESSES]);
-  } else {
-    await pool.query('DELETE FROM business_members WHERE user_id = $1', [user.id]);
+    const { rows: [seen] } = await pool.query(
+      "SELECT created_at FROM audit_log WHERE action = 'e2e.sign_in_enabled' AND details->>'fingerprint' = $1 ORDER BY id LIMIT 1", [fingerprint]);
+    const since = seen ? new Date(seen.created_at).getTime() : now;
+    if (!seen) await pool.query("INSERT INTO audit_log (action, details, created_at) VALUES ('e2e.sign_in_enabled', $1, to_timestamp($2 / 1000.0))", [{ fingerprint }, now]);
+    until = since + E2E_WINDOW_MS;
+    usable = until > now;
   }
-  log.log(`Live-test account: ${usable ? `can sign in (test businesses only: ${E2E_BUSINESSES.join(', ')})` : 'disabled (no SKYFLY_E2E_PASSWORD_HASH)'}`);
-  return usable;
+  const { rows: [user] } = await pool.query(
+    `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, 'disabled', 'Automated live tests', false)
+     ON CONFLICT (email) DO UPDATE SET is_platform_admin = false RETURNING id`, [E2E_EMAIL]);
+  if (!usable) {
+    await disableE2eAccount(pool, { log() {} });
+    log.log(`Live-test account: disabled (${hash && hash !== 'disabled' ? 'this sign-in was already used and has expired' : 'no SKYFLY_E2E_PASSWORD_HASH'})`);
+    return false;
+  }
+  await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [user.id, hash]);
+  await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [user.id, E2E_BUSINESSES]);
+  await pool.query(
+    `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, 'manager' FROM businesses WHERE slug = ANY($2::text[])
+     ON CONFLICT (business_id, user_id) DO UPDATE SET role = 'manager'`, [user.id, E2E_BUSINESSES]);
+  e2eTimer = setTimeout(() => disableE2eAccount(pool, log).catch((err) => log.error('Live-test account: disable failed:', err.message)), until - now);
+  e2eTimer.unref?.();
+  log.log(`Live-test account: can sign in until ${new Date(until).toISOString()} (test businesses only: ${E2E_BUSINESSES.join(', ')})`);
+  return true;
 }
