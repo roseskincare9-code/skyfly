@@ -1,0 +1,14 @@
+<%- include('partials/head', { title: 'Order notifications' }) %>
+<main class="auth">
+  <div class="card">
+    <% if (done) { %>
+      <h1 style="margin-top:0">Order notifications confirmed</h1>
+      <p><strong><%= done.notify_email %></strong> will receive an email for every new order of <strong><%= done.name %></strong> saved in Skyfly.</p>
+    <% } else { %>
+      <h1 style="margin-top:0">Confirm order notifications</h1>
+      <p>Receive an email at this address for every new order saved in Skyfly?</p>
+      <form method="post" action="/notify/verify/<%= token %>"><button type="submit">Confirm</button></form>
+    <% } %>
+  </div>
+</main>
+</body></html>

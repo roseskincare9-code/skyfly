@@ -145,7 +145,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.use(insightRoutes({ pool }));
   scoped.use('/landing-pages', need('catalog'), pageEditorRoutes({ pool, config }));
   scoped.use('/landing-pages', need('catalog'), landingPageRoutes({ pool, config }));
-  scoped.use('/settings', need('settings'), settingsRoutes({ pool }));
+  scoped.use('/settings', need('settings'), settingsRoutes({ pool, config }));
   scoped.use('/api-keys', need('integrations'), apiKeyRoutes({ pool }));
   scoped.use('/pixels', need('integrations'), pixelRoutes({ pool, config }));
   scoped.use('/team', need('team'), teamRoutes({ pool, config }));

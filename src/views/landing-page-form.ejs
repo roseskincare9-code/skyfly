@@ -2,17 +2,44 @@
 <%- include('partials/nav', { active: 'pages' }) %>
 <main style="max-width:760px">
   <p><a href="<%= base %>/landing-pages">← Landing pages</a></p>
-  <h1><%= page.id ? 'Edit landing page' : 'Register a landing page' %></h1>
+  <h1><%= page.id ? 'Edit landing page' : 'Connect a landing page' %></h1>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
   <% if (typeof notice !== 'undefined' && notice) { %><div class="notice"><%= notice %></div><% } %>
   <% if (page.id) { %><p class="muted">Orders from this page are copied to <% if (typeof sheet !== 'undefined' && sheet) { %>the Google Sheet <strong><%= sheet.name %></strong> <%= sheet.own ? '(this page\'s own sheet)' : '(business default)' %><% } else { %>no Google Sheet yet<% } %>. <a href="<%= base %>/google-sheets#pages">Change</a></p><% } %>
   <% if (page.id && hosting) { %><%- include('partials/hosting') %><h2>Page settings</h2><% } %>
+  <% if (page.id && page.url && !(hosting && hosting.publishedUrl)) { %>
+  <div class="card" id="connection">
+    <h2 style="margin-top:0">Connection</h2>
+    <p style="margin-top:0"><%- include('partials/connection', { p: page, detected: false }) %></p>
+    <% if (page.connection_checked_at) { %><p class="muted" style="font-size:13px">Last tested <%= formatDate(page.connection_checked_at) %>. Orders are only shown as connected once a real order from the page has been saved.</p><% } %>
+    <form method="post" action="<%= base %>/landing-pages/<%= page.id %>/test-connection"><%- include('partials/csrf') %><button class="secondary" type="submit">Test connection</button>
+      <span class="muted" style="font-size:13px">Skyfly opens <%= page.url %> and checks it loads Skyfly with this page's form key, is active and has products.</span></form>
+  </div>
+  <% } %>
   <form class="card" id="settings" method="post" action="<%= base %>/landing-pages<%= page.id ? '/' + page.id : '' %>">
     <%- include('partials/csrf') %>
-    <label for="name">Name</label>
+    <label for="name">Landing page name</label>
     <input id="name" name="name" value="<%= page.name %>" required maxlength="200">
-    <label for="url">External URL (only if the page is hosted elsewhere, e.g. GitHub Pages)</label>
+    <label for="url">Public landing page address (if the page is hosted elsewhere, e.g. GitHub Pages)</label>
     <input id="url" name="url" type="url" value="<%= page.url || '' %>" placeholder="https://...">
+    <% if (!page.id && typeof businesses !== 'undefined' && businesses.length > 1) { %>
+      <label for="business_id">Business that owns the page</label>
+      <select id="business_id" name="business_id">
+        <% businesses.forEach((b) => { %><option value="<%= b.id %>" <%= Number(b.id) === Number(ownerBusinessId) ? 'selected' : '' %>><%= b.name %></option><% }) %>
+      </select>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">Orders from the page are saved in this business only. Products are connected from that business's own page settings.</p>
+    <% } %>
+    <% if (typeof destinations !== 'undefined') { %>
+    <fieldset data-destination style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:14px">
+      <legend style="font-weight:600">Order destination</legend>
+      <% Object.entries(destinations).forEach(([v, label]) => { %>
+        <label style="color:var(--text);font-weight:400"><input type="radio" name="order_destination" value="<%= v %>" <%= (page.order_destination || 'checkout_whatsapp') === v ? 'checked' : '' %>> <%= label %></label>
+      <% }) %>
+    </fieldset>
+    <label for="notify_email">Order notification email (for this business)</label>
+    <input id="notify_email" name="notify_email" type="email" maxlength="200" value="<%= notifyEmail && notifyEmail.notify_email || '' %>" placeholder="you@example.com">
+    <p class="muted" style="font-size:13px;margin:4px 0 0"><%= notifyEmail && notifyEmail.notify_email ? (notifyEmail.notify_verified_at ? 'Verified: every new order is emailed to this address.' : 'Not verified yet: send the verification email from Settings → Order notifications.') : 'Optional. A new address must be verified (Settings → Order notifications) before order emails are sent.' %></p>
+    <% } %>
     <label for="slug">Form key (sent by the page with each order)</label>
     <input id="slug" name="slug" value="<%= page.slug %>" placeholder="auto from name" maxlength="60">
     <% if (page.id) { %><p class="muted" style="font-size:13px">Changing the form key stops the live page from taking orders until the page's code is updated too.</p><% } %>

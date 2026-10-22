@@ -51,7 +51,7 @@
           <td><%= o.customer_name %><% if (o.email) { %><br><span class="muted"><%= o.email %></span><% } %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %></td>
           <td><%= o.items %></td>
           <td><%= formatMoney(o.total_minor, o.currency) %></td>
-          <td><%- include('partials/pills', { o }) %></td>
+          <td><%- include('partials/pills', { o }) %><% if (o.notify_status) { %><br><span class="muted" data-notify="<%= o.notify_status %>" style="font-size:12px">Email: <%= { sent: 'sent ✓', failed: 'failed', queued: 'pending', sending: 'pending', skipped: 'not sent', cancelled: 'not sent' }[o.notify_status] %></span><% } %></td>
           <td class="muted"><%= o.source === 'manual' ? 'Manual' : (o.landing_page_name || '—') %><% if (o.utm_campaign) { %><br><%= o.utm_campaign %><% } %></td>
           <td class="muted"><%= formatDate(o.created_at) %></td>
         </tr>

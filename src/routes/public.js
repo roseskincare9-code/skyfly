@@ -9,6 +9,7 @@ import { allKnownOrigins } from '../lib/origins.js';
 import { hashApiKey } from '../lib/apiKeys.js';
 import { subscriptionState } from '../services/tenancy.js';
 import { browserConfig } from '../services/pixels.js';
+import { confirmVerification } from '../services/orderNotifications.js';
 
 // Used when a business has no WhatsApp number in Settings.
 export const DEFAULT_WHATSAPP = '+2349049206695';
@@ -90,6 +91,11 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         return res.status(401).json({ ok: false, error: 'UNAUTHORIZED', message: 'Browser requests must come from a registered website; server requests need an API key.' });
       }
       const input = validateOrderInput(req.body);
+      // A page set to "WhatsApp direct" takes orders as WhatsApp conversations, not in Skyfly.
+      const { rows: [dest] } = await pool.query('SELECT order_destination FROM landing_pages WHERE slug = $1', [input.landingPage ?? '']);
+      if (!key && dest?.order_destination === 'whatsapp') {
+        return res.status(409).json({ ok: false, error: 'WHATSAPP_ONLY', message: 'This page takes orders on WhatsApp. Please use the WhatsApp button.' });
+      }
       const client = { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 400) };
       const { order, replayed } = await createOrder(pool, input, { ...(key || { origin: req.headers.origin }), client }, config);
       if (!replayed) {
@@ -116,7 +122,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,
         // What Skyfly saved and priced (packages and any add-on), for the page's thank-you message.
         items: lines.map((l) => ({ name: l.product_name, quantity: l.quantity, total: Number(l.line_total_minor) / 100, upsell: l.is_upsell, options: l.options ?? null })),
-        whatsappUrl: number ? `https://wa.me/${whatsappDigits(number)}?text=${encodeURIComponent(`Hi ${biz.name}! I just placed order ${order.reference}. Please confirm my order. Thank you!`)}` : null,
+        // "Checkout + WhatsApp" pages show an optional WhatsApp button after the save; "Checkout" pages none.
+        whatsappUrl: number && dest?.order_destination !== 'checkout' ? `https://wa.me/${whatsappDigits(number)}?text=${encodeURIComponent(`Hi ${biz.name}! I just placed order ${order.reference}. Please confirm my order. Thank you!`)}` : null,
         replayed,
         // Test orders ("TEST ORDER …", or any order from a page in test mode) are never counted as purchases.
         test: Boolean(order.is_test) || isTestName(input.customer.name),
@@ -159,7 +166,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.set('Cache-Control', 'public, max-age=60');
     const { rows: [page] } = await pool.query(
-      `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, b.currency, b.whatsapp_number, b.slug AS business_slug,
+      `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, lp.order_destination, b.currency, b.whatsapp_number, b.slug AS business_slug,
               b.delivery_fee_minor, b.free_delivery_from_minor,
               u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price
          FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
@@ -172,6 +179,9 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     const number = page.whatsapp_number || (page.business_slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
     res.json({
       page: page.slug, currency: page.currency, whatsapp: number ? whatsappDigits(number) : null,
+      // whatsapp = the button opens a WhatsApp conversation (no order in Skyfly); checkout /
+      // checkout_whatsapp = Skyfly's checkout (with an optional WhatsApp button after the save).
+      destination: page.order_destination,
       products: rows.map((p) => ({
         code: p.code, name: p.name, price: Number(p.price_minor) / 100,
         ...(p.description ? { description: p.description } : {}),
@@ -232,6 +242,20 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         WHERE c.unsubscribe_token = $1`, [token]);
     return c ?? null;
   };
+  // Order-notification address check: the link opens a page, and only its button confirms
+  // (so email scanners that open links can't confirm an address by themselves).
+  router.get('/notify/verify/:token', (req, res) => {
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(req.params.token)) return res.status(404).render('error', { message: 'This link is not valid.' });
+    res.set('Cache-Control', 'no-store');
+    res.render('notify-verify', { token: req.params.token, done: null });
+  });
+  router.post('/notify/verify/:token', express.urlencoded({ extended: false, limit: '1kb' }), asyncHandler(async (req, res) => {
+    const done = await confirmVerification(pool, req.params.token);
+    if (!done) return res.status(404).render('error', { message: 'This link is not valid any more (it works once, for 48 hours). Send a new one from Settings → Order notifications.' });
+    res.set('Cache-Control', 'no-store');
+    res.render('notify-verify', { token: null, done });
+  }));
+
   router.get('/u/:token', asyncHandler(async (req, res) => {
     const c = await unsubscribe(req.params.token);
     if (!c) return res.status(404).render('error', { message: 'This unsubscribe link is not valid.' });

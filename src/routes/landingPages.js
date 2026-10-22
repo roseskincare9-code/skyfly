@@ -19,6 +19,15 @@ import { LIMITS } from '../hosting/files.js';
 import { optimizeVersion } from '../hosting/images.js';
 import { previewToken } from '../hosting/preview.js';
 import { domainReadiness, normalizeDomain } from '../hosting/domains.js';
+import { testPageConnection } from '../services/pageConnection.js';
+import { setNotifyEmail, validNotifyEmail } from '../services/orderNotifications.js';
+import { workspaceAccess, can } from '../services/tenancy.js';
+
+export const ORDER_DESTINATIONS = {
+  checkout_whatsapp: 'Skyfly checkout + WhatsApp: the order is saved first, then the confirmation offers an optional WhatsApp button',
+  checkout: 'Skyfly checkout: the customer fills in the order form and the order is saved in Skyfly (no WhatsApp button)',
+  whatsapp: 'WhatsApp direct: the button opens a WhatsApp conversation with the chosen package — an inquiry, not an order in Skyfly',
+};
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: LIMITS.uploadBytes, files: 1, fields: 10 } });
 
@@ -76,12 +85,15 @@ function readPage(body) {
   const upsellProductId = /^\d+$/.test(String(body.upsell_product_id ?? '')) ? String(body.upsell_product_id) : null;
   const upsellHeadline = String(body.upsell_headline ?? '').trim().slice(0, 120) || null;
   const upsellText = String(body.upsell_text ?? '').trim().slice(0, 400) || null;
+  const orderDestination = Object.keys(ORDER_DESTINATIONS).includes(body.order_destination) ? body.order_destination : 'checkout_whatsapp';
+  const notifyEmail = body.notify_email === undefined ? undefined : String(body.notify_email).trim().toLowerCase();
   const errors = [];
+  if (notifyEmail && !validNotifyEmail(notifyEmail)) errors.push('Enter a valid order notification email.');
   if (!name) errors.push('Name is required.');
   if (!slug) errors.push('Form key is required.');
   if (url === undefined) errors.push('Enter a valid http(s) URL.');
   if (upsellProductId && productIds.includes(upsellProductId)) errors.push('The upsell must be a different product from the packages on the page.');
-  return { name, slug, url: url ?? null, status, notes, productIds, testMode, upsellProductId, upsellHeadline, upsellText, errors };
+  return { name, slug, url: url ?? null, status, notes, productIds, testMode, upsellProductId, upsellHeadline, upsellText, orderDestination, notifyEmail, errors };
 }
 
 export function landingPageRoutes({ pool, config }) {
@@ -111,8 +123,8 @@ export function landingPageRoutes({ pool, config }) {
       let pageId = id;
       if (id) {
         await client.query(
-          'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, test_mode = $8, updated_at = now() WHERE id = $6 AND business_id = $7',
-          [page.name, page.slug, page.url, page.status, page.notes, id, businessId, page.testMode === true],
+          'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, test_mode = $8, order_destination = $9, updated_at = now() WHERE id = $6 AND business_id = $7',
+          [page.name, page.slug, page.url, page.status, page.notes, id, businessId, page.testMode === true, page.orderDestination ?? 'checkout_whatsapp'],
         );
         // Only one of this business's own products can be the upsell.
         await client.query(
@@ -123,8 +135,8 @@ export function landingPageRoutes({ pool, config }) {
         await client.query('DELETE FROM landing_page_products WHERE landing_page_id = $1', [id]);
       } else {
         const { rows } = await client.query(
-          'INSERT INTO landing_pages (business_id, name, slug, url, status, notes, test_mode) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-          [businessId, page.name, page.slug, page.url, page.status, page.notes, page.testMode === true],
+          'INSERT INTO landing_pages (business_id, name, slug, url, status, notes, test_mode, order_destination) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+          [businessId, page.name, page.slug, page.url, page.status, page.notes, page.testMode === true, page.orderDestination ?? 'checkout_whatsapp'],
         );
         pageId = rows[0].id;
       }
@@ -172,26 +184,67 @@ export function landingPageRoutes({ pool, config }) {
     res.render('landing-pages', { pages: rows, error: req.query.error ?? null });
   }));
 
+  // Businesses this user may add pages to (manage their pages), for "Business that owns the page".
+  async function manageable(req) {
+    const { rows } = await pool.query(
+      `SELECT b.id, b.name, m.role, u.is_platform_admin FROM businesses b CROSS JOIN users u
+         LEFT JOIN business_members m ON m.business_id = b.id AND m.user_id = u.id
+        WHERE u.id = $1 AND (m.user_id IS NOT NULL OR u.is_platform_admin) ORDER BY b.name`, [req.session.userId]);
+    return rows.filter((b) => can(b.role ?? 'owner', 'catalog')).map((b) => ({ id: b.id, name: b.name }));
+  }
+  const formExtras = async (req, businessId = req.business.id) => ({
+    destinations: ORDER_DESTINATIONS, businesses: await manageable(req), ownerBusinessId: businessId,
+    notifyEmail: (await pool.query('SELECT notify_email, notify_verified_at FROM businesses WHERE id = $1', [businessId])).rows[0],
+  });
+
   router.get('/new', asyncHandler(async (req, res) => {
     res.render('landing-page-form', {
-      page: { name: '', slug: '', url: '', status: 'draft', notes: '', productIds: [] },
-      products: await products(req.business.id), error: null, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null,
+      page: { name: '', slug: '', url: '', status: 'draft', notes: '', productIds: [], order_destination: 'checkout_whatsapp' },
+      products: await products(req.business.id), error: null, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null, ...await formExtras(req),
     });
   }));
 
   router.post('/', asyncHandler(async (req, res) => {
     const page = readPage(req.body);
     const renderError = async (msg, status) => res.status(status).render('landing-page-form', {
-      page, products: await products(req.business.id), error: msg, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null,
+      page: { ...page, order_destination: page.orderDestination }, products: await products(req.business.id), error: msg, notice: null, statuses: LANDING_PAGE_STATUSES, hosting: null, ...await formExtras(req),
     });
     if (page.errors.length) return renderError(page.errors.join(' '), 400);
+    // The business that owns the page: this one, or another the user may manage (checked here, not trusted from the form).
+    let owner = { id: req.business.id, role: req.role };
+    const wanted = String(req.body.business_id ?? '');
+    if (/^\d+$/.test(wanted) && Number(wanted) !== Number(req.business.id)) {
+      const access = await workspaceAccess(pool, req.session.userId, wanted);
+      if (!access || !can(access.role, 'catalog')) return res.status(404).render('error', { message: 'Business not found.' });
+      owner = { id: access.business.id, role: access.role };
+    }
+    let pageId;
     try {
-      await savePage(req.business.id, page);
+      pageId = await savePage(owner.id, { ...page, productIds: owner.id === req.business.id ? page.productIds : [] });
     } catch (err) {
       if (err.code === '23505') return renderError(`The form key "${page.slug}" is already used.`, 409);
       throw err;
     }
-    res.redirect(`${res.locals.base}/landing-pages`);
+    if (page.notifyEmail !== undefined && can(owner.role, 'settings')) await updateNotifyEmail(owner.id, page.notifyEmail);
+    clearOriginCache();
+    await audit(pool, req, { action: 'page.connected', businessId: owner.id, entityType: 'landing_page', entityId: pageId, details: { url: page.url, destination: page.orderDestination } });
+    res.redirect(owner.id === req.business.id ? `${res.locals.base}/landing-pages` : `/businesses/${owner.id}/landing-pages/${pageId}`);
+  }));
+
+  // The connect form can set the business's notification email (unverified until its link is opened).
+  async function updateNotifyEmail(businessId, email) {
+    const { rows: [b] } = await pool.query('SELECT notify_email, notify_enabled FROM businesses WHERE id = $1', [businessId]);
+    if ((b.notify_email ?? '') === (email ?? '')) return;
+    await setNotifyEmail(pool, businessId, email || null, b.notify_enabled);
+  }
+
+  // "Test connection": fetches the public page and checks it can send orders to Skyfly.
+  router.post('/:pageId/test-connection', asyncHandler(async (req, res) => {
+    const page = await loadPage(req);
+    if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
+    const result = await testPageConnection(pool, config, page);
+    await audit(pool, req, { action: 'page.connection_tested', businessId: req.business.id, entityType: 'landing_page', entityId: page.id, details: { ok: result.ok } });
+    res.redirect(`${res.locals.base}/landing-pages/${page.id}?done=${result.ok ? 'tested_ok' : 'tested_problems'}#connection`);
   }));
 
   router.post('/import', asyncHandler(async (req, res) => {
@@ -266,13 +319,14 @@ export function landingPageRoutes({ pool, config }) {
     res.set('Cache-Control', 'no-store');
     res.status(status).render('landing-page-form', {
       page: current, products: await products(req.business.id), error, notice, statuses: LANDING_PAGE_STATUSES, hosting, sheet: sheet ?? null, workflow,
+      ...await formExtras(req),
     });
   }
 
   router.get('/:pageId', asyncHandler(async (req, res) => {
     const page = await loadPage(req);
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
-    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', template: 'Page created from the starter template with your products and Skyfly checkout. Edit its text and images (Edit), preview it, then publish.', published: 'Published.', published_connected: 'Checkout connected to Skyfly automatically (new version) and published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.', connected: 'Checkout connected as a new version: the page now saves orders in Skyfly. Preview it, check the results below, then publish.' }[req.query.done] ?? null;
+    const notice = { edited: 'Your changes were saved as a new version (the previous version is unchanged). Preview it below.', uploaded: 'New version uploaded. Preview it, then publish.', template: 'Page created from the starter template with your products and Skyfly checkout. Edit its text and images (Edit), preview it, then publish.', published: 'Published.', published_connected: 'Checkout connected to Skyfly automatically (new version) and published.', unpublished: 'Unpublished. The page is offline.', domain: 'Domain saved.', checkout: 'Skyfly checkout added as a new version. Preview it, then publish.', connected: 'Checkout connected as a new version: the page now saves orders in Skyfly. Preview it, check the results below, then publish.', tested_ok: 'Connection test passed: the page loads Skyfly with this page\'s form key. It shows "verified" once its first order is saved.', tested_problems: 'Connection test: the page needs attention (see Connection below).' }[req.query.done] ?? null;
     const error = typeof req.query.error === 'string' ? req.query.error.slice(0, 300) : null;
     await renderPage(req, res, page, { notice, error });
   }));
@@ -456,6 +510,7 @@ export function landingPageRoutes({ pool, config }) {
       if (err.code === '23505') return renderError(`The form key "${page.slug}" is already used.`, 409);
       throw err;
     }
+    if (page.notifyEmail !== undefined && can(req.role, 'settings')) await updateNotifyEmail(req.business.id, page.notifyEmail);
     clearOriginCache();
     await audit(pool, req, { action: 'page.updated', businessId: req.business.id, entityType: 'landing_page', entityId: existing.id, details: { status: page.status, url: page.url } });
     res.redirect(`${res.locals.base}/landing-pages`);

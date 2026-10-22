@@ -1,8 +1,14 @@
 <% /* Order connection: only "Verified" once a real submission from the page was saved. */ %>
-<% if (p.order_connected_at) { %>
+<% if (p.order_destination === 'whatsapp') { %>
+  <span class="pill pending">WhatsApp direct</span>
+  <span class="muted" style="font-size:13px">the order button opens a WhatsApp conversation; no orders are saved in Skyfly</span>
+<% } else if (p.order_connected_at) { %>
   <span class="pill active">Orders connected ✓ verified</span>
   <span class="muted" style="font-size:13px">first order <%= p.order_connected_reference %> on <%= formatDate(p.order_connected_at) %></span>
-<% } else if (detected) { %>
+<% } else if (p.connection_check && p.connection_check !== 'ok') { %>
+  <span class="pill cancelled">Requires attention</span>
+  <span class="muted" style="font-size:13px"><%= p.connection_check %></span>
+<% } else if (detected || p.connection_check === 'ok') { %>
   <span class="pill pending">Connection code found, not verified</span>
   <span class="muted" style="font-size:13px">place a test order on the live page to verify</span>
 <% } else { %>
