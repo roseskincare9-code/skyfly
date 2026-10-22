@@ -53,8 +53,8 @@ describe('upsell at checkout', () => {
   test('an order with the add-on is priced by Skyfly (browser totals ignored), saved once, and marked as an add-on', async () => {
     const b = body([{ product: 'package-3', quantity: 2 }, { product: 'glow-toner', quantity: 1, upsell: true }], { total: 1 });
     const r = await post(b).expect(201);
-    assert.equal(r.body.total, 51500 * 2 + 8500, 'server total');
-    assert.deepEqual(r.body.items.map((i) => [i.quantity, i.total, i.upsell]), [[2, 103000, false], [1, 8500, true]]);
+    assert.equal(r.body.total, 58000 * 2 + 8500, 'server total');
+    assert.deepEqual(r.body.items.map((i) => [i.quantity, i.total, i.upsell]), [[2, 116000, false], [1, 8500, true]]);
     assert.equal(r.body.items[1].name, 'Glow Toner');
     assert.match(r.body.whatsappUrl, /^https:\/\/wa\.me\/2349049206695\?text=.*LR-/);
     const { rows: items } = await pool.query('SELECT i.product_code, i.is_upsell FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.reference = $1 ORDER BY i.id', [r.body.reference]);

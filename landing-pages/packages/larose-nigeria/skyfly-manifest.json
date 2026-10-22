@@ -109,17 +109,17 @@
       {
         "code": "package-1",
         "name": "Package 1 – Starter Glow Soap (1kg Soap)",
-        "price": 23500
+        "price": 26500
       },
       {
         "code": "package-2",
         "name": "Package 2 – Starter Glow Combo",
-        "price": 33000
+        "price": 36500
       },
       {
         "code": "package-3",
         "name": "Package 3 – Power Glow",
-        "price": 51500
+        "price": 58000
       },
       {
         "code": "package-4",
@@ -276,16 +276,16 @@
         "action": "smoothTo('order',event)"
       },
       {
-        "text": "👉 Order Starter Glow Soap — ₦23,500",
-        "action": "selectPkg('Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500')"
+        "text": "👉 Order Starter Glow Soap — ₦26,500",
+        "action": "selectPkg('Package 1 – Starter Glow Soap (1kg Soap) – ₦26,500')"
       },
       {
-        "text": "👉 Order Starter Combo — ₦33,000",
-        "action": "selectPkg('Package 2 – Starter Glow Combo – ₦33,000')"
+        "text": "👉 Order Starter Combo — ₦36,500",
+        "action": "selectPkg('Package 2 – Starter Glow Combo – ₦36,500')"
       },
       {
-        "text": "👉 Order Power Glow — ₦51,500",
-        "action": "selectPkg('Package 3 – Power Glow – ₦51,500')"
+        "text": "👉 Order Power Glow — ₦58,000",
+        "action": "selectPkg('Package 3 – Power Glow – ₦58,000')"
       },
       {
         "text": "👉 Order Total Revive — ₦93,500",
@@ -314,18 +314,18 @@
     ],
     "packages": [
       {
-        "label": "🌿 Package 1 — Starter Glow Soap · ₦23,500",
-        "value": "Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500",
+        "label": "🌿 Package 1 — Starter Glow Soap · ₦26,500",
+        "value": "Package 1 – Starter Glow Soap (1kg Soap) – ₦26,500",
         "productCode": "package-1"
       },
       {
-        "label": "✨ Package 2 — Starter Glow Combo · ₦33,000",
-        "value": "Package 2 – Starter Glow Combo – ₦33,000",
+        "label": "✨ Package 2 — Starter Glow Combo · ₦36,500",
+        "value": "Package 2 – Starter Glow Combo – ₦36,500",
         "productCode": "package-2"
       },
       {
-        "label": "⭐ Package 3 — Power Glow · ₦51,500",
-        "value": "Package 3 – Power Glow – ₦51,500",
+        "label": "⭐ Package 3 — Power Glow · ₦58,000",
+        "value": "Package 3 – Power Glow – ₦58,000",
         "productCode": "package-3"
       },
       {

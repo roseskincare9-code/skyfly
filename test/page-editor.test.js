@@ -15,7 +15,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Glow Shop<
 <style>:root{--gold:#C9A96E;--dark:#12100E}body{color:var(--dark)}</style></head><body>
 <section id="hero"><h1>Finally, skin you love</h1><p>Order today &amp; save</p><img src="img/hero.png" alt="Hero"></section>
 <section id="packages"><h2>Packages</h2><select id="pr"><option value="">Choose</option>
-<option value="Package 1 – Starter – ₦23,500" data-product="package-1" data-price="23500">Package 1 — ₦23,500</option></select></section>
+<option value="Package 1 – Starter – ₦26,500" data-product="package-1" data-price="26500">Package 1 — ₦26,500</option></select></section>
 <section id="faq"><h2>Questions</h2><p>Pay on delivery</p></section>
 <script>/* keep me exactly */ var x = "<b>not text</b>";</script></body></html>`;
 
@@ -54,7 +54,7 @@ after(() => pool.end());
 describe('page editor', () => {
   test('the editor lists title, description, prices, colours, images, sections and texts', async () => {
     const res = await owner.get(`/businesses/${businessId}/landing-pages/${pageId}/versions/${versionId}/edit`).expect(200);
-    for (const s of ['value="Glow Shop"', 'Natural glow', 'name="price_0" value="23500"', 'Skyfly price 23,500', 'value="#C9A96E"', 'img/hero.png', 'Finally, skin you love', 'Order today &amp; save', 'name="position_2"']) {
+    for (const s of ['value="Glow Shop"', 'Natural glow', 'name="price_0" value="26500"', 'Skyfly price 26,500', 'value="#C9A96E"', 'img/hero.png', 'Finally, skin you love', 'Order today &amp; save', 'name="position_2"']) {
       assert.ok(res.text.includes(s), `missing ${s}`);
     }
     assert.doesNotMatch(res.text, /keep me exactly|not text/, 'script content is never offered as text');
@@ -87,7 +87,7 @@ describe('page editor', () => {
     assert.match(await html(v3), /data-product="package-1" data-price="24000"/);
     const { rows: [p] } = await pool.query("SELECT price_minor FROM products WHERE business_id = $1 AND code = 'package-1'", [businessId]);
     assert.equal(Number(p.price_minor), 2400000);
-    await pool.query("UPDATE products SET price_minor = 2350000 WHERE business_id = $1 AND code = 'package-1'", [businessId]);
+    await pool.query("UPDATE products SET price_minor = 2650000 WHERE business_id = $1 AND code = 'package-1'", [businessId]);
   });
 
   test('sections can be removed and reordered; images replaced', async () => {

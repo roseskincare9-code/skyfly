@@ -63,10 +63,10 @@ test('an updated copy replaces only the automatic import, never a version the ow
 
 test('a test order from the hosted page (Origin: null) is saved once in the Larose business', async () => {
   const body = { landingPage: 'larose-skincare', idempotencyKey: 'skyh-hostedtest-0001-x', customer: { name: 'TEST ORDER hosted', phone: '08031234567', address: '4 Allen Avenue, Ikeja', state: 'Lagos' },
-    items: [{ product: 'package-3', quantity: 2, unitPrice: 51500 }] };
+    items: [{ product: 'package-3', quantity: 2, unitPrice: 58000 }] };
   const r = await request(app).post('/api/public/orders').set('Origin', 'null').send(body).expect(201);
   assert.equal(r.body.business, 'larose-nigeria');
-  assert.equal(r.body.total, 103000);
+  assert.equal(r.body.total, 116000);
   assert.equal(r.body.test, true);
   const again = await request(app).post('/api/public/orders').set('Origin', 'null').send(body).expect(200);
   assert.equal(again.body.reference, r.body.reference);

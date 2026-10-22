@@ -28,7 +28,7 @@ const PAGE_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><m
 <form data-skyfly-form id="order">
   <input name="name" placeholder="Name"><input name="phone" placeholder="Phone"><input name="address" placeholder="Address">
   <select name="state"><option>Lagos</option><option>Abuja</option></select>
-  <select name="product"><option value="">Choose</option><option data-product="package-2" data-price="33000">Combo ₦33,000</option></select>
+  <select name="product"><option value="">Choose</option><option data-product="package-2" data-price="36500">Combo ₦36,500</option></select>
   <input name="quantity" value="1"><button type="submit">Order now</button>
 </form><script src="js/app.js"></script></body></html>`;
 
@@ -256,7 +256,7 @@ try {
   await step('order stored with product, price, page and campaign', async () => {
     const { rows: [o] } = await pool.query('SELECT o.*, lp.slug FROM orders o JOIN landing_pages lp ON lp.id = o.landing_page_id WHERE reference = $1', [reference]);
     assert.equal(o.slug, 'glow-promo');
-    assert.equal(o.total_minor, 6600000);
+    assert.equal(o.total_minor, 7300000);
     assert.equal(o.utm_campaign, 'launch');
     assert.match(o.fbc, /^fb\.1\.\d+\.CLICK123$/);
     assert.equal(o.payment_status, 'unpaid');
@@ -305,7 +305,7 @@ try {
 
   await step('overview shows paid revenue; unpublish takes the page offline', async () => {
     await dash.goto(`${DASH}/businesses/1`);
-    assert.match(await dash.textContent('body'), /₦66,000\s*Paid revenue/);
+    assert.match(await dash.textContent('body'), /₦73,000\s*Paid revenue/);
     await noSideScroll(dash, 'overview');
     await dash.screenshot({ path: path.join(shots, 'h6-overview-mobile.png'), fullPage: true });
     await dash.goto(`${DASH}/businesses/1/landing-pages/${pageId}`);
