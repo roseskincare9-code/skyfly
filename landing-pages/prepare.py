@@ -42,9 +42,9 @@ PAGES = {
         'currency': 'NGN',
         'skyflyBusiness': 'Larose Natural Skincare Nigeria',
         'products': [
-            ('package-1', 'Package 1 – Starter Glow Soap (1kg Soap)', 23500),
-            ('package-2', 'Package 2 – Starter Glow Combo', 33000),
-            ('package-3', 'Package 3 – Power Glow', 51500),
+            ('package-1', 'Package 1 – Starter Glow Soap (1kg Soap)', 26500),
+            ('package-2', 'Package 2 – Starter Glow Combo', 36500),
+            ('package-3', 'Package 3 – Power Glow', 58000),
             ('package-4', 'Package 4 – Total Revive Full', 93500),
             ('package-5', 'Package 5 – Total Transformation VIP Luxury (5kg Soap)', 202000),
         ],

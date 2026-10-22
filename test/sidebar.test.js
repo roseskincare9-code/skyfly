@@ -54,7 +54,7 @@ test('customers are grouped by phone with real totals; test orders are left out'
   const res = await owner.get(`/businesses/${id}/customers`).expect(200);
   assert.match(res.text, /<div class="n">2<\/div><div class="l">Customers/);
   assert.match(res.text, /<div class="n">1<\/div><div class="l">Ordered more than once/);
-  assert.match(res.text, /Ngozi Adeyemi[\s\S]*?₦126,500/, '2 × 51,500 + 23,500');
+  assert.match(res.text, /Ngozi Adeyemi[\s\S]*?₦142,500/, '2 × 58,000 + 26,500');
   assert.doesNotMatch(res.text, /TEST ORDER/);
   const search = await owner.get(`/businesses/${id}/customers?q=0806`).expect(200);
   assert.match(search.text, /Amaka Bello/);
@@ -64,7 +64,7 @@ test('customers are grouped by phone with real totals; test orders are left out'
 test('analytics shows real totals and breakdowns', async () => {
   const res = await owner.get(`/businesses/${id}/analytics?days=30`).expect(200);
   assert.match(res.text, /<div class="n">3<\/div><div class="l">Orders/);
-  assert.match(res.text, /<div class="n">₦159,500<\/div><div class="l">Order value/);
+  assert.match(res.text, /<div class="n">₦179,000<\/div><div class="l">Order value/); // 2 × 58,000 + 26,500 + 36,500
   assert.match(res.text, /facebook/);
   assert.match(res.text, /Larose Nigeria \(GitHub Pages\)/);
 });

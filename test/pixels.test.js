@@ -164,7 +164,7 @@ describe('Purchase events', () => {
     assert.deepEqual(ev.user_data.em, [sha('amaka@example.com')]);
     assert.equal(ev.user_data.fbp, 'fb.1.1700000000.111');
     assert.equal(ev.user_data.client_user_agent, 'TestBrowser/1.0');
-    assert.equal(ev.custom_data.value, 103000);
+    assert.equal(ev.custom_data.value, 116000);
     assert.equal(ev.custom_data.currency, 'NGN');
     assert.equal(meta.body.test_event_code, undefined, 'real orders are not sent as tests');
     assert.ok(!JSON.stringify(meta.body).includes('Amaka'), 'no unhashed personal data');
@@ -176,7 +176,7 @@ describe('Purchase events', () => {
     assert.equal(tiktok.body.data[0].event_id, `purchase_${order.reference}`);
     assert.equal(tiktok.body.data[0].user.phone, sha('+2348035550101'));
     assert.equal(tiktok.body.data[0].user.ttclid, 'tt-click');
-    assert.equal(tiktok.body.data[0].properties.value, 103000);
+    assert.equal(tiktok.body.data[0].properties.value, 116000);
 
     const detail = await owner.get(`/businesses/${businessId}/orders/${order.id}`).expect(200);
     assert.equal((detail.text.match(/<span class="pill delivered">sent<\/span>/g) || []).length, 2);
@@ -284,7 +284,7 @@ describe('Purchase when the order is saved (pixels set to count Purchase at save
     assert.equal(calls[0].url.startsWith('/meta'), true);
     assert.equal(ev.event_name, 'Purchase');
     assert.equal(ev.event_id, `purchase_${order.reference}`, 'same ID as the browser event, so Meta counts one');
-    assert.equal(ev.custom_data.value, 103000);
+    assert.equal(ev.custom_data.value, 116000);
     assert.equal(ev.custom_data.currency, 'NGN');
 
     // The same submission again (retry, double tap): same order, no new event.

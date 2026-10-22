@@ -5,7 +5,7 @@
 // Requires a local *_test database in .env.test. Screenshots go to test/e2e/screenshots/.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,11 @@ await resetDatabase(pool);
 // Build the patched landing page pointing at this Skyfly instance.
 const patched = path.join(root, 'test/e2e/.landing.html');
 execFileSync('python3', [path.join(root, 'integrations/larosenigeria/patch.py'), landingSource, patched, SKYFLY]);
+// The owner's confirmed prices (2026-10-22), as on the live page: Package 1 ₦26,500, 2 ₦36,500, 3 ₦58,000.
+writeFileSync(patched, readFileSync(patched, 'utf8')
+  .replace(/23,500/g, '26,500').replace(/data-price="23500"/g, 'data-price="26500"')
+  .replace(/33,000/g, '36,500').replace(/data-price="33000"/g, 'data-price="36500"')
+  .replace(/51,500/g, '58,000').replace(/data-price="51500"/g, 'data-price="58000"'));
 const patchedHtml = readFileSync(patched, 'utf8');
 assert.ok(!patchedHtml.includes('7039361243'), 'old WhatsApp number must not remain on the page');
 // WhatsApp stays as voluntary support (floating button, "Chat With Us", footer, confirmation), all on the new number;
@@ -110,7 +115,7 @@ try {
   const fillForm = async () => {
     await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/?utm_source=facebook&utm_campaign=e2e-oct`);
     await shop.click('text=Order Power Glow');
-    assert.equal(await shop.inputValue('#pr'), 'Package 3 – Power Glow – ₦51,500');
+    assert.equal(await shop.inputValue('#pr'), 'Package 3 – Power Glow – ₦58,000');
     await shop.fill('#fn', 'Ngozi Adeyemi');
     await shop.fill('#addr', '14 Admiralty Way, Lekki Phase 1');
     await shop.fill('#ph', '08051234567');
@@ -120,7 +125,7 @@ try {
     await shop.fill('#nt', 'Gate is blue');
     const summary = await shop.textContent('#skySum');
     assert.match(summary, /Package 3 – Power Glow × 2/);
-    assert.match(summary, /Total: ₦103,000 · pay on delivery/);
+    assert.match(summary, /Total: ₦116,000 · pay on delivery/);
   };
 
   await step('empty form shows a helpful error without calling the API', async () => {
@@ -194,7 +199,7 @@ try {
     assert.deepEqual(p.map((a) => [a[0], a[1], a[2]]), [['trackSingle', '1357015185691765', 'Purchase'], ['trackSingle', '1087347357386553', 'Purchase']],
       `one Purchase per pixel (got ${JSON.stringify(p)}; all calls: ${JSON.stringify(fbCalls.map((a) => a.slice(0, 3)))})`);
     for (const a of p) {
-      assert.equal(a[3].value, 103000);
+      assert.equal(a[3].value, 116000);
       assert.equal(a[3].currency, 'NGN');
       assert.equal(a[4].eventID, `purchase_${reference}`);
     }
@@ -207,11 +212,11 @@ try {
     assert.equal(o.phone, '+2348051234567');
     assert.equal(o.state, 'Lagos');
     assert.equal(o.customer_notes, 'Gate is blue');
-    assert.equal(o.total_minor, 10300000);
+    assert.equal(o.total_minor, 11600000);
     assert.equal(o.utm_source, 'facebook');
     assert.equal(o.utm_campaign, 'e2e-oct');
     assert.match(o.source_url, /^http:\/\/127\.0\.0\.1:3200\/Larosenigeria\//);
-    assert.deepEqual(items.map((i) => [i.product_code, i.quantity, i.unit_price_minor]), [['package-3', 2, 5150000]]);
+    assert.deepEqual(items.map((i) => [i.product_code, i.quantity, i.unit_price_minor]), [['package-3', 2, 5800000]]);
   });
 
   await step('on-page confirmation: reference, package, quantity, confirmed total, next steps; WhatsApp only if the customer chooses', async () => {
@@ -220,7 +225,7 @@ try {
     assert.match(conf, new RegExp(`Order reference: ${reference}`));
     assert.match(conf, /Package: Package 3 – Power Glow/);
     assert.match(conf, /Quantity: 2/);
-    assert.match(conf, /Total \(pay on delivery\): ₦103,000/);
+    assert.match(conf, /Total \(pay on delivery\): ₦116,000/);
     assert.match(conf, /What happens next: our team will call you within 1 hour/);
     assert.match(await shop.getAttribute('#skyView', 'href'), new RegExp(`/o/${reference}\\?t=`));
     assert.equal(openedPages.length, 0, 'WhatsApp is never opened automatically');
@@ -233,7 +238,7 @@ try {
     const details = await context.newPage();
     await details.goto(await shop.getAttribute('#skyView', 'href'));
     assert.equal(await details.textContent('#ref'), reference);
-    assert.equal((await details.textContent('#total')).trim(), '₦103,000');
+    assert.equal((await details.textContent('#total')).trim(), '₦116,000');
     await details.close();
   });
 
@@ -280,7 +285,7 @@ try {
   await step('the new order is visible and manageable in the dashboard (mobile)', async () => {
     await page.goto(`${SKYFLY}/`);
     await page.click('main >> text=Larose Natural Skincare Nigeria');
-    assert.match(await page.textContent('body'), /₦103,000\s*Pending value/);
+    assert.match(await page.textContent('body'), /₦116,000\s*Pending value/);
     await page.screenshot({ path: path.join(shots, '4-dashboard-overview-mobile.png'), fullPage: true });
     await page.click('label.menu-btn');
     await page.click('aside.sidebar >> text=Orders');

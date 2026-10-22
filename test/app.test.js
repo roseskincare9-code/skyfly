@@ -61,7 +61,7 @@ test('one-click Larose setup creates the business, packages and landing page onc
   const res = await agent.post('/setup/larose').type('form').send({ _csrf }).expect(302);
   const id = res.headers.location.match(/businesses\/(\d+)/)[1];
   const { rows: products } = await pool.query('SELECT code, price_minor FROM products WHERE business_id = $1 ORDER BY sort_order', [id]);
-  assert.deepEqual(products.map((p) => p.price_minor / 100), [23500, 33000, 51500, 93500, 202000]);
+  assert.deepEqual(products.map((p) => p.price_minor / 100), [26500, 36500, 58000, 93500, 202000]);
   const { rows: [lp] } = await pool.query("SELECT status, url FROM landing_pages WHERE slug = 'larosenigeria'");
   assert.equal(lp.status, 'active');
   assert.equal(lp.url, 'https://roseskincare9-code.github.io/Larosenigeria/');

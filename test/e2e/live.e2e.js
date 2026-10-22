@@ -230,7 +230,7 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   await page.fill('#nt', 'Automated end-to-end test. Please ignore.');
   if (await page.$('#skySum')) { // order summary (newer page version)
     const summary = await page.textContent('#skySum');
-    assert(/Power Glow × 2/.test(summary) && /₦103,000/.test(summary), `order summary: ${summary}`);
+    assert(/Power Glow × 2/.test(summary) && /₦116,000/.test(summary), `order summary: ${summary}`);
   }
   assert(await page.isVisible('.wafbtn'), 'floating WhatsApp button missing');
   await page.click('#sb');
@@ -241,7 +241,7 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   confirmationUrl = apiReply.confirmationUrl;
   // The success reply is the proof of a saved order: persistent reference, verified total, currency, business, event ID.
   assert(apiReply.saved === true && apiReply.business === 'larose-nigeria' && apiReply.purchaseEventId === `purchase_${reference}`
-    && apiReply.total === 103000 && apiReply.currency === 'NGN' && apiReply.test === true, `reply fields ${JSON.stringify({ ...apiReply, confirmationUrl: undefined })}`);
+    && apiReply.total === 116000 && apiReply.currency === 'NGN' && apiReply.test === true, `reply fields ${JSON.stringify({ ...apiReply, confirmationUrl: undefined })}`);
   mkdirSync('live-screenshots', { recursive: true });
   await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: false });
   const text = await page.textContent('body');
@@ -250,7 +250,7 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   if (wa) assert(new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`).test(wa), `WhatsApp link ${wa}`);
   if (await page.$('#skyRef')) {
     assert((await page.textContent('#skyRef')).trim() === reference, 'reference on the page differs from Skyfly\'s');
-    assert(/Total \(pay on delivery\): ₦103,000/.test(await page.textContent('#skyConf')), 'confirmed total');
+    assert(/Total \(pay on delivery\): ₦116,000/.test(await page.textContent('#skyConf')), 'confirmed total');
   }
   assert(!navigations.some((u) => /wa\.me|whatsapp\.com/.test(u)), 'navigated to WhatsApp');
   return `${reference}, total ₦${apiReply.total.toLocaleString('en-NG')} ${apiReply.currency}, business ${apiReply.business}, event ID ${apiReply.purchaseEventId}; page wrote ${sheetPosts.length} sheet row(s) itself`;
@@ -386,7 +386,7 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   await p3.route(`${SKYFLY}/api/public/orders`, (route) => (mode === 'fail'
     ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
     : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' },
-      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) })));
+      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 58000, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) })));
   await p3.goto(`${PAGE}?skyfly_e2e=${RUN}-purchase`, { waitUntil: 'load' });
   await p3.click('text=Order Power Glow');
   await p3.fill('#fn', 'Simulated Reply Check');
@@ -411,7 +411,7 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   assert(p.length === LAROSE_PIXELS.length, `${p.length} Purchase event(s) after the saved reply: ${JSON.stringify(p)}`);
   for (const id of LAROSE_PIXELS) {
     const one = p.filter((e) => e.id === id);
-    assert(one.length === 1 && one[0].eid === `purchase_${ref}` && Number(one[0].value) === 51500 && one[0].currency === 'NGN', `Purchase for pixel ${id}: ${JSON.stringify(one)}`);
+    assert(one.length === 1 && one[0].eid === `purchase_${ref}` && Number(one[0].value) === 58000 && one[0].currency === 'NGN', `Purchase for pixel ${id}: ${JSON.stringify(one)}`);
   }
   await p3.reload({ waitUntil: 'load' });
   if (HOSTED) {
@@ -426,7 +426,7 @@ await step('J. Purchase fires only for a saved-order reply, once, with the order
   } else {
     await p3.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 30000 });
     // The same reply again (a repeated submission or a network retry returns the same order).
-    await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+    await p3.evaluate((r) => window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 58000, currency: 'NGN', test: false }), ref);
   }
   await sleep(3000);
   assert(purchases().length === LAROSE_PIXELS.length, `${purchases().length} Purchase events after a refresh and a repeated reply`);

@@ -130,12 +130,12 @@ describe('one saved order, one Purchase', () => {
     assert.equal(first.ok, true);
     assert.equal(first.saved, true);
     assert.match(first.reference, /^LR-[A-Z0-9]{7}$/);
-    assert.equal(first.total, 66000);
+    assert.equal(first.total, 73000);
     assert.equal(first.currency, 'NGN');
     assert.equal(first.business, 'larose-nigeria');
     assert.equal(first.purchaseEventId, `purchase_${first.reference}`);
     const { rows: [o] } = await pool.query('SELECT total_minor, business_id FROM orders WHERE reference = $1', [first.reference]);
-    assert.deepEqual([o.total_minor, o.business_id], [6600000, larose], 'committed before the reply');
+    assert.deepEqual([o.total_minor, o.business_id], [7300000, larose], 'committed before the reply');
     await settle();
     const meta = metaCalls();
     const tiktok = calls.filter((c) => c.url.startsWith('/tiktok'));
@@ -143,7 +143,7 @@ describe('one saved order, one Purchase', () => {
     assert.equal(tiktok.length, 1);
     assert.equal(meta[0].url.split('?')[0], `/meta/v26.0/${LAROSE_PIXEL}/events`);
     assert.equal(meta[0].body.data[0].event_name, 'Purchase');
-    assert.equal(meta[0].body.data[0].custom_data.value, 66000);
+    assert.equal(meta[0].body.data[0].custom_data.value, 73000);
     assert.equal(meta[0].body.data[0].custom_data.currency, 'NGN');
     assert.equal(tiktok[0].body.data[0].event, 'CompletePayment');
   });
