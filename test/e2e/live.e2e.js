@@ -236,10 +236,21 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   await page.fill('#ph', '08012345678');
   await page.fill('#addr', 'TEST ORDER - do not deliver, automated check');
   await page.fill('#em', 'skyfly-e2e@example.com');
-  if (await page.$('#skySum')) { // order summary (newer page version)
-    const summary = await page.textContent('#skySum');
-    assert(/Power Glow/.test(summary) && /₦58,000/.test(summary), `order summary: ${summary}`);
+  // The optional Facial Set (just before Place Order): its picture from the page's images, unticked
+  // until chosen; this test order includes it, so Skyfly must save it as an add-on at ₦17,000.
+  let addOn = false;
+  if (await page.$('#skyAddBtn')) {
+    await page.$eval('#skyUp', (el) => el.scrollIntoView());
+    await page.waitForFunction(() => { const i = document.querySelector('#skyUp img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 30000 });
+    const img = await page.$eval('#skyUp img', (i) => i.currentSrc);
+    assert(/\/Larosenigeria\/images\/facial-set-(480|800)\.(webp|jpg)$/.test(img), `Facial Set image: ${img}`);
+    assert(!(await page.isChecked('#skyAddBtn')), 'the Facial Set was ticked before the customer chose it');
+    await page.check('#skyAddBtn');
+    addOn = true;
   }
+  const expected = addOn ? 75000 : 58000;
+  const summary = (await page.textContent('#skySum')).replace(/\s+/g, ' ');
+  assert(/Power Glow/.test(summary) && summary.includes(`₦${expected.toLocaleString('en-NG')}`) && (!addOn || /Facial Set \(add-on\)/.test(summary)), `order summary: ${summary}`);
   assert(await page.isVisible('.wafbtn'), 'floating WhatsApp button missing');
   await page.click('#sb');
   // On-page confirmation (current page) or Skyfly's confirmation page (older page version).
@@ -249,19 +260,22 @@ await step('C/H. A test order placed through the real checkout is saved; the con
   confirmationUrl = apiReply.confirmationUrl;
   // The success reply is the proof of a saved order: persistent reference, verified total, currency, business, event ID.
   assert(apiReply.saved === true && apiReply.business === 'larose-nigeria' && apiReply.purchaseEventId === `purchase_${reference}`
-    && apiReply.total === 58000 && apiReply.currency === 'NGN' && apiReply.test === true, `reply fields ${JSON.stringify({ ...apiReply, confirmationUrl: undefined })}`);
+    && apiReply.total === expected && apiReply.currency === 'NGN' && apiReply.test === true, `reply fields ${JSON.stringify({ ...apiReply, confirmationUrl: undefined })}`);
+  // What Skyfly saved and priced: Power Glow ₦58,000 and, when ticked, the Facial Set add-on ₦17,000.
+  const saved = (apiReply.items || []).map((i) => [i.name, i.quantity, i.total, Boolean(i.upsell)]);
+  assert(JSON.stringify(saved) === JSON.stringify([['Package 3 – Power Glow', 1, 58000, false], ...(addOn ? [['Facial Set', 1, 17000, true]] : [])]), `saved items ${JSON.stringify(saved)}`);
   mkdirSync('live-screenshots', { recursive: true });
   await page.screenshot({ path: 'live-screenshots/larose-test-order-confirmation.png', fullPage: false });
   const text = await page.textContent('body');
-  assert(text.includes(reference) && /(What happens next|We have received your order)/.test(text), 'confirmation content');
+  assert(text.includes(reference) && /(What happens next|We have received your order|received successfully)/.test(text), 'confirmation content');
   const wa = await page.getAttribute('#skyWa', 'href').catch(() => null);
   if (wa) assert(new RegExp(`^https://wa\\.me/2349049206695\\?text=.*${reference}`).test(wa), `WhatsApp link ${wa}`);
   if (await page.$('#skyRef')) {
     assert((await page.textContent('#skyRef')).trim() === reference, 'reference on the page differs from Skyfly\'s');
-    assert(/Total \(pay on delivery\): ₦58,000/.test(await page.textContent('#skyConf')), 'confirmed total');
+    assert((await page.textContent('#skyConf')).includes(`Total (pay on delivery): ₦${expected.toLocaleString('en-NG')}`), 'confirmed total');
   }
   assert(!navigations.some((u) => /wa\.me|whatsapp\.com/.test(u)), 'navigated to WhatsApp');
-  return `${reference}, total ₦${apiReply.total.toLocaleString('en-NG')} ${apiReply.currency}, business ${apiReply.business}, event ID ${apiReply.purchaseEventId}; page wrote ${sheetPosts.length} sheet row(s) itself`;
+  return `${reference}: ${saved.map(([n, q, t, u]) => `${n} × ${q} ₦${t.toLocaleString('en-NG')}${u ? ' (add-on)' : ''}`).join(' + ')} = ₦${apiReply.total.toLocaleString('en-NG')} ${apiReply.currency}, business ${apiReply.business}, event ID ${apiReply.purchaseEventId}; page wrote ${sheetPosts.length} sheet row(s) itself`;
 });
 
 await step('D. The order persists: the confirmation page (read from the database) still shows it after a refresh', async () => {
