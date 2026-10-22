@@ -19,7 +19,7 @@ function orderBody(overrides = {}) {
       name: 'Ada Obi', phone: '0803 123 4567', email: 'ada@example.com',
       address: '12 Allen Avenue, Ikeja', state: 'Lagos', notes: 'Call after 5pm',
     },
-    items: [{ product: 'package-2', quantity: 2, unitPrice: 33000 }],
+    items: [{ product: 'package-2', quantity: 2, unitPrice: 36500 }],
     attribution: { pageUrl: 'https://roseskincare9-code.github.io/Larosenigeria/?utm_source=facebook&utm_campaign=oct', utm_source: 'facebook', utm_campaign: 'oct' },
     ...overrides,
   };
@@ -54,13 +54,13 @@ describe('public order API', () => {
     const res = await post(orderBody()).expect(201);
     assert.equal(res.body.ok, true);
     assert.match(res.body.reference, /^LR-[2-9A-HJKMNP-TV-Z]{7}$/);
-    assert.equal(res.body.total, 66000);
+    assert.equal(res.body.total, 73000);
     assert.equal(res.headers['access-control-allow-origin'], ORIGIN);
     assert.match(res.body.confirmationUrl, new RegExp(`^http://skyfly.test/o/${res.body.reference}\\?t=[A-Za-z0-9_-]{32}$`));
 
     const { rows: [order] } = await pool.query('SELECT * FROM orders WHERE reference = $1', [res.body.reference]);
     assert.equal(order.phone, '+2348031234567');
-    assert.equal(order.total_minor, 6600000);
+    assert.equal(order.total_minor, 7300000);
     assert.equal(order.status, 'pending');
     assert.equal(order.payment_status, 'unpaid');
     assert.equal(order.source, 'web');
@@ -71,9 +71,9 @@ describe('public order API', () => {
     const { rows: items } = await pool.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
     assert.equal(items.length, 1);
     assert.equal(items[0].product_code, 'package-2');
-    assert.equal(items[0].unit_price_minor, 3300000);
+    assert.equal(items[0].unit_price_minor, 3650000);
     assert.equal(items[0].quantity, 2);
-    assert.equal(items[0].line_total_minor, 6600000);
+    assert.equal(items[0].line_total_minor, 7300000);
   });
 
   test('a tampered price is rejected and nothing is saved', async () => {
@@ -185,7 +185,7 @@ describe('confirmation page', () => {
     const page = await request(app).get(path).expect(200);
     assert.match(page.text, new RegExp(body.reference));
     assert.match(page.text, /Package 2 – Starter Glow Combo/);
-    assert.match(page.text, /₦66,000/);
+    assert.match(page.text, /₦73,000/);
     assert.match(page.text, /\+234•+567/); // masked phone
     assert.doesNotMatch(page.text, /Allen Avenue/); // full address not exposed
     const wa = page.text.match(/href="(https:\/\/wa\.me\/[^"]+)"/)[1].replace(/&amp;/g, '&');
@@ -309,9 +309,9 @@ describe('dashboard', () => {
     await owner.post(`/businesses/${businessId}/products/${p.id}`).type('form')
       .send({ _csrf, name: 'Package 1 – Starter Glow Soap (1kg Soap)', price: '25,000', sort_order: 1, active: 'on' }).expect(302);
     const { body: second } = await post(orderBody({ items: [{ product: 'package-1', quantity: 1 }] })).expect(201);
-    assert.equal(first.total, 23500);
+    assert.equal(first.total, 26500);
     assert.equal(second.total, 25000);
-    // The live page still shows ₦23,500, so its orders are refused until the page is updated.
-    assert.equal((await post(orderBody({ items: [{ product: 'package-1', quantity: 1, unitPrice: 23500 }] })).expect(409)).body.error, 'PRICE_CHANGED');
+    // The live page still shows ₦26,500, so its orders are refused until the page is updated.
+    assert.equal((await post(orderBody({ items: [{ product: 'package-1', quantity: 1, unitPrice: 26500 }] })).expect(409)).body.error, 'PRICE_CHANGED');
   });
 });

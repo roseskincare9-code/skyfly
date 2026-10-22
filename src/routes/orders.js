@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
 import { retryEvent } from '../services/pixels.js';
 import { requeue, countOrderRows } from '../services/sheets.js';
+import { notificationFor, retryOrderNotification } from '../services/orderNotifications.js';
 import { cancelIneligible } from '../services/emailAutomation.js';
 import { whatsappDigits } from '../lib/phone.js';
 
@@ -60,6 +61,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
         `SELECT o.id, o.reference, o.customer_name, o.phone, o.email, o.state, o.status, o.payment_status, o.source,
                 o.total_minor, o.currency, o.created_at, o.utm_campaign, o.is_test,
                 lp.name AS landing_page_name,
+                (SELECT m.status FROM email_messages m WHERE m.order_id = o.id AND m.kind = 'order_notification') AS notify_status,
                 (SELECT string_agg(CASE WHEN i.is_upsell THEN 'Add-on: ' ELSE '' END || i.product_name || ' × ' || i.quantity, ', ' ORDER BY i.id) FROM order_items i WHERE i.order_id = o.id) AS items
            FROM orders o LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
           WHERE ${sql} ORDER BY o.created_at DESC LIMIT ${PAGE_SIZE} OFFSET ${(pageNumber - 1) * PAGE_SIZE}`,
@@ -135,6 +137,15 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
     res.redirect(`${res.locals.base}/orders/${req.params.orderId}?sheet=retrying`);
   }));
 
+  // Sends this order's notification email again (only when it failed or was not sent).
+  router.post('/:orderId/notify-retry', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.orderId)) return res.status(404).render('error', { message: 'Order not found.' });
+    const r = await retryOrderNotification(pool, req.business.id, req.params.orderId);
+    if (r.ok) onOrderSaved(Number(req.params.orderId));
+    await audit(pool, req, { action: 'order.notify_retry', businessId: req.business.id, entityType: 'order', entityId: req.params.orderId, details: { ok: r.ok } });
+    res.redirect(`${res.locals.base}/orders/${req.params.orderId}?${r.ok ? 'notify=retrying' : `notify_error=${encodeURIComponent(r.error)}`}#notification`);
+  }));
+
   // Counts this order's rows in the real spreadsheet (read-only).
   router.post('/:orderId/sheet-check', asyncHandler(async (req, res) => {
     if (!/^\d+$/.test(req.params.orderId)) return res.status(404).render('error', { message: 'Order not found.' });
@@ -193,7 +204,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
   router.get('/:orderId', asyncHandler(async (req, res) => {
     const order = await loadOrder(req);
     if (!order) return res.status(404).render('error', { message: 'Order not found.' });
-    const [items, conversions, history] = await Promise.all([
+    const [items, conversions, history, notification] = await Promise.all([
       pool.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id', [order.id]),
       pool.query('SELECT * FROM conversion_events WHERE order_id = $1 ORDER BY id', [order.id]).then((r) => r.rows),
       pool.query(
@@ -201,6 +212,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
           WHERE h.order_id = $1 ORDER BY h.created_at DESC, h.id DESC`,
         [order.id],
       ),
+      notificationFor(pool, order.id),
     ]);
     const waText = `Hello ${order.customer_name.split(' ')[0]}, this is ${req.business.name} about your order ${order.reference}.`;
     res.render('order', {
@@ -208,6 +220,8 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
       items: items.rows,
       history: history.rows,
       conversions,
+      notification,
+      notifyNotice: { retrying: 'Email queued again: it is sent within a minute.' }[req.query.notify] ?? (typeof req.query.notify_error === 'string' ? req.query.notify_error.slice(0, 200) : null),
       statuses: ORDER_STATUSES,
       paymentStatuses: PAYMENT_STATUSES,
       waUrl: `https://wa.me/${whatsappDigits(order.phone)}?text=${encodeURIComponent(waText)}`,

@@ -226,7 +226,7 @@ try {
     await Promise.all([shop.waitForURL(/\/o\/LR-/, { timeout: 30000 }), shop.click('#sb')]);
     const rows = await orders('larosenigeria');
     assert.equal(rows.length, 1);
-    assert.equal(Number(rows[0].total_minor), 51500 * 100);
+    assert.equal(Number(rows[0].total_minor), 58000 * 100);
     assert.equal(sheetRows.length, before, 'saved in Skyfly: no browser sheet row');
   });
 

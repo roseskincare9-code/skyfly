@@ -70,7 +70,7 @@ describe('copying orders to the Google Sheet from the server', () => {
     assert.equal(row.fullName, 'Ngozi Adeyemi');
     assert.equal(row.package, 'Package 3 – Power Glow x2');
     assert.equal(row.address, '14 Admiralty Way, Lekki, Lagos');
-    assert.equal(row.total, 103000);
+    assert.equal(row.total, 116000);
     await duePending(); await sync();
     assert.equal(sheet.rows.length, 1, 'nothing is copied twice');
   });

@@ -171,6 +171,7 @@ section{padding:70px 20px;}
 .fg label{display:block;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--purple);margin-bottom:6px;font-weight:600;}
 .fg input,.fg select{width:100%;padding:13px 14px;border:1.5px solid var(--graydark);background:var(--gray);font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text);outline:none;transition:border-color .2s;border-radius:10px;-webkit-appearance:none;}
 .fg input:focus,.fg select:focus{border-color:var(--pink);}
+#order .fg label{font-size:13px;letter-spacing:.5px;text-transform:none}#order .fg input,#order .fg select{font-size:16px;padding:15px 14px;min-height:52px}#order .subbtn{font-size:15px;padding:18px;letter-spacing:1px}
 .subbtn{width:100%;background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;border:none;padding:16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;border-radius:100px;margin-top:7px;box-shadow:0 6px 24px rgba(233,30,140,.4);}
 .ffoot{text-align:center;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6;}
 .succbox{display:none;text-align:center;padding:26px 10px;}
@@ -354,9 +355,9 @@ footer strong{color:var(--pink2);}
           </ul>
         </div>
         <div class="pkg-bottom">
-          <div class="pkg-price"><span class="naira">₦</span>23,500</div>
+          <div class="pkg-price"><span class="naira">₦</span>26,500</div>
           <div class="pkg-save">✓ Free Delivery Today</div>
-          <button class="pkg-cta" onclick="selectPkg('Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500')">👉 Order Starter Glow Soap — ₦23,500</button>
+          <button class="pkg-cta" onclick="selectPkg('Package 1 – Starter Glow Soap (1kg Soap) – ₦26,500')">👉 Order Starter Glow Soap — ₦26,500</button>
         </div>
       </div>
       <div class="pkg fi">
@@ -377,9 +378,9 @@ footer strong{color:var(--pink2);}
           </ul>
         </div>
         <div class="pkg-bottom">
-          <div class="pkg-price"><span class="naira">₦</span>33,000</div>
+          <div class="pkg-price"><span class="naira">₦</span>36,500</div>
           <div class="pkg-save">✓ Save ₦5,000 vs buying separately</div>
-          <button class="pkg-cta" onclick="selectPkg('Package 2 – Starter Glow Combo – ₦33,000')">👉 Order Starter Combo — ₦33,000</button>
+          <button class="pkg-cta" onclick="selectPkg('Package 2 – Starter Glow Combo – ₦36,500')">👉 Order Starter Combo — ₦36,500</button>
         </div>
       </div>
       <div class="pkg star fi">
@@ -402,9 +403,9 @@ footer strong{color:var(--pink2);}
           </ul>
         </div>
         <div class="pkg-bottom">
-          <div class="pkg-price"><span class="naira">₦</span>51,500</div>
+          <div class="pkg-price"><span class="naira">₦</span>58,000</div>
           <div class="pkg-save">✓ Best Value — Maximum Results</div>
-          <button class="pkg-cta" onclick="selectPkg('Package 3 – Power Glow – ₦51,500')">👉 Order Power Glow — ₦51,500</button>
+          <button class="pkg-cta" onclick="selectPkg('Package 3 – Power Glow – ₦58,000')">👉 Order Power Glow — ₦58,000</button>
         </div>
       </div>
       <div class="pkg premium fi">
@@ -514,24 +515,22 @@ footer strong{color:var(--pink2);}
       <div class="divl"></div>
       <p style="text-align:center;color:var(--muted);font-size:13px;line-height:1.7;margin:16px 0 20px">Fill in your details — we will call or WhatsApp you within <strong>1 hour</strong> to confirm.</p>
       <div class="urg">⚡ Free delivery today only — order now before promo ends!</div>
-      <div class="fg"><label>Full Name *</label><input type="text" id="fn" placeholder="Your full name" required></div>
-      <div class="fg"><label>Delivery Address *</label><input type="text" id="addr" placeholder="Your full delivery address" required></div>
-      <div class="fg"><label>Phone / WhatsApp Number *</label><input type="tel" id="ph" placeholder="08XXXXXXXXXX" required></div>
-      <div class="fg"><label>Email Address</label><input type="email" id="em" placeholder="your@email.com"></div>
+      <div id="skyPick" aria-live="polite" style="background:#F6EEF8;border:1.5px solid #D9B8E3;color:#3D1F45;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:15px;line-height:1.5"></div>
       <div class="fg">
-        <label>Which Package? *</label>
+        <label for="pr">Your package *</label>
         <select id="pr" required>
           <option value="">— Select your package —</option>
-          <option value="Package 1 – Starter Glow Soap (1kg Soap) – ₦23,500" data-product="package-1" data-price="23500">🌿 Package 1 — Starter Glow Soap · ₦23,500</option>
-          <option value="Package 2 – Starter Glow Combo – ₦33,000" data-product="package-2" data-price="33000">✨ Package 2 — Starter Glow Combo · ₦33,000</option>
-          <option value="Package 3 – Power Glow – ₦51,500" data-product="package-3" data-price="51500">⭐ Package 3 — Power Glow · ₦51,500</option>
-          <option value="Package 4 – Total Revive Full – ₦93,500" data-product="package-4" data-price="93500">💜 Package 4 — Total Revive Full · ₦93,500</option>
-          <option value="Package 5 – Total Transformation VIP Luxury (5kg Soap) – ₦202,000" data-product="package-5" data-price="202000">👑 Package 5 — VIP Luxury · ₦202,000</option>
+          <option value="Package 1 – Starter Glow Soap (1kg Soap) – ₦26,500" data-product="package-1" data-price="26500">🌿 Starter Glow Soap · ₦26,500</option>
+          <option value="Package 2 – Starter Glow Combo – ₦36,500" data-product="package-2" data-price="36500">✨ Starter Glow Combo · ₦36,500</option>
+          <option value="Package 3 – Power Glow – ₦58,000" data-product="package-3" data-price="58000">⭐ Power Glow · ₦58,000</option>
+          <option value="Package 4 – Total Revive Full – ₦93,500" data-product="package-4" data-price="93500">💜 Total Revive Full · ₦93,500</option>
+          <option value="Package 5 – Total Transformation VIP Luxury (5kg Soap) – ₦202,000" data-product="package-5" data-price="202000">👑 VIP Luxury · ₦202,000</option>
         </select>
       </div>
-      <div class="fg"><label>State *</label><select id="st" required><option value="">— Select your state —</option><option value="Abia">Abia</option><option value="Adamawa">Adamawa</option><option value="Akwa Ibom">Akwa Ibom</option><option value="Anambra">Anambra</option><option value="Bauchi">Bauchi</option><option value="Bayelsa">Bayelsa</option><option value="Benue">Benue</option><option value="Borno">Borno</option><option value="Cross River">Cross River</option><option value="Delta">Delta</option><option value="Ebonyi">Ebonyi</option><option value="Edo">Edo</option><option value="Ekiti">Ekiti</option><option value="Enugu">Enugu</option><option value="FCT - Abuja">FCT - Abuja</option><option value="Gombe">Gombe</option><option value="Imo">Imo</option><option value="Jigawa">Jigawa</option><option value="Kaduna">Kaduna</option><option value="Kano">Kano</option><option value="Katsina">Katsina</option><option value="Kebbi">Kebbi</option><option value="Kogi">Kogi</option><option value="Kwara">Kwara</option><option value="Lagos">Lagos</option><option value="Nasarawa">Nasarawa</option><option value="Niger">Niger</option><option value="Ogun">Ogun</option><option value="Ondo">Ondo</option><option value="Osun">Osun</option><option value="Oyo">Oyo</option><option value="Plateau">Plateau</option><option value="Rivers">Rivers</option><option value="Sokoto">Sokoto</option><option value="Taraba">Taraba</option><option value="Yobe">Yobe</option><option value="Zamfara">Zamfara</option></select></div>
-      <div class="fg"><label>Quantity</label><select id="qty"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-      <div class="fg"><label>Notes (optional)</label><input type="text" id="nt" maxlength="500" placeholder="Landmark, best time to call, etc."></div>
+      <div class="fg"><label for="fn">Full Name *</label><input type="text" id="fn" placeholder="Your full name" autocomplete="name" required></div>
+      <div class="fg"><label for="ph">Phone Number *</label><input type="tel" id="ph" placeholder="08XXXXXXXXXX" autocomplete="tel" inputmode="tel" required></div>
+      <div class="fg"><label for="em">Email Address *</label><input type="email" id="em" placeholder="your@email.com" autocomplete="email" inputmode="email" required></div>
+      <div class="fg"><label for="addr">Delivery Address *</label><input type="text" id="addr" placeholder="Your full delivery address" autocomplete="street-address" required></div>
       <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" id="skyfly_hp" tabindex="-1" autocomplete="off"></div>
       <div id="skyUp" style="display:none;border:2px dashed #E8C989;background:#FFFDF7;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5"></div>
       <div id="skySum" aria-live="polite" style="display:none;background:#FFF8EC;border:1px solid #E8C989;color:#3D2A10;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.6;margin-bottom:12px"></div>
@@ -541,9 +540,9 @@ footer strong{color:var(--pink2);}
     </div>
     <div class="succbox" id="sb2" role="status" aria-live="polite">
       <div class="ck">🎉</div>
-      <h3 id="skyThanks">Thank you! We have received your order.</h3>
+      <h3 id="skyThanks">Thank You for Your Order!</h3>
       <div id="skyConf" style="background:#FFF8EC;border:1px solid #E8C989;color:#3D2A10;padding:14px 16px;border-radius:10px;font-size:14px;line-height:1.8;text-align:left;margin:14px 0"></div>
-      <p id="skyNext">Our team will contact you shortly to confirm the details and delivery. You can speak with our representative on WhatsApp using the button below. Please keep your order reference for follow-up. You pay when your order arrives.</p>
+      <p id="skyNext">Your order has been received successfully. You can contact our representative on WhatsApp if you need assistance with your order. Please keep your order reference. You pay when your order arrives.</p>
       <a id="skyWa" href="https://wa.me/2349049206695" target="_blank" rel="noopener" style="display:block;margin:14px auto 0;max-width:340px;padding:14px 18px;border-radius:12px;background:#25D366;color:#fff;font-weight:700;text-decoration:none;text-align:center">💬 Chat with us on WhatsApp</a>
       <p style="margin-top:6px;font-size:12px;color:var(--muted)">Optional: your order is already saved.</p>
       <p style="margin-top:10px"><a id="skyView" href="#" style="color:var(--purple);font-weight:600">View your order details</a> · <a href="#" id="skyAgain" style="color:var(--muted)">Place another order</a></p>
@@ -612,36 +611,59 @@ function skyShowError(msg,fields){
 // Optional upsell set for this page in Skyfly (Landing pages → larosenigeria → Upsell). Nothing shows
 // when none is set. Skyfly prices it again when the order is saved; the page's total is a preview.
 let skyUpsell=null,skyAdd=false;
+// The Facial Set's picture (optimised: 47 KB on phones), shown only when Skyfly offers that add-on.
+const SKY_UPSELL_IMG={'facial-set':{base:'https://roseskincare9-code.github.io/Larosenigeria/images/facial-set-',w:800,h:731,alt:'LaRose Complete Facial Set: Facial Detox Toner, Baby Face Whitening Soap and All Clear Face Cream'}};
 function skyRenderUpsell(){
   const box=document.getElementById('skyUp');if(!box)return;
   if(!skyUpsell){box.style.display='none';return;}
   box.textContent='';
+  const im=SKY_UPSELL_IMG[skyUpsell.code];
+  if(im){
+    const pic=document.createElement('picture');
+    const src=document.createElement('source');src.type='image/webp';src.srcset=im.base+'480.webp 480w, '+im.base+'800.webp 800w';src.sizes='260px';pic.appendChild(src);
+    const img=document.createElement('img');img.src=im.base+'800.jpg';img.width=im.w;img.height=im.h;img.alt=im.alt;img.loading='lazy';img.decoding='async';
+    img.style.cssText='display:block;width:100%;max-width:260px;height:auto;border-radius:10px;margin:0 auto 10px';pic.appendChild(img);box.appendChild(pic);
+  }
   const h=document.createElement('div');h.style.fontWeight='700';h.textContent=skyUpsell.headline;box.appendChild(h);
   if(skyUpsell.text){const d=document.createElement('div');d.style.color='#6B5A3A';d.textContent=skyUpsell.text;box.appendChild(d);}
-  const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:10px;margin-top:8px';
-  const n=document.createElement('span');n.textContent=skyUpsell.name+' · ₦'+skyUpsell.price.toLocaleString('en-NG');row.appendChild(n);
-  const b=document.createElement('button');b.type='button';b.id='skyAddBtn';b.textContent=skyAdd?'Added ✓ (remove)':'Add';
-  b.style.cssText='margin-left:auto;padding:9px 16px;border:0;border-radius:10px;background:'+(skyAdd?'#3D2A10':'#7B2D8B')+';color:#fff;font-weight:700;cursor:pointer';
-  b.onclick=function(){skyAdd=!skyAdd;skyRenderUpsell();skyUpdateSummary();};
-  row.appendChild(b);box.appendChild(row);box.style.display='block';
+  const price=document.createElement('div');price.style.cssText='margin-top:6px';
+  if(skyUpsell.compareAt&&skyUpsell.compareAt>skyUpsell.price){
+    const was=document.createElement('s');was.style.color='#8A7A60';was.textContent='₦'+skyUpsell.compareAt.toLocaleString('en-NG');price.appendChild(was);
+    price.appendChild(document.createTextNode(' '));
+  }
+  const now=document.createElement('strong');now.style.color='#7B2D8B';now.textContent='₦'+skyUpsell.price.toLocaleString('en-NG');price.appendChild(now);
+  if(skyUpsell.compareAt&&skyUpsell.compareAt>skyUpsell.price)price.appendChild(document.createTextNode(' · Save ₦'+(skyUpsell.compareAt-skyUpsell.price).toLocaleString('en-NG')));
+  box.appendChild(price);
+  // Unticked until the customer chooses it; ticking adds it to the summary and total, unticking removes it.
+  const lab=document.createElement('label');lab.style.cssText='display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:10px;background:#F6EEF8;font-weight:700;cursor:pointer';
+  const c=document.createElement('input');c.type='checkbox';c.id='skyAddBtn';c.checked=skyAdd;c.style.cssText='width:20px;height:20px;margin:0;accent-color:#7B2D8B';
+  c.onchange=function(){skyAdd=c.checked;skyUpdateSummary();};
+  lab.appendChild(c);lab.appendChild(document.createTextNode('Add '+skyUpsell.name+' for ₦'+skyUpsell.price.toLocaleString('en-NG')));
+  box.appendChild(lab);box.style.display='block';
 }
 fetch(SKYFLY_API+'/api/public/pages/'+SKYFLY_PAGE+'/catalog').then(r=>r.ok?r.json():null).then(c=>{if(c&&c.upsell&&c.upsell.code){skyUpsell=c.upsell;skyRenderUpsell();skyUpdateSummary();}}).catch(()=>{});
-// Order summary: package × quantity and the total, shown before the customer submits.
+// The chosen package (shown at the top of the form) and the order summary: the package and its
+// price, the optional add-on and its price, and the total. Skyfly prices the order again when saving it.
 function skyUpdateSummary(){
-  const sel=document.getElementById('pr'),q=document.getElementById('qty'),box=document.getElementById('skySum');
-  if(!sel||!q||!box)return;
-  const opt=sel.options[sel.selectedIndex],qty=parseInt(q.value,10)||1;
-  if(!sel.value||!opt||!opt.dataset.price){box.style.display='none';return;}
-  const name=opt.value.replace(/\s+–\s+₦[\d,]+$/,''),total=Number(opt.dataset.price)*qty+(skyAdd&&skyUpsell?skyUpsell.price:0);
+  const sel=document.getElementById('pr'),box=document.getElementById('skySum'),pick=document.getElementById('skyPick');
+  if(!sel||!box)return;
+  const opt=sel.options[sel.selectedIndex];
+  const naira=(n)=>'₦'+Number(n).toLocaleString('en-NG');
+  if(!sel.value||!opt||!opt.dataset.price){box.style.display='none';if(pick)pick.textContent='Choose your package below.';return;}
+  const name=opt.value.replace(/\s+–\s+₦[\d,]+$/,''),price=Number(opt.dataset.price),total=price+(skyAdd&&skyUpsell?skyUpsell.price:0);
+  if(pick){pick.textContent='';const t=document.createElement('strong');t.textContent='Selected: ';pick.appendChild(t);pick.appendChild(document.createTextNode(name+' — '+naira(price)));}
   box.textContent='';
-  const t=document.createElement('div');t.style.fontWeight='700';t.textContent='Your order';box.appendChild(t);
-  const l=document.createElement('div');l.textContent=name+' × '+qty;box.appendChild(l);
-  if(skyAdd&&skyUpsell){const a=document.createElement('div');a.textContent='+ '+skyUpsell.name+' (add-on) · ₦'+skyUpsell.price.toLocaleString('en-NG');box.appendChild(a);}
-  const s=document.createElement('div');s.style.fontWeight='700';s.textContent='Total: ₦'+total.toLocaleString('en-NG')+' · pay on delivery';box.appendChild(s);
+  const row=(label,value,bold)=>{const r=document.createElement('div');r.style.cssText='display:flex;justify-content:space-between;gap:12px'+(bold?';font-weight:700;border-top:1px solid #E8C989;margin-top:6px;padding-top:6px':'');
+    const a=document.createElement('span');a.textContent=label;const b=document.createElement('span');b.textContent=value;r.appendChild(a);r.appendChild(b);box.appendChild(r);};
+  const t=document.createElement('div');t.style.fontWeight='700';t.textContent='Order summary';box.appendChild(t);
+  row(name,naira(price));
+  if(skyAdd&&skyUpsell)row(skyUpsell.name+' (add-on)',naira(skyUpsell.price));
+  row('Total · pay on delivery',naira(total),true);
   box.style.display='block';
 }
 document.addEventListener('change',function(e){if(e.target&&(e.target.id==='pr'||e.target.id==='qty'))skyUpdateSummary();});
 if(typeof selectPkg==='function'){const skyPick=selectPkg;selectPkg=function(v){skyPick(v);skyUpdateSummary();};}
+skyUpdateSummary();
 let skyBusy=false,skyAttempted={};
 async function doSub(){
   if(skyBusy)return;
@@ -649,22 +671,22 @@ async function doSub(){
   const ph=document.getElementById('ph').value.trim();
   const addr=document.getElementById('addr').value.trim();
   const em=document.getElementById('em').value.trim();
-  const st=document.getElementById('st').value;
-  const qty=parseInt(document.getElementById('qty').value,10)||1;
-  const nt=document.getElementById('nt').value.trim();
+  const qty=1;
   const sel=document.getElementById('pr');
   const opt=sel.options[sel.selectedIndex];
   const missing={};
+  if(!sel.value||!opt||!opt.dataset.product)missing.items='Choose your package.';
   if(!fn)missing.name='Enter your full name.';
-  if(!addr)missing.address='Enter your delivery address.';
   if(!ph)missing.phone='Enter your phone number.';
-  if(!st)missing.state='Select your state.';
-  if(!sel.value||!opt||!opt.dataset.product)missing.items='Select your package.';
+  else if(ph.replace(/\D/g,'').length<10)missing.phone='Enter a valid phone number, e.g. 08012345678.';
+  if(!em)missing.email='Enter your email address.';
+  else if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em))missing.email='Enter a valid email address, e.g. name@gmail.com.';
+  if(!addr)missing.address='Enter your delivery address.';
   if(Object.keys(missing).length){skyShowError('Please fill in all required fields.',missing);return;}
 
   const q=new URLSearchParams(location.search);
   const order={landingPage:SKYFLY_PAGE,
-    customer:{name:fn,phone:ph,email:em,address:addr,state:st,notes:nt},
+    customer:{name:fn,phone:ph,email:em,address:addr},
     items:[{product:opt.dataset.product,quantity:qty,unitPrice:Number(opt.dataset.price)}].concat(skyAdd&&skyUpsell?[{product:skyUpsell.code,quantity:1,upsell:true,unitPrice:skyUpsell.price}]:[]),
     website:document.getElementById('skyfly_hp').value};
   order.idempotencyKey=skyKey(JSON.stringify(order));
@@ -724,7 +746,7 @@ function skyShowConfirmation(c){
   [['Order reference',c.reference],['Order',c.item+(c.quantity?' × '+c.quantity:'')],['Total (pay on delivery)',fmt(c.total)]].forEach(([k,v])=>{
     const row=document.createElement('div');const b=document.createElement('strong');b.textContent=k+': ';row.appendChild(b);
     const val=document.createElement('span');val.textContent=v;if(k==='Order reference')val.id='skyRef';row.appendChild(val);box.appendChild(row);});
-  document.getElementById('skyThanks').textContent='Thank you'+(c.name?', '+c.name.split(' ')[0]:'')+'! We have received your order.';
+  document.getElementById('skyThanks').textContent='Thank You for Your Order!';
   // WhatsApp hand-off with the order reference prefilled (optional: the order is already saved).
   document.getElementById('skyWa').href=c.wa||('https://wa.me/'+WA+'?text='+encodeURIComponent('Hi Larose! I just placed order '+c.reference+'. Please confirm my order. Thank you!'));
   const view=document.getElementById('skyView');if(c.url){view.href=c.url;view.style.display='';}else{view.style.display='none';}

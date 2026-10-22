@@ -340,7 +340,7 @@
         (r.summary ? '<div><span>Order</span><b>' + esc(r.summary) + '</b></div>' : '') +
         (r.deliveryFee ? '<div><span>Delivery</span><b>' + esc(money(r.deliveryFee, r.currency)) + '</b></div>' : '') +
         '<div><span>Total</span><b data-skyfly-total>' + esc(money(r.total, r.currency)) + '</b></div></div>' +
-        '<p>Our team will contact you shortly to confirm the details and delivery. You can speak with our representative on WhatsApp using the button below. Please keep your order reference for follow-up.</p>' +
+        '<p>Our team will contact you shortly to confirm the details and delivery.' + (r.whatsappUrl ? ' You can speak with our representative on WhatsApp using the button below.' : '') + ' Please keep your order reference for follow-up.</p>' +
         (r.whatsappUrl ? '<a class="sky-btn" style="background:#25d366;text-align:center;text-decoration:none" data-skyfly-whatsapp href="' + esc(r.whatsappUrl) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a>' : '') +
         (r.confirmationUrl ? '<p><a href="' + esc(r.confirmationUrl) + '" target="_blank" rel="noopener">View your order details</a></p>' : '') +
         '<button type="button" class="sky-link" data-again>Place another order</button></div>';
@@ -457,8 +457,26 @@
       };
     }
     // A purchase button elsewhere on the page chose a product.
-    box.__skyflySelect = function (code) { st8.product = code; if (cat && !store(doneKey)) form(); };
+    box.__skyflySelect = function (code) { st8.product = code; if (cat && cat.destination === 'whatsapp') return whatsappOnly(); if (cat && !store(doneKey)) form(); };
+    // "WhatsApp direct" pages: the button opens a WhatsApp conversation with the chosen package.
+    // Nothing is ordered in Skyfly (and no Lead or Purchase is counted): the order is agreed in the chat.
+    function whatsappOnly() {
+      if (!cat.whatsapp || !cat.products.length) { box.innerHTML = '<p class="sky-err">Ordering is not available on this page right now.</p>'; return; }
+      box.innerHTML = '<h3>Order on WhatsApp</h3><label>Package<select data-wa-product>' + cat.products.map(function (p) {
+        return '<option value="' + esc(p.code) + '"' + (p.code === st8.product ? ' selected' : '') + '>' + esc(p.name) + ' — ' + esc(money(p.price, cat.currency)) + '</option>';
+      }).join('') + '</select></label><label>Quantity<input data-wa-qty type="number" min="1" max="99" value="1" inputmode="numeric"></label>' +
+        '<a class="sky-btn" style="background:#25d366;text-align:center;text-decoration:none" data-skyfly-whatsapp-direct target="_blank" rel="noopener">Chat on WhatsApp to order</a>' +
+        '<p class="sky-muted">This opens a WhatsApp conversation with us. Your order is agreed in the chat; nothing is ordered until then.</p>';
+      var sel = box.querySelector('[data-wa-product]'); var qty = box.querySelector('[data-wa-qty]'); var link = box.querySelector('[data-skyfly-whatsapp-direct]');
+      function update() {
+        var p = null; for (var i = 0; i < cat.products.length; i++) if (cat.products[i].code === sel.value) p = cat.products[i];
+        var q = Math.max(1, Math.min(99, parseInt(qty.value, 10) || 1));
+        link.href = 'https://wa.me/' + encodeURIComponent(cat.whatsapp) + '?text=' + encodeURIComponent('Hi! I would like to order ' + (p ? p.name : '') + ' × ' + q + '.');
+      }
+      sel.onchange = update; qty.oninput = update; update();
+    }
     function render() {
+      if (cat.destination === 'whatsapp') return whatsappOnly();
       var saved = store(doneKey);
       if (saved) { try { return showConfirmation(JSON.parse(saved)); } catch (e) { /* show the form */ } }
       if (!cat.products.length) { box.innerHTML = '<p class="sky-err">Ordering is not available on this page right now.</p>' + wa(); return; }

@@ -118,5 +118,13 @@ export function loadConfig() {
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
     // Local development only: send emails to a stand-in provider instead of the real one.
     emailApiBase: isProduction ? null : (process.env.EMAIL_API_BASE || null),
+    // Skyfly's own sender for order notifications and address verification, used for businesses that
+    // have not connected their own email provider (Email → Sending setup). Server-side only.
+    notifyEmail: process.env.SKYFLY_NOTIFY_API_KEY && process.env.SKYFLY_NOTIFY_FROM ? {
+      provider: process.env.SKYFLY_NOTIFY_PROVIDER || 'resend',
+      apiKey: process.env.SKYFLY_NOTIFY_API_KEY,
+      fromEmail: process.env.SKYFLY_NOTIFY_FROM,
+      fromName: process.env.SKYFLY_NOTIFY_FROM_NAME || 'Skyfly',
+    } : null,
   };
 }

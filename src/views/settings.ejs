@@ -2,7 +2,7 @@
 <%- include('partials/nav', { active: 'settings' }) %>
 <main class="narrow">
   <h1>Settings</h1>
-  <% if (saved) { %><div class="notice">Settings saved.</div><% } %>
+  <% if (saved) { %><div class="notice"><%= saved %></div><% } %>
   <% if (error) { %><p class="error"><%= error %></p><% } %>
   <form class="card" method="post" action="<%= base %>/settings">
     <%- include('partials/csrf') %>
@@ -27,6 +27,33 @@
     <p class="muted" style="font-size:13px;margin:4px 0 0">Shown at checkout and added to the order total by Skyfly. Customers pay on delivery.</p>
     <p><button type="submit">Save settings</button></p>
   </form>
+  <form class="card" id="notifications" method="post" action="<%= base %>/settings/notifications">
+    <%- include('partials/csrf') %>
+    <h2 style="margin-top:0">Order notifications</h2>
+    <p class="muted" style="margin-top:0">An email for every new order Skyfly saves from your pages: order number, date, customer, products, total and a link to the order (sign-in required). Only this business's orders, only to this address.</p>
+    <label for="notify_email">Notification email</label>
+    <input id="notify_email" name="notify_email" type="email" maxlength="200" value="<%= notify.notify_email || '' %>" placeholder="you@example.com">
+    <label style="color:var(--text)"><input type="checkbox" name="notify_enabled" <%= notify.notify_enabled ? 'checked' : '' %>> Send an email for every new order</label>
+    <dl class="kv" data-notify-status>
+      <dt>Address</dt><dd><% if (!notify.notify_email) { %><span class="pill cancelled">Not set</span><% } else if (notify.notify_verified_at) { %><span class="pill active">Verified</span> <span class="muted">on <%= formatDate(notify.notify_verified_at) %></span><% } else { %><span class="pill pending">Not verified</span> <span class="muted">no order emails are sent until the link we email is opened<%= notify.notify_verify_sent_at ? ' (last sent ' + formatDate(notify.notify_verify_sent_at) + ')' : '' %></span><% } %></dd>
+      <dt>Sending</dt><dd><%= notifySender ? 'Ready' : 'Not set up: connect an email provider under Email → Sending setup' %></dd>
+      <dt>Status</dt><dd><%= notify.notify_enabled ? 'On' : 'Off' %></dd>
+    </dl>
+    <p style="margin-bottom:0"><button type="submit">Save</button></p>
+  </form>
+  <% if (notify.notify_email && !notify.notify_verified_at) { %>
+    <form class="card" method="post" action="<%= base %>/settings/notifications/verify"><%- include('partials/csrf') %>
+      <p style="margin-top:0">Send a one-time link to <strong><%= notify.notify_email %></strong> (works for 48 hours).</p>
+      <button type="submit" <%= notifySender ? '' : 'disabled' %>>Send verification email</button></form>
+  <% } %>
+  <% if (notifyRecent.length) { %>
+  <div class="card"><h2 style="margin-top:0">Recent order emails</h2>
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Order</th><th>Email</th><th>When</th></tr></thead><tbody>
+    <% notifyRecent.forEach((m) => { %><tr><td><a href="<%= base %>/orders/<%= m.order_id %>"><%= m.reference %></a></td>
+      <td><span class="pill <%= m.status === 'sent' ? 'delivered' : m.status === 'failed' ? 'cancelled' : 'pending' %>"><%= { sent: 'accepted by the provider', failed: 'failed', queued: 'pending', sending: 'sending', skipped: 'not sent', cancelled: 'cancelled' }[m.status] %></span> <span class="muted"><%= m.reason || '' %></span></td>
+      <td class="muted"><%= formatDate(m.sent_at || m.updated_at) %></td></tr><% }) %>
+    </tbody></table></div></div>
+  <% } %>
   <div class="card">
     <h2>More</h2>
     <% if (can('team')) { %><p><a href="<%= base %>/team">Team</a> <span class="muted">who can open this business, and their roles</span></p><% } %>

@@ -13,6 +13,7 @@ import { formatMoney } from '../lib/money.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../lib/statuses.js';
 import { sendEmail, renderEmail, SendError, PROVIDERS } from './emailProviders.js';
 import { subscriptionState, expireSubscriptions } from './tenancy.js';
+import { planOrderNotifications, sendOrderNotifications } from './orderNotifications.js';
 
 const RETRY_MINUTES = [5, 30, 120];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -266,7 +267,10 @@ export async function runEmailJobs(pool, config) {
   const planned = await planMessages(pool);
   const cancelled = await cancelIneligible(pool);
   const sent = await sendDue(pool, config);
-  return { planned, cancelled, sent };
+  // Order notifications to the business (separate from customer emails; see orderNotifications.js).
+  await planOrderNotifications(pool);
+  const notified = await sendOrderNotifications(pool, config);
+  return { planned, cancelled, sent, notified };
 }
 
 export function startEmailWorker(pool, config, { intervalMs = 60000, log = console } = {}) {

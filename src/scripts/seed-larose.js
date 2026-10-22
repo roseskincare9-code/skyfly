@@ -7,9 +7,9 @@ import { loadConfig } from '../config.js';
 import { createPool } from '../db.js';
 
 export const LAROSE_PACKAGES = [
-  { code: 'package-1', name: 'Package 1 – Starter Glow Soap (1kg Soap)', price: 23500 },
-  { code: 'package-2', name: 'Package 2 – Starter Glow Combo', price: 33000 },
-  { code: 'package-3', name: 'Package 3 – Power Glow', price: 51500 },
+  { code: 'package-1', name: 'Package 1 – Starter Glow Soap (1kg Soap)', price: 26500 },
+  { code: 'package-2', name: 'Package 2 – Starter Glow Combo', price: 36500 },
+  { code: 'package-3', name: 'Package 3 – Power Glow', price: 58000 },
   { code: 'package-4', name: 'Package 4 – Total Revive Full', price: 93500 },
   { code: 'package-5', name: 'Package 5 – Total Transformation VIP Luxury (5kg Soap)', price: 202000 },
 ];

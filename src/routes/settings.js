@@ -3,10 +3,11 @@ import { asyncHandler } from '../lib/http.js';
 import { normalizePhone } from '../lib/phone.js';
 import { audit } from '../lib/audit.js';
 import { parseMajorToMinor } from '../lib/money.js';
+import { setNotifyEmail, sendVerification, validNotifyEmail, notifyTransport } from '../services/orderNotifications.js';
 
 export const CURRENCIES = ['NGN', 'GBP', 'USD', 'EUR'];
 
-export function settingsRoutes({ pool }) {
+export function settingsRoutes({ pool, config }) {
   const router = Router({ mergeParams: true });
 
   // Currency can change only while the business has no orders, so totals never mix currencies.
@@ -14,11 +15,41 @@ export function settingsRoutes({ pool }) {
     const { rows: [r] } = await pool.query('SELECT EXISTS (SELECT 1 FROM orders WHERE business_id = $1) AS any', [businessId]);
     return r.any;
   }
-  const page = async (req, res, { error = null, saved = false, status = 200 } = {}) => res.status(status).render('settings', {
-    error, saved, CURRENCIES, currencyLocked: await currencyLocked(req.business.id),
-  });
+  const NOTICES = { 1: 'Settings saved.', notify: 'Order notification settings saved.', verify_sent: 'Verification email sent: open the link in it to start receiving order emails.' };
+  const page = async (req, res, { error = null, saved = null, status = 200 } = {}) => {
+    const { rows: [b] } = await pool.query('SELECT notify_email, notify_enabled, notify_verified_at, notify_verify_sent_at FROM businesses WHERE id = $1', [req.business.id]);
+    // Last order notifications of this business (what the provider accepted, or why not).
+    const { rows: recent } = await pool.query(
+      `SELECT m.status, m.reason, m.to_email, m.sent_at, m.updated_at, o.reference, o.id AS order_id FROM email_messages m JOIN orders o ON o.id = m.order_id
+        WHERE m.business_id = $1 AND m.kind = 'order_notification' ORDER BY m.id DESC LIMIT 5`, [req.business.id]);
+    res.status(status).render('settings', {
+      error, saved: NOTICES[saved] ?? null, CURRENCIES, currencyLocked: await currencyLocked(req.business.id),
+      notify: b, notifyRecent: recent, notifySender: Boolean(await notifyTransport(pool, config, req.business.id)),
+    });
+  };
 
-  router.get('/', asyncHandler((req, res) => page(req, res, { saved: req.query.saved === '1' })));
+  router.get('/', asyncHandler((req, res) => page(req, res, { saved: req.query.saved })));
+
+  // Order notifications: where this business's order emails go. A new address must be verified
+  // (link emailed to it) before any order email is sent to it.
+  router.post('/notifications', asyncHandler(async (req, res) => {
+    const email = String(req.body.notify_email ?? '').trim().toLowerCase();
+    if (email && !validNotifyEmail(email)) return page(req, res, { error: 'Enter a valid email address for order notifications.', status: 400 });
+    await setNotifyEmail(pool, req.business.id, email || null, req.body.notify_enabled === 'on');
+    await audit(pool, req, { action: 'settings.notifications_updated', businessId: req.business.id, details: { email: email || null, enabled: req.body.notify_enabled === 'on' } });
+    res.redirect(`${res.locals.base}/settings?saved=notify#notifications`);
+  }));
+
+  router.post('/notifications/verify', asyncHandler(async (req, res) => {
+    const { rows: [b] } = await pool.query('SELECT * FROM businesses WHERE id = $1', [req.business.id]);
+    try {
+      await sendVerification(pool, config, b);
+    } catch (err) {
+      return page(req, res, { error: `The verification email was not sent: ${err.message}`, status: 502 });
+    }
+    await audit(pool, req, { action: 'settings.notifications_verification_sent', businessId: req.business.id, details: { email: b.notify_email } });
+    res.redirect(`${res.locals.base}/settings?saved=verify_sent#notifications`);
+  }));
 
   router.post('/', asyncHandler(async (req, res) => {
     const name = String(req.body.name ?? '').trim().slice(0, 100);

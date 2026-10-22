@@ -68,7 +68,7 @@ if (process.env.RENDER_API_KEY) {
       // Which optional integration settings exist (names only; values are never read).
       try {
         const names = new Set((await render(`/services/${svc.id}/env-vars?limit=100`)).map((e) => (e.envVar ?? e).key));
-        const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY'];
+        const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY', 'SKYFLY_NOTIFY_API_KEY', 'SKYFLY_NOTIFY_FROM', 'SKYFLY_NOTIFY_PROVIDER', 'SKYFLY_ENCRYPTION_KEY'];
         report(null, 'Render: optional settings on the service itself (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
         try {
           const sf = (await render(`/services/${svc.id}/secret-files?limit=50`)).map((f) => f.secretFile ?? f);
@@ -156,6 +156,8 @@ if (process.env.RENDER_API_KEY) {
         // Start-up summary of the latest TEST ORDERs read from the database (no real customer data).
         const it = appAll.filter((m) => m.startsWith('Import test site'));
         report(null, 'Render logs: import test site (start-up)', it.length ? it.slice(0, 6).map((m) => m.slice(0, 600)).join(' | ') : 'none (already set up, or not restarted since)');
+        const nr = appAll.filter((m) => m.startsWith('Order notifications:'));
+        report(null, 'Render logs: order notifications (start-up check, read-only)', nr.length ? nr.slice(0, 6).map((m) => m.slice(0, 300)).join(' | ') : 'none (not deployed yet, or not restarted since)');
         const oc = appAll.filter((m) => m.startsWith('Orders check'));
         report(null, 'Render logs: test orders in the database (start-up check, latest)', oc.length ? oc.slice(0, 8).map((m) => m.replace(/^Orders check \(test orders, read-only\): /, '').slice(0, 300)).join(' | ') : 'none');
       } catch (err) { report(null, 'Render logs', err.message); }

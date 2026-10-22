@@ -70,7 +70,7 @@ await page.route(`${SKYFLY}/api/public/orders`, (route) => {
   return mode === 'fail'
     ? route.fulfill({ status: 500, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' }, body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
     : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' },
-      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) });
+      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 58000, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) });
 });
 
 await step('Page load: PageView once for each pixel; no InitiateCheckout, Lead or Purchase', async () => {
@@ -100,7 +100,7 @@ await step('Incomplete form, then an order API error: no Lead and no Purchase fo
   await sleep(1500);
   const invalidCalls = orderCalls;
   await page.fill('#addr', 'TEST - simulated reply, no order is created');
-  await page.selectOption('#st', 'Lagos');
+  await page.fill('#em', 'skyfly-e2e@example.com');
   await page.click('#sb');
   await page.waitForSelector('#skyErr', { state: 'visible', timeout: 90000 });
   await sleep(2500);
@@ -120,7 +120,7 @@ await step('Saved-order reply: Lead and Purchase once for each pixel; Purchase h
     assert(count(0, id, 'Lead') === 1, `${PIXELS[id]} Lead ×${count(0, id, 'Lead')} (${summary(0)})`);
     const p = hits.filter((h) => h.id === id && h.ev === 'Purchase');
     assert(p.length === 1, `${PIXELS[id]} Purchase ×${p.length} (${summary(0)})`);
-    assert(p[0].eid === `purchase_${ref}` && Number(p[0].value) === 51500 && p[0].currency === 'NGN', `${PIXELS[id]} Purchase ${JSON.stringify(p[0])}`);
+    assert(p[0].eid === `purchase_${ref}` && Number(p[0].value) === 58000 && p[0].currency === 'NGN', `${PIXELS[id]} Purchase ${JSON.stringify(p[0])}`);
   }
   afterSave = hits.length;
   await page.screenshot({ path: 'live-screenshots/pixels-saved.png' });
@@ -138,11 +138,11 @@ await step('Refresh, and the same reply again (retry / duplicate): no second Pur
     await page.fill('#fn', 'Pixel Check (simulated, no order)');
     await page.fill('#ph', '08012345678');
     await page.fill('#addr', 'TEST - simulated reply, no order is created');
-    await page.selectOption('#st', 'Lagos');
+    await page.fill('#em', 'skyfly-e2e@example.com');
     await page.click('#sb');
     await page.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 });
   } else {
-    await page.evaluate((r) => window.Skyfly && window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+    await page.evaluate((r) => window.Skyfly && window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 58000, currency: 'NGN', test: false }), ref);
   }
   await sleep(2500);
   for (const id of IDS) assert(count(afterSave, id, 'Purchase') === 0 && count(afterSave, id, 'Lead') === 0, `${PIXELS[id]} after refresh/repeat: ${summary(afterSave)}`);

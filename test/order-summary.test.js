@@ -25,6 +25,6 @@ test('lists only test orders, with business, items, total and how many orders th
   await order('Real Customer', 'summary-check-000002').expect(201);
   const lines = await testOrderSummary(pool);
   assert.equal(lines.length, 1, lines.join('\n'));
-  assert.match(lines[0], new RegExp(`${t.body.reference} — business larose-nigeria, page larosenigeria, Package 3 – Power Glow x2, total 103,000 NGN, status \\w+, sheet copy \\w+, listed 1x in larose-nigeria Orders, 1 order\\(s\\) for this submission`));
+  assert.match(lines[0], new RegExp(`${t.body.reference} — business larose-nigeria, page larosenigeria, Package 3 – Power Glow x2, total 116,000 NGN, status \\w+, sheet copy \\w+, listed 1x in larose-nigeria Orders, 1 order\\(s\\) for this submission`));
   assert.doesNotMatch(lines[0], /Real Customer|08031234567|Test Road/);
 });
