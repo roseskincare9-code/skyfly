@@ -100,7 +100,7 @@ await step('Incomplete form, then an order API error: no Lead and no Purchase fo
   await sleep(1500);
   const invalidCalls = orderCalls;
   await page.fill('#addr', 'TEST - simulated reply, no order is created');
-  await page.selectOption('#st', 'Lagos');
+  await page.fill('#em', 'skyfly-e2e@example.com');
   await page.click('#sb');
   await page.waitForSelector('#skyErr', { state: 'visible', timeout: 90000 });
   await sleep(2500);
@@ -138,7 +138,7 @@ await step('Refresh, and the same reply again (retry / duplicate): no second Pur
     await page.fill('#fn', 'Pixel Check (simulated, no order)');
     await page.fill('#ph', '08012345678');
     await page.fill('#addr', 'TEST - simulated reply, no order is created');
-    await page.selectOption('#st', 'Lagos');
+    await page.fill('#em', 'skyfly-e2e@example.com');
     await page.click('#sb');
     await page.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 });
   } else {

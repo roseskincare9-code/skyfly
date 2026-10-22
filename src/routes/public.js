@@ -168,7 +168,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     const { rows: [page] } = await pool.query(
       `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, lp.order_destination, b.currency, b.whatsapp_number, b.slug AS business_slug,
               b.delivery_fee_minor, b.free_delivery_from_minor,
-              u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price
+              u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price, u.compare_at_price_minor AS upsell_compare_at
          FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
          LEFT JOIN products u ON u.id = lp.upsell_product_id AND u.active AND u.business_id = lp.business_id
         WHERE lp.slug = $1 AND lp.status = 'active'`, [String(req.params.slug)]);
@@ -193,6 +193,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
       // Optional add-on offered at checkout (null when none is set). Skyfly prices it again on saving.
       upsell: page.upsell_code ? {
         code: page.upsell_code, name: page.upsell_name, price: Number(page.upsell_price) / 100,
+        // The usual price, shown crossed out (only when higher than the add-on price).
+        ...(page.upsell_compare_at && Number(page.upsell_compare_at) > Number(page.upsell_price) ? { compareAt: Number(page.upsell_compare_at) / 100 } : {}),
         headline: page.upsell_headline || `Add ${page.upsell_name}`, text: page.upsell_text || '',
       } : null,
     });
