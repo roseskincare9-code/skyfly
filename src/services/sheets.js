@@ -301,6 +301,11 @@ export async function countOrderRows(pool, key, businessId, orderId) {
        FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
       WHERE o.id = $1 AND o.business_id = $2`, [orderId, businessId]);
   if (!o) return null;
+  // Test orders never go to a Google Sheet (the sheet holds real orders only).
+  if (o.is_test) {
+    await pool.query("UPDATE orders SET sheet_sync_status = 'skipped', sheet_sync_error = 'Test order: not copied to the sheet' WHERE id = $1 AND sheet_sync_status IN ('pending', 'failed')", [orderId]);
+    return 'skipped';
+  }
   const conn = await targetFor(pool, key, o);
   if (!conn) throw new SheetError('No spreadsheet is set for this order.');
   if (!conn.url) throw new SheetError(conn.urlError);
@@ -406,7 +411,7 @@ export async function syncDue(pool, { limit = 10, key = null } = {}) {
   await adoptLegacyUrls(pool, key);
   const { rows } = await pool.query(
     `SELECT id FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
-        AND sheet_sync_attempts < $1 ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
+        AND sheet_sync_attempts < $1 AND NOT is_test ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
   for (const r of rows) await syncOrder(pool, r.id, { key });
   return rows.length;
 }

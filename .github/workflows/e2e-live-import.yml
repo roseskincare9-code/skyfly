@@ -36,6 +36,13 @@ jobs:
         run: node test/e2e/live-hosting.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
+      - name: Larose page on Skyfly → TEST ORDER → Larose Orders (no Google Sheet checks)
+        if: always()
+        run: node test/e2e/live.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          LANDING_URL: ${{ inputs.url }}/p/larose-skincare/
+          SHEET_CHECKS: 'off'
       - name: Disable the live-test sign-in again
         if: always()
         run: node scripts/e2e-login.mjs disable
