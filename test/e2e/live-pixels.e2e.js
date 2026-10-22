@@ -70,7 +70,7 @@ await page.route(`${SKYFLY}/api/public/orders`, (route) => {
   return mode === 'fail'
     ? route.fulfill({ status: 500, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' }, body: JSON.stringify({ ok: false, error: 'SERVER_ERROR', message: 'We could not save your order. Please try again in a moment.' }) })
     : route.fulfill({ status: 201, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': HOSTED ? '*' : 'https://roseskincare9-code.github.io' },
-      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: false, test: false }) });
+      body: JSON.stringify({ ok: true, saved: true, reference: ref, business: 'larose-nigeria', purchaseEventId: `purchase_${ref}`, total: 51500, currency: 'NGN', confirmationUrl: `${SKYFLY}/o/${ref}?t=simulated`, replayed: mode === 'replayed', test: false }) });
 });
 
 await step('Page load: PageView once for each pixel; no InitiateCheckout, Lead or Purchase', async () => {
@@ -130,7 +130,20 @@ await step('Saved-order reply: Lead and Purchase once for each pixel; Purchase h
 await step('Refresh, and the same reply again (retry / duplicate): no second Purchase', async () => {
   await page.reload({ waitUntil: 'load' });
   await sleep(4000);
-  await page.evaluate((r) => window.Skyfly && window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+  if (HOSTED) {
+    // Sandboxed hosting has no browser storage, so the page shows the form again after a refresh;
+    // sending the same details again returns the same order ("replayed"): shown, never counted again.
+    mode = 'replayed';
+    await page.click('text=Order Power Glow');
+    await page.fill('#fn', 'Pixel Check (simulated, no order)');
+    await page.fill('#ph', '08012345678');
+    await page.fill('#addr', 'TEST - simulated reply, no order is created');
+    await page.selectOption('#st', 'Lagos');
+    await page.click('#sb');
+    await page.waitForSelector('#sb2 #skyRef', { state: 'visible', timeout: 60000 });
+  } else {
+    await page.evaluate((r) => window.Skyfly && window.Skyfly.trackPurchase({ ok: true, saved: true, reference: r, total: 51500, currency: 'NGN', test: false }), ref);
+  }
   await sleep(2500);
   for (const id of IDS) assert(count(afterSave, id, 'Purchase') === 0 && count(afterSave, id, 'Lead') === 0, `${PIXELS[id]} after refresh/repeat: ${summary(afterSave)}`);
   return `after refresh: ${summary(afterSave)}`;
