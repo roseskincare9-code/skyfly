@@ -3,6 +3,7 @@
   <a class="auth-brand" href="/"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
   <div class="card">
     <h1>Log in to Skyfly</h1>
+    <% if (typeof notice !== 'undefined' && notice) { %><p class="notice"><%= notice %></p><% } %>
     <% if (error) { %><p class="error"><%= error %></p><% } %>
     <form method="post" action="/login">
       <%- include("partials/csrf") %>
@@ -12,6 +13,7 @@
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="submit">Log in</button>
     </form>
+    <p class="muted"><a href="/forgot-password">Forgot your password?</a></p>
     <% if (allowSignup) { %><p class="muted">No account yet? <a href="/signup">Create the owner account</a></p><% } %>
   </div>
 </main>
