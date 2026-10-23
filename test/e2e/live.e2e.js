@@ -16,7 +16,7 @@ const PAGE = process.env.LANDING_URL || 'https://roseskincare9-code.github.io/La
 const HOSTED = PAGE.startsWith(SKYFLY);
 const PAGE_KEY = process.env.PAGE_KEY || (HOSTED ? 'larose-skincare' : 'larosenigeria');
 // Larose's Meta pixels: the main one (in the page's own code) and "Pixel New" (added in Skyfly).
-const LAROSE_PIXELS = ['1357015185691765', '1087347357386553'];
+const LAROSE_PIXELS = ['1357015185691765', '1087347357386553', '1105657388903531', '1653102723149813', '1130654146607839', '4389240701387003'];
 const PAGE_ORIGIN = HOSTED ? 'null' : 'https://roseskincare9-code.github.io';
 const SHEET = 'https://sheetdb.io/api/v1/m111fq96ve953';
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());
@@ -343,7 +343,7 @@ await step('G. The order is in the Google Sheet exactly once, even after Skyfly\
   return `1 row in ${again[0].tab}: "${again[0].source}" (written by ${sheetPosts.length ? 'the page; Skyfly found it and did not add another' : 'Skyfly'})`;
 });
 
-await step('I. Meta Pixels 1357015185691765 (main) and 1087347357386553 ("Pixel New"): Purchase counted at save is configured; this TEST ORDER sends each pixel PageView once per page load, InitiateCheckout, Lead once and no Purchase (test orders never count)', async () => {
+await step(`I. Meta Pixels ${LAROSE_PIXELS.join(', ')} (main, "Pixel New", ad accounts): Purchase counted at save is configured; this TEST ORDER sends each pixel PageView once per page load, InitiateCheckout, Lead once and no Purchase (test orders never count)`, async () => {
   const cfg = await (await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`)).json();
   const out = [];
   for (const id of LAROSE_PIXELS) {

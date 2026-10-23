@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { setup, resetDatabase, signUp, ORIGIN } from './helpers.js';
-import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID } from '../src/scripts/seed-larose.js';
+import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS } from '../src/scripts/seed-larose.js';
 import { encrypt } from '../src/lib/secrets.js';
 import { browserConfig, retryEvent } from '../src/services/pixels.js';
 import { clearOriginCache } from '../src/lib/origins.js';
@@ -39,6 +39,8 @@ before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
   larose = await seedLarose(pool, 'owner@larose.test');
+  // These tests cover Pixel New next to the main pixel; the ad-account pixels have their own tests.
+  await pool.query('DELETE FROM additional_pixels WHERE pixel_id = ANY($1)', [LAROSE_AD_ACCOUNT_PIXELS.map((p) => p.id)]);
   clearOriginCache();
 });
 after(async () => { await pool.end(); mock.close(); });

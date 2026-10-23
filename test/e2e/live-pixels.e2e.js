@@ -1,5 +1,6 @@
 // Live check of Larose's Meta pixels on the deployed page: the main pixel (1357015185691765, in the
-// page's own code) and "Pixel New" (1087347357386553, loaded by Skyfly). Places NO order: the
+// page's own code), "Pixel New" (1087347357386553) and the ad-account pixels (migration 029), loaded by
+// Skyfly. Places NO order: the
 // order API is answered by the test (a failure, then a saved-order reply), and every pixel hit is
 // intercepted and counted, never sent, so nothing reaches Meta, Skyfly's orders or the Sheet.
 //
@@ -11,7 +12,10 @@ const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 const PAGE = process.env.LANDING_URL || 'https://roseskincare9-code.github.io/Larosenigeria/';
 const HOSTED = PAGE.startsWith(SKYFLY);
 const PAGE_KEY = HOSTED ? 'larose-skincare' : 'larosenigeria';
-const PIXELS = { '1357015185691765': 'main pixel', '1087347357386553': 'Pixel New' };
+const PIXELS = {
+  '1357015185691765': 'main pixel', '1087347357386553': 'Pixel New',
+  '1105657388903531': 'Skyfly', '1653102723149813': 'Skindrips', '1130654146607839': 'Skindrip', '4389240701387003': 'Moon fly',
+};
 const IDS = Object.keys(PIXELS);
 if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) {
   throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
@@ -24,7 +28,7 @@ async function step(name, fn) {
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 console.log(`Page: ${PAGE}\nSkyfly: ${SKYFLY}\n`);
 
-await step('Skyfly lists both Larose pixels for this page, by ID, with no token', async () => {
+await step('Skyfly lists every Larose pixel for this page once, by ID, with no token', async () => {
   const res = await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`);
   const raw = await res.text();
   const cfg = JSON.parse(raw);
@@ -32,7 +36,7 @@ await step('Skyfly lists both Larose pixels for this page, by ID, with no token'
     const p = cfg.pixels.find((x) => x.provider === 'meta' && x.id === id);
     assert(p && p.events.includes('PageView') && p.events.includes('InitiateCheckout') && p.events.includes('Purchase'), `${PIXELS[id]} ${id}: ${JSON.stringify(cfg.pixels)}`);
   }
-  assert(cfg.pixels.filter((p) => IDS.includes(p.id)).length === 2, 'a pixel is listed twice');
+  assert(cfg.pixels.filter((p) => IDS.includes(p.id)).length === IDS.length, 'a pixel is listed twice');
   assert(!/token|EAA[A-Za-z0-9]{20,}|secret/i.test(raw), 'token-like value in the public config');
   return cfg.pixels.map((p) => `${p.provider} ${p.id} [${p.events.join(', ')}]`).join('; ');
 });
@@ -56,6 +60,10 @@ await ctx.route(/https:\/\/([a-z0-9-]+\.)*facebook\.com\//, (route) => {
   hits.push({ id: field('id'), ev: field('ev'), eid: field('eid'), value: field('cd[value]'), currency: field('cd[currency]') });
   return route.fulfill({ status: 200, contentType: 'image/gif', body: '' }); // counted, never sent
 });
+// Meta's per-pixel configuration, fetched by the official pixel script for each pixel it initialises.
+// Meta serves it for any well-formed ID, so it shows the pixel was initialised, not that the account works.
+const configs = {};
+ctx.on('response', (r) => { const m = r.url().match(/connect\.facebook\.net\/signals\/config\/(\d+)/); if (m) configs[m[1]] = r.status(); });
 const count = (from, id, ev) => hits.slice(from).filter((h) => h.id === id && h.ev === ev).length;
 const summary = (from) => IDS.map((id) => `${PIXELS[id]}: ${[...new Set(hits.slice(from).filter((h) => h.id === id).map((h) => h.ev))].map((ev) => `${ev}×${count(from, id, ev)}`).join(', ') || 'none'}`).join(' | ');
 const waitFor = async (fn, ms = 15000) => { for (let i = 0; i < ms / 250 && !fn(); i += 1) await sleep(250); };
@@ -81,7 +89,8 @@ await step('Page load: PageView once for each pixel; no InitiateCheckout, Lead o
     assert(count(0, id, 'PageView') === 1, `${PIXELS[id]} PageView ×${count(0, id, 'PageView')} (${summary(0)})`);
     for (const ev of ['InitiateCheckout', 'Lead', 'Purchase']) assert(count(0, id, ev) === 0, `${PIXELS[id]} ${ev} on load (${summary(0)})`);
   }
-  return summary(0);
+  for (const id of IDS) assert(configs[id], `${PIXELS[id]} ${id}: the pixel script never initialised it (no configuration request)`);
+  return `${summary(0)}\n      Meta pixel configuration: ${IDS.map((id) => `${PIXELS[id]} ${id} HTTP ${configs[id]}`).join(', ')}`;
 });
 
 await step('Starting the order form: InitiateCheckout once for each pixel', async () => {

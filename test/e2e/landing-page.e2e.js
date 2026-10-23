@@ -12,8 +12,10 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
-import { seedLarose } from '../../src/scripts/seed-larose.js';
+import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+
+const LAROSE_PIXELS = [LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, ...LAROSE_AD_ACCOUNT_PIXELS.map((x) => x.id)];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots');
@@ -195,8 +197,8 @@ try {
     assert.equal(o.sheet_sync_status, 'pending', 'queued for the server-side Google Sheet copy');
     // Exactly one Purchase, after the save, for the saved order's value, keyed by its reference.
     const p = purchases();
-    // One per Larose pixel: the main pixel and "Pixel New".
-    assert.deepEqual(p.map((a) => [a[0], a[1], a[2]]), [['trackSingle', '1357015185691765', 'Purchase'], ['trackSingle', '1087347357386553', 'Purchase']],
+    // One per Larose pixel: the main pixel, "Pixel New" and the ad-account pixels.
+    assert.deepEqual(p.map((a) => [a[0], a[1], a[2]]), LAROSE_PIXELS.map((id) => ['trackSingle', id, 'Purchase']),
       `one Purchase per pixel (got ${JSON.stringify(p)}; all calls: ${JSON.stringify(fbCalls.map((a) => a.slice(0, 3)))})`);
     for (const a of p) {
       assert.equal(a[3].value, 116000);
@@ -250,7 +252,7 @@ try {
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM orders');
     assert.equal(rows[0].n, 1);
     assert.equal(sheetRows.length, 0);
-    assert.equal(purchases().length, 2, 'refreshing is not a second Purchase (still one per pixel)');
+    assert.equal(purchases().length, LAROSE_PIXELS.length, 'refreshing is not a second Purchase (still one per pixel)');
   });
 
   await step('reply lost after saving: the retry returns the same order, no fallback, no duplicate', async () => {
@@ -273,9 +275,9 @@ try {
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM orders WHERE customer_name = 'Lost Reply'");
     assert.equal(rows[0].n, 1, 'exactly one order');
     const lost = (await pool.query("SELECT reference FROM orders WHERE customer_name = 'Lost Reply'")).rows[0].reference;
-    assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, 2, 'one Purchase per pixel for the order whose reply was lost');
+    assert.equal(purchases().filter((a) => a[4].eventID === `purchase_${lost}`).length, LAROSE_PIXELS.length, 'one Purchase per pixel for the order whose reply was lost');
     // J. two different orders: two Purchases per pixel, one per order.
-    assert.deepEqual(purchases().map((a) => a[4].eventID), [`purchase_${reference}`, `purchase_${reference}`, `purchase_${lost}`, `purchase_${lost}`]);
+    assert.deepEqual(purchases().map((a) => a[4].eventID), [...LAROSE_PIXELS.map(() => `purchase_${reference}`), ...LAROSE_PIXELS.map(() => `purchase_${lost}`)]);
     assert.equal(sheetRows.length, before, 'no fallback row: the order was saved in Skyfly');
     await pool.query("DELETE FROM orders WHERE customer_name = 'Lost Reply'");
     sheetRows.splice(before);
