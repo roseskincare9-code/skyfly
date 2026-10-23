@@ -180,7 +180,7 @@ async function loadPricedItems(client, page, items) {
 
 async function findByIdempotencyKey(client, businessId, key) {
   const { rows } = await client.query(
-    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test, delivery_fee_minor
+    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test, delivery_fee_minor, address
        FROM orders WHERE business_id = $1 AND idempotency_key = $2`,
     [businessId, key],
   );
@@ -203,7 +203,7 @@ async function insertOrder(client, o) {
        status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent, delivery_fee_minor)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
-     RETURNING id, reference, access_token, total_minor, currency, is_test, delivery_fee_minor`,
+     RETURNING id, reference, access_token, total_minor, currency, is_test, delivery_fee_minor, address`,
     [
       o.businessId, o.landingPageId, generateReference(o.prefix), generateToken(), o.idempotencyKey, o.fingerprint,
       o.customer.name, o.customer.phone, o.customer.email, o.customer.address, o.customer.state, o.customer.notes,

@@ -119,6 +119,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         total: Number(order.total_minor) / 100,
         deliveryFee: Number(order.delivery_fee_minor ?? 0) / 100,
         currency: order.currency,
+        // The delivery address as saved, so the customer's confirmation can show it back to them.
+        deliveryAddress: order.address,
         confirmationUrl: `${baseUrl(req, config)}/o/${order.reference}?t=${order.access_token}`,
         // What Skyfly saved and priced (packages and any add-on), for the page's thank-you message.
         items: lines.map((l) => ({ name: l.product_name, quantity: l.quantity, total: Number(l.line_total_minor) / 100, upsell: l.is_upsell, options: l.options ?? null })),

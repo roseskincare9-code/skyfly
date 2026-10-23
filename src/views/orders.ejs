@@ -48,7 +48,7 @@
       <% orders.forEach((o) => { %>
         <tr>
           <td><a href="<%= base %>/orders/<%= o.id %>"><strong><%= o.reference %></strong></a></td>
-          <td><%= o.customer_name %><br><span data-address><%= o.address %></span><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.email) { %><br><span class="muted"><%= o.email %></span><% } %></td>
+          <td><%= o.customer_name %><br><span data-address style="overflow-wrap:anywhere"><%= o.address %></span><% if (o.address.trim().length < 15) { %> <span class="pill" data-address-check title="Very short delivery address">Confirm address</span><% } %><% if (o.state) { %> · <span class="muted"><%= o.state %></span><% } %><br><a class="muted" href="tel:<%= o.phone %>"><%= o.phone %></a><% if (o.email) { %><br><span class="muted"><%= o.email %></span><% } %></td>
           <td><%= o.items %></td>
           <td><%= formatMoney(o.total_minor, o.currency) %></td>
           <td><%- include('partials/pills', { o }) %><% if (o.notify_status) { %><br><span class="muted" data-notify="<%= o.notify_status %>" style="font-size:12px">Email: <%= { sent: 'sent ✓', failed: 'failed', queued: 'pending', sending: 'pending', skipped: 'not sent', cancelled: 'not sent' }[o.notify_status] %></span><% } %></td>
