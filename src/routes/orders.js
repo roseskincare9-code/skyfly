@@ -58,7 +58,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
     const pageNumber = Math.max(1, Number.parseInt(req.query.p, 10) || 1);
     const [list, count, pages] = await Promise.all([
       pool.query(
-        `SELECT o.id, o.reference, o.customer_name, o.phone, o.email, o.state, o.status, o.payment_status, o.source,
+        `SELECT o.id, o.reference, o.customer_name, o.address, o.phone, o.email, o.state, o.status, o.payment_status, o.source,
                 o.total_minor, o.currency, o.created_at, o.utm_campaign, o.is_test,
                 lp.name AS landing_page_name,
                 (SELECT m.status FROM email_messages m WHERE m.order_id = o.id AND m.kind = 'order_notification') AS notify_status,
