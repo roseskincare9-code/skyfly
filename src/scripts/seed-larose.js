@@ -16,6 +16,13 @@ export const LAROSE_PACKAGES = [
 
 export const LAROSE_PIXEL_NEW_ID = '1087347357386553';
 export const LAROSE_META_PIXEL_ID = '1357015185691765';
+// Pixels of the owner's other Meta ad accounts (migration 029), loaded by Skyfly next to the two above.
+export const LAROSE_AD_ACCOUNT_PIXELS = [
+  { name: 'Skyfly', id: '1105657388903531' },
+  { name: 'Skindrips', id: '1653102723149813' },
+  { name: 'Skindrip', id: '1130654146607839' },
+  { name: 'Moon fly', id: '4389240701387003' },
+];
 
 export async function seedLarose(pool, ownerEmail) {
   const owner = await pool.query('SELECT id FROM users WHERE email = $1', [ownerEmail.trim().toLowerCase()]);
@@ -69,6 +76,12 @@ export async function seedLarose(pool, ownerEmail) {
       `INSERT INTO additional_pixels (business_id, provider, name, pixel_id) VALUES ($1, 'meta', 'Pixel New', $2) ON CONFLICT DO NOTHING`,
       [businessId, LAROSE_PIXEL_NEW_ID],
     );
+    for (const p of LAROSE_AD_ACCOUNT_PIXELS) {
+      await client.query(
+        `INSERT INTO additional_pixels (business_id, provider, name, pixel_id) VALUES ($1, 'meta', $2, $3) ON CONFLICT DO NOTHING`,
+        [businessId, p.name, p.id],
+      );
+    }
     await client.query('COMMIT');
     return businessId;
   } catch (err) {
