@@ -2,6 +2,8 @@
 // owner confirms payment; there is no payment gateway), setup progress, team invites and
 // platform settings. Only users with is_platform_admin may open it.
 import { Router } from 'express';
+import { createResetLink, ADMIN_LINK_HOURS } from '../services/passwordReset.js';
+import { E2E_EMAIL } from '../services/setup.js';
 import { requireAuth, slugify } from '../lib/auth.js';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
@@ -212,6 +214,21 @@ export function adminRoutes({ pool, config }) {
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: f.email, role: f.role });
     if (result.added) return renderBusiness(req, res, b, { notice: `${f.email} was added as ${ROLE_LABELS[f.role]}.` });
     return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
+  }));
+
+  // A one-time password reset link for a member of this business, to pass on personally (e.g. when
+  // Skyfly has no email sender). Shown once; works for 24 hours; logged.
+  router.post('/admin/businesses/:id/members/:userId/reset-link', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const { rows: [m] } = await pool.query(
+      'SELECT u.id, u.email FROM business_members bm JOIN users u ON u.id = bm.user_id WHERE bm.business_id = $1 AND u.id = $2 AND u.email <> $3',
+      [b.id, /^\d+$/.test(req.params.userId) ? req.params.userId : 0, E2E_EMAIL]);
+    if (!m) return renderBusiness(req, res, b, { error: 'That person is not a member of this business.', status: 404 });
+    const token = await createResetLink(pool, m.id, { createdBy: req.session.userId, minutes: ADMIN_LINK_HOURS * 60 });
+    await audit(pool, req, { action: 'admin.password_reset_link', businessId: b.id, entityType: 'user', entityId: m.id });
+    const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
+    return renderBusiness(req, res, b, { notice: `Password reset link for ${m.email}. Send it to them personally (works once, for ${ADMIN_LINK_HOURS} hours, shown once):`, link: `${base}/reset-password/${token}` });
   }));
 
   // Business subdomain on the platform domain (reserved now, live only once the domain is set up).

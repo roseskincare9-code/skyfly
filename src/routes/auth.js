@@ -1,17 +1,18 @@
 import { Router } from 'express';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
-import { ensureLaroseForOwner } from '../services/setup.js';
+import { ensureLaroseForOwner, E2E_EMAIL } from '../services/setup.js';
+import { requestResetEmail, findReset, completeReset } from '../services/passwordReset.js';
 import { platformSettings, findInvite, acceptInvite } from '../services/tenancy.js';
 
 export function authRoutes({ pool, config }) {
   const router = Router();
 
-  // Sign-up: the very first account (the platform owner); afterwards only when the platform
+  // Sign-up: the very first account (the platform owner; the automated live-test account aside); afterwards only when the platform
   // owner has opened client sign-up (Platform settings). Invite links always work.
   async function signupOpen() {
     if (!config.allowSignup) return false;
-    const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users) AS any');
+    const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email <> $1) AS any', [E2E_EMAIL]);
     if (!rows[0].any) return true;
     if (!config.signupFirstOnly) return true;
     return (await platformSettings(pool)).clientSignup === 'open';
@@ -25,7 +26,8 @@ export function authRoutes({ pool, config }) {
       await client.query('BEGIN');
       // Serialise sign-ups so two people can't both become "the first account".
       await client.query('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
-      const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users) AS any');
+      // The automated live-test account (created at start-up, never a person) does not count.
+      const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users WHERE email <> $1) AS any', [E2E_EMAIL]);
       const { rows } = await client.query(
         `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, $3, $4)
          ON CONFLICT (email) DO NOTHING RETURNING id`,
@@ -70,6 +72,52 @@ export function authRoutes({ pool, config }) {
         if (err) return next(err);
         req.session.userId = user.id;
         audit(pool, req, { action: 'login.succeeded' }).then(() => res.redirect(returnTo), next);
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Forgot password: the same answer whether or not the address has an account.
+  router.get('/forgot-password', (req, res) => res.render('forgot-password', { sent: false, error: null }));
+  router.post('/forgot-password', async (req, res, next) => {
+    try {
+      const email = String(req.body.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).render('forgot-password', { sent: false, error: 'Enter the email address you sign in with.' });
+      const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
+      const result = await requestResetEmail(pool, config, email, base).catch((err) => {
+        console.error('Password reset email failed:', err.message);
+        return { sent: false, reason: 'send failed' };
+      });
+      await audit(pool, req, { action: 'password_reset.requested', details: { sent: result.sent, reason: result.reason ?? undefined } });
+      res.render('forgot-password', { sent: true, error: null });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/reset-password/:token', async (req, res, next) => {
+    try {
+      const r = await findReset(pool, req.params.token);
+      if (!r) return res.status(404).render('reset-password', { valid: false, error: null, token: null, email: null });
+      res.render('reset-password', { valid: true, error: null, token: req.params.token, email: r.email });
+    } catch (err) {
+      next(err);
+    }
+  });
+  router.post('/reset-password/:token', async (req, res, next) => {
+    try {
+      const r = await findReset(pool, req.params.token);
+      if (!r) return res.status(404).render('reset-password', { valid: false, error: null, token: null, email: null });
+      const password = String(req.body.password || '');
+      if (password.length < 10) return res.status(400).render('reset-password', { valid: true, error: 'Use at least 10 characters.', token: req.params.token, email: r.email });
+      if (password !== String(req.body.confirm || '')) return res.status(400).render('reset-password', { valid: true, error: 'The two passwords are not the same.', token: req.params.token, email: r.email });
+      const userId = await completeReset(pool, req.params.token, password);
+      if (!userId) return res.status(404).render('reset-password', { valid: false, error: null, token: null, email: null });
+      await audit(pool, { session: { userId }, ip: req.ip }, { action: 'password_reset.completed' });
+      req.session.regenerate((err) => {
+        if (err) return next(err);
+        res.render('login', { error: null, notice: 'Your password has been changed. Log in with the new password.', allowSignup: false });
       });
     } catch (err) {
       next(err);

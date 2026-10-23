@@ -141,7 +141,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   });
 
   // Slow down password guessing.
-  app.use(['/login', '/signup'], rateLimit({
+  app.use(['/login', '/signup', '/forgot-password', '/reset-password'], rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 20,
     skip: (req) => req.method !== 'POST',

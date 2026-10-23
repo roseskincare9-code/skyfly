@@ -43,7 +43,8 @@
 
   <div class="card">
     <h2>People</h2>
-    <% members.forEach((m) => { %><p style="margin:4px 0"><%= m.name %> · <%= m.email %> <span class="pill"><%= ROLE_LABELS[m.role] %></span></p><% }) %>
+    <% members.forEach((m) => { %><div class="row" style="margin:4px 0;align-items:center;gap:8px;flex-wrap:wrap"><span><%= m.name %> · <%= m.email %> <span class="pill"><%= ROLE_LABELS[m.role] %></span></span>
+      <form method="post" action="/admin/businesses/<%= b.id %>/members/<%= m.id %>/reset-link" style="margin:0"><%- include('../partials/csrf') %><button class="secondary" type="submit" style="padding:4px 10px;font-size:13px">Password reset link</button></form></div><% }) %>
     <% invites.forEach((i) => { %><p class="muted" style="margin:4px 0">Invited: <%= i.email %> (<%= ROLE_LABELS[i.role] %>) until <%= formatDate(i.expires_at) %></p><% }) %>
     <form method="post" action="/admin/businesses/<%= b.id %>/invite" class="row" style="margin-top:12px">
       <%- include('../partials/csrf') %>
