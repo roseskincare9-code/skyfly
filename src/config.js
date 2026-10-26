@@ -65,6 +65,8 @@ export function loadConfig() {
     platformDomain,
     // Shown on Platform admin → System status (e.g. a free Render database's expiry date).
     databaseExpiresAt: process.env.DATABASE_EXPIRES_AT || null,
+    // Lets the backup workflow download /admin/backup.json without anyone's password (long random value only).
+    backupKey: String(process.env.SKYFLY_BACKUP_KEY || '').trim().length >= 32 ? String(process.env.SKYFLY_BACKUP_KEY).trim() : null,
     pagesHost: hostOf(pagesBaseUrl),
     dashboardHost: hostOf(publicBaseUrl),
     // Set automatically by Render; the CNAME target for custom domains.

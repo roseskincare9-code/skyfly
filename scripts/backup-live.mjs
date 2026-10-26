@@ -11,11 +11,19 @@ import { pipeline } from 'node:stream/promises';
 const [out = 'backup.json'] = process.argv.slice(2);
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 const { SKYFLY_OWNER_EMAIL: email, SKYFLY_OWNER_PASSWORD: password } = process.env;
-if (!email || !password) {
-  console.log('BLOCKED  Backup download — needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets (the platform owner\'s sign-in).');
+const backupKey = process.env.SKYFLY_BACKUP_KEY || '';
+if (!backupKey && (!email || !password)) {
+  console.log('BLOCKED  Backup download — needs SKYFLY_BACKUP_KEY on Render (with the RENDER_API_KEY secret here) or the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets.');
   process.exit(2);
 }
 
+let res;
+if (backupKey) {
+  // The server's backup key: no sign-in, this one download only.
+  await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) }).catch(() => {});
+  res = await fetch(`${SKYFLY}/admin/backup.json`, { headers: { Authorization: `Bearer ${backupKey}` }, redirect: 'manual' });
+  if (res.status !== 200) { console.log(`FAIL  Backup download with the backup key: HTTP ${res.status} (is this version of Skyfly deployed, and the key the one on Render?).`); process.exit(1); }
+} else {
 // Sign in like a browser: the login page's CSRF token and cookie, then the form.
 const jar = new Map();
 const cookies = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -31,8 +39,9 @@ const login = await fetch(`${SKYFLY}/login`, {
 keep(login);
 if (login.status !== 302) { console.log(`FAIL  Sign-in refused (HTTP ${login.status}). Check the secrets.`); process.exit(1); }
 
-const res = await fetch(`${SKYFLY}/admin/backup.json`, { headers: { Cookie: cookies() }, redirect: 'manual' });
+res = await fetch(`${SKYFLY}/admin/backup.json`, { headers: { Cookie: cookies() }, redirect: 'manual' });
 if (res.status !== 200) { console.log(`FAIL  Backup download HTTP ${res.status} (the account must be the platform owner).`); process.exit(1); }
+}
 await pipeline(Readable.fromWeb(res.body), createWriteStream(out));
 
 const raw = await readFile(out);
