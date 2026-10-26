@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { createResetLink, ADMIN_LINK_HOURS } from '../services/passwordReset.js';
 import { E2E_EMAIL } from '../services/setup.js';
+import { setupChecklist } from '../services/onboarding.js';
 import { requireAuth, slugify } from '../lib/auth.js';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
@@ -131,9 +132,10 @@ export function adminRoutes({ pool, config }) {
       pool.query(`SELECT a.action, a.details, a.created_at, u.email AS by_email FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
                    WHERE a.business_id = $1 AND (a.action LIKE 'subscription.%' OR a.action LIKE 'admin.%') ORDER BY a.id DESC LIMIT 30`, [b.id]),
     ]);
+    const checklist = await setupChecklist(pool, b);
     res.set('Cache-Control', 'no-store');
     res.status(status).render('admin/business', {
-      b, sub: subscriptionState(b), members, invites, history, error, notice, link, ROLES, ROLE_LABELS, CURRENCIES, SUBSCRIPTION_LABELS,
+      checklist, b, sub: subscriptionState(b), members, invites, history, error, notice, link, ROLES, ROLE_LABELS, CURRENCIES, SUBSCRIPTION_LABELS,
       subdomain: { platformDomain: config.platformDomain, host: subdomainHost(b, config), status: b.subdomain_status, checkedAt: b.subdomain_checked_at,
         state: (await subdomainState(b, config)).message },
       renewDefault: addMonths(b.subscription_expires_on && b.subscription_expires_on > b.local_today ? b.subscription_expires_on : b.local_today, 1),
@@ -229,6 +231,24 @@ export function adminRoutes({ pool, config }) {
     await audit(pool, req, { action: 'admin.password_reset_link', businessId: b.id, entityType: 'user', entityId: m.id });
     const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
     return renderBusiness(req, res, b, { notice: `Password reset link for ${m.email}. Send it to them personally (works once, for ${ADMIN_LINK_HOURS} hours, shown once):`, link: `${base}/reset-password/${token}` });
+  }));
+
+  // Client contact details (onboarding). Optional; checked for length and format only.
+  router.post('/admin/businesses/:id/details', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const val = (k, max) => String(req.body[k] ?? '').trim().slice(0, max) || null;
+    const d = { name: val('name', 120), contact_name: val('contact_name', 120), contact_phone: val('contact_phone', 40), contact_email: val('contact_email', 200)?.toLowerCase() ?? null, website: val('website', 300) };
+    const errors = [];
+    if (!d.name) errors.push('Enter the business name.');
+    if (d.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.contact_email)) errors.push('Enter a valid contact email.');
+    if (d.contact_phone && d.contact_phone.replace(/\D/g, '').length < 7) errors.push('Enter a valid contact phone number.');
+    if (d.website && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(d.website)) errors.push('Enter the website as a full address, e.g. https://example.com.');
+    if (errors.length) return renderBusiness(req, res, { ...b, ...d }, { error: errors.join(' '), status: 400 });
+    await pool.query('UPDATE businesses SET name = $2, contact_name = $3, contact_phone = $4, contact_email = $5, website = $6 WHERE id = $1',
+      [b.id, d.name, d.contact_name, d.contact_phone, d.contact_email, d.website]);
+    await audit(pool, req, { action: 'admin.business_details', businessId: b.id, entityType: 'business', entityId: b.id });
+    return renderBusiness(req, res, { ...b, ...d }, { notice: 'Business details saved.' });
   }));
 
   // Business subdomain on the platform domain (reserved now, live only once the domain is set up).
