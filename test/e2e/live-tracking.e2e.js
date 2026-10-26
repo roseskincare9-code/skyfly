@@ -52,7 +52,7 @@ async function signIn(email) {
 }
 const larose = async () => (await (await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`)).json()).pixels.map((p) => p.id);
 
-let dash; let biz; let page; let liveUrl; const added = [];
+let dash; let biz; let page; let pageId; let liveUrl; const added = [];
 const laroseBefore = await larose();
 try {
   await step('L1. Owner B opens Tracking & Pixels: Meta, TikTok and X tabs; the business has a published page', async () => {
@@ -64,10 +64,11 @@ try {
     const tabs = await dash.$$eval('[data-tab]', (els) => els.map((e) => e.getAttribute('data-tab')));
     assert(tabs.join() === 'meta,tiktok,x', `tabs: ${tabs}`);
     await dash.goto(`${SKYFLY}/businesses/${biz}/landing-pages`);
-    liveUrl = (await dash.content()).match(/href="(https?:\/\/[^"]+\/([a-z0-9-]+)\/)" target="_blank" rel="noopener">Open ↗/)?.[1];
-    assert(liveUrl, 'no published page address on Landing Pages');
+    const pub = (await dash.content()).match(/id="pub-url-(\d+)"[^>]*\svalue="(https?:\/\/[^"]+\/[a-z0-9-]+\/)"/);
+    assert(pub, 'no published page address on Landing Pages');
+    [, pageId, liveUrl] = pub;
     page = liveUrl.match(/\/([a-z0-9-]+)\/$/)[1];
-    return `business #${biz}, page ${liveUrl}`;
+    return `business #${biz}, page #${pageId} ${liveUrl}`;
   });
 
   if (!liveUrl) throw new Error('stopped: the business or its page was not found');
@@ -76,7 +77,7 @@ try {
     await dash.fill('#name', `E2E ${platform} ${i}`);
     await dash.fill('#pixel_id', id);
     if (i === 1) await dash.check('input[name=all_pages]');
-    else await dash.locator('input[name=pages]').first().check();
+    else await dash.check(`input[name=pages][value="${pageId}"]`); // the page this check opens (the business has several)
     for (const [e, v] of Object.entries(extra)) await dash.fill(`#x_event_${e}`, v);
     await submit(dash, '[data-tracking-form] button[type=submit]');
     assert(/done=added/.test(dash.url()), `${platform} ${id} not added: ${(await dash.textContent('[role=alert]', { timeout: 2000 }).catch(() => '')) || dash.url()}`);
