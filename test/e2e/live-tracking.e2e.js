@@ -33,6 +33,11 @@ async function step(name, fn) {
   catch (err) { failed += 1; console.log(`FAIL  ${name} — ${err.message.split('\n')[0]}`); return false; }
 }
 const assert = (c, m) => { if (!c) throw new Error(m); };
+// Clicks a submit button and waits until the browser has left the current page and the next one has loaded.
+async function submit(p, target) {
+  const from = p.url();
+  await Promise.all([p.waitForURL((u) => u.toString() !== from, { waitUntil: 'load' }), typeof target === 'string' ? p.click(target) : target.click()]);
+}
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 async function signIn(email) {
@@ -41,13 +46,13 @@ async function signIn(email) {
   p.setDefaultTimeout(20000);
   await p.goto(`${SKYFLY}/login`);
   await p.fill('#email', email); await p.fill('#password', PASSWORD);
-  await Promise.all([p.waitForLoadState('load'), p.click('main button[type=submit]')]);
+  await submit(p, 'main button[type=submit]');
   assert(!p.url().endsWith('/login'), `sign-in refused for ${email}`);
   return p;
 }
 const larose = async () => (await (await fetch(`${SKYFLY}/api/public/pages/larosenigeria/tracking`)).json()).pixels.map((p) => p.id);
 
-let dash; let biz; let page; let liveUrl; const added = [];
+let dash; let biz; let page; let pageId; let liveUrl; const added = [];
 const laroseBefore = await larose();
 try {
   await step('L1. Owner B opens Tracking & Pixels: Meta, TikTok and X tabs; the business has a published page', async () => {
@@ -59,10 +64,11 @@ try {
     const tabs = await dash.$$eval('[data-tab]', (els) => els.map((e) => e.getAttribute('data-tab')));
     assert(tabs.join() === 'meta,tiktok,x', `tabs: ${tabs}`);
     await dash.goto(`${SKYFLY}/businesses/${biz}/landing-pages`);
-    liveUrl = (await dash.content()).match(/href="(https?:\/\/[^"]+\/([a-z0-9-]+)\/)" target="_blank" rel="noopener">Open ↗/)?.[1];
-    assert(liveUrl, 'no published page address on Landing Pages');
+    const pub = (await dash.content()).match(/id="pub-url-(\d+)"[^>]*\svalue="(https?:\/\/[^"]+\/[a-z0-9-]+\/)"/);
+    assert(pub, 'no published page address on Landing Pages');
+    [, pageId, liveUrl] = pub;
     page = liveUrl.match(/\/([a-z0-9-]+)\/$/)[1];
-    return `business #${biz}, page ${liveUrl}`;
+    return `business #${biz}, page #${pageId} ${liveUrl}`;
   });
 
   if (!liveUrl) throw new Error('stopped: the business or its page was not found');
@@ -71,9 +77,9 @@ try {
     await dash.fill('#name', `E2E ${platform} ${i}`);
     await dash.fill('#pixel_id', id);
     if (i === 1) await dash.check('input[name=all_pages]');
-    else await dash.locator('input[name=pages]').first().check();
+    else await dash.check(`input[name=pages][value="${pageId}"]`); // the page this check opens (the business has several)
     for (const [e, v] of Object.entries(extra)) await dash.fill(`#x_event_${e}`, v);
-    await Promise.all([dash.waitForLoadState('load'), dash.click('[data-tracking-form] button[type=submit]')]);
+    await submit(dash, '[data-tracking-form] button[type=submit]');
     assert(/done=added/.test(dash.url()), `${platform} ${id} not added: ${(await dash.textContent('[role=alert]', { timeout: 2000 }).catch(() => '')) || dash.url()}`);
     added.push(id);
   };
@@ -126,7 +132,7 @@ try {
 
   await step('L5. Switching one TikTok ID off removes only it from the live page', async () => {
     await dash.goto(`${SKYFLY}/businesses/${biz}/pixels?platform=tiktok`);
-    await Promise.all([dash.waitForLoadState('load'), dash.locator(`tr[data-pixel="${IDS.tiktok[2]}"] button:has-text("Disable")`).click()]);
+    await submit(dash, dash.locator(`tr[data-pixel="${IDS.tiktok[2]}"] button:has-text("Disable")`));
     const cfg = await (await fetch(`${SKYFLY}/api/public/pages/${page}/tracking`)).json();
     const ids = cfg.pixels.map((p) => p.id);
     assert(!ids.includes(IDS.tiktok[2]), 'the disabled ID is still on the page');
@@ -157,7 +163,7 @@ try {
         if (!(await row.count())) continue;
         await dash.goto(SKYFLY + await row.locator('a:has-text("Remove")').getAttribute('href'));
         await dash.fill('#confirm', id);
-        await Promise.all([dash.waitForLoadState('load'), dash.click('button:has-text("Remove tracking ID")')]);
+        await submit(dash, 'button:has-text("Remove tracking ID")');
         await dash.goto(`${SKYFLY}/businesses/${biz}/pixels?platform=${pl}`);
       }
     }
