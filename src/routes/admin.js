@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createResetLink, ADMIN_LINK_HOURS } from '../services/passwordReset.js';
-import { E2E_EMAIL } from '../services/setup.js';
+import { E2E_EMAIL_LIKE } from '../services/setup.js';
 import { setupChecklist } from '../services/onboarding.js';
 import { requireAuth, slugify } from '../lib/auth.js';
 import { asyncHandler } from '../lib/http.js';
@@ -261,8 +261,8 @@ export function adminRoutes({ pool, config }) {
     const b = await loadBusiness(req.params.id);
     if (!b) return res.status(404).render('error', { message: 'Business not found.' });
     const { rows: [m] } = await pool.query(
-      'SELECT u.id, u.email FROM business_members bm JOIN users u ON u.id = bm.user_id WHERE bm.business_id = $1 AND u.id = $2 AND u.email <> $3',
-      [b.id, /^\d+$/.test(req.params.userId) ? req.params.userId : 0, E2E_EMAIL]);
+      'SELECT u.id, u.email FROM business_members bm JOIN users u ON u.id = bm.user_id WHERE bm.business_id = $1 AND u.id = $2 AND u.email NOT LIKE $3',
+      [b.id, /^\d+$/.test(req.params.userId) ? req.params.userId : 0, E2E_EMAIL_LIKE]);
     if (!m) return renderBusiness(req, res, b, { error: 'That person is not a member of this business.', status: 404 });
     const token = await createResetLink(pool, m.id, { createdBy: req.session.userId, minutes: ADMIN_LINK_HOURS * 60 });
     await audit(pool, req, { action: 'admin.password_reset_link', businessId: b.id, entityType: 'user', entityId: m.id });

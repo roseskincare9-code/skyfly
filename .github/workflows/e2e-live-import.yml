@@ -1,4 +1,5 @@
-# Live check of landing-page import → publish → native checkout → dashboard, on the deployed service.
+# Live check of landing-page import → publish → native checkout → dashboard, and of business owners'
+# sign-in and isolation (owner A, owner B, switching, invitation), on the deployed service.
 # The dashboard part signs in as the restricted live-test account (test businesses only): this run
 # picks a new random password, gives the server only its hash (Render setting, redeploy), and clears
 # it at the end. No one's own password is used. Places a few clearly labelled TEST ORDERs in the
@@ -34,6 +35,11 @@ jobs:
       - name: Hosting, add-on and owner import/edit/republish/unpublish (demo shop)
         if: always()
         run: node test/e2e/live-hosting.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: Business owners' sign-in, isolation, switching, invitation, phone (test businesses only)
+        if: always()
+        run: node test/e2e/live-tenancy.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
       - name: Disable the live-test sign-in again

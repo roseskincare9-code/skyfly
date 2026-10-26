@@ -56,7 +56,7 @@ if (mode === 'disable') {
   if (status !== 'live') throw new Error(`Deploy ended as "${status || 'timeout'}"`);
   await sleep(20000); // start-up tasks (incl. the account setup) finish after the deploy turns live
   if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `SKYFLY_OWNER_EMAIL=${E2E_EMAIL}\nSKYFLY_OWNER_PASSWORD=${password}\n`);
-  console.log(`Deploy live; the tests sign in as ${E2E_EMAIL} (test businesses only).`);
+  console.log(`Deploy live; the tests sign in as ${E2E_EMAIL} and the two test owners (test businesses only).`);
 } else {
   throw new Error('Usage: node scripts/e2e-login.mjs enable|disable');
 }

@@ -198,10 +198,10 @@ if (CHECK) {
     const inView = await page.$eval('#fn', (el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; });
     assert(inView, 'the form is not on screen after the click');
     const fields = await page.$$eval('#formContent input:not([type=checkbox]), #formContent select, #formContent textarea', (els) => els.filter((e) => e.id !== 'skyfly_hp').map((e) => e.id));
-    assert(JSON.stringify(fields) === JSON.stringify(['pr', 'fn', 'ph', 'em', 'addr']), `fields: ${fields.join(', ')}`);
+    assert(JSON.stringify(fields) === JSON.stringify(['pr', 'fn', 'addr', 'ph', 'em']), `fields: ${fields.join(', ')}`);
     const sum = (await page.textContent('#skySum')).replace(/\s+/g, ' ');
     assert(sum.includes(price), `summary "${sum}"`);
-    return `"${chosen}"; form on screen; fields: package, full name, phone, email, address; summary ${price}`;
+    return `"${chosen}"; form on screen; fields: package, full name, full delivery address, phone, email; summary ${price}`;
   });
   await step('R. The optional Facial Set starts unticked; ticking adds its price to the summary and total, unticking removes it', async () => {
     let up = catalog.upsell; let simulated = false;
@@ -240,6 +240,26 @@ if (CHECK) {
 
 let reference = null;
 let confirmationUrl = null;
+await step('Q2. Order form: Full Delivery Address directly after Full Name; a too-short address is refused on the page (no order sent); the WhatsApp bubble lets taps through', async () => {
+  const fields = await page.$$eval('#formContent input:not([type=checkbox]), #formContent select, #formContent textarea', (els) => els.filter((e) => e.id !== 'skyfly_hp').map((e) => e.id));
+  assert(JSON.stringify(fields) === JSON.stringify(['pr', 'fn', 'addr', 'ph', 'em']), `fields: ${fields.join(', ')}`);
+  const label = (await page.textContent('label[for="addr"]')).trim();
+  assert(label.startsWith('Full Delivery Address'), `address label "${label}"`);
+  const bubble = await page.$('.wabub');
+  const pe = bubble ? await bubble.evaluate((e) => getComputedStyle(e).pointerEvents) : 'no bubble';
+  assert(!bubble || pe === 'none', `WhatsApp bubble pointer-events: ${pe}`);
+  let sent = 0;
+  const count = (r) => { if (r.url().endsWith('/api/public/orders')) sent += 1; };
+  page.on('request', count);
+  await page.click('text=Order Power Glow');
+  await page.fill('#fn', NAME); await page.fill('#addr', 'abc'); await page.fill('#ph', '08012345678'); await page.fill('#em', 'skyfly-e2e@example.com');
+  await page.click('#sb');
+  await page.waitForSelector('#skyErr', { state: 'visible', timeout: 10000 });
+  const err = (await page.textContent('#skyErr')).replace(/\s+/g, ' ');
+  page.off('request', count);
+  assert(sent === 0 && /full delivery address/i.test(err), `sent ${sent}, message "${err}"`);
+  return `fields: ${fields.join(' → ')}; label "${label}"; WhatsApp bubble pointer-events ${pe}; 3-character address refused on the page ("${err.slice(0, 90)}"), 0 order requests`;
+});
 await step('C/H. A test order placed through the real checkout is saved; the confirmation appears only after Skyfly\'s reply (not WhatsApp)', async () => {
   await page.click('text=Order Power Glow');
   await page.fill('#fn', NAME);

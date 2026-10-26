@@ -213,24 +213,39 @@ export async function ensureImportTestSite(pool, config, log = console) {
   return page.id;
 }
 
-// The automated live tests (GitHub Actions) sign in as their own account, never as the owner.
-// It can open only the two labelled test businesses (as Manager: pages, products, orders), can't
-// create businesses, and isn't a platform admin. The test workflow picks a new random password on
-// each run and gives the server only its hash (SKYFLY_E2E_PASSWORD_HASH, set through the Render
-// deployment settings); the password is never stored. Without that setting it cannot sign in.
+// The automated live tests (GitHub Actions) sign in as their own accounts, never as the owner.
+// They can open only the two labelled test businesses, can't create businesses, and aren't
+// platform admins:
+//   - E2E_EMAIL: Manager of both test businesses (pages, products, orders; switching between them),
+//   - E2E_OWNER_A / E2E_OWNER_B: Owner of one test business each, to prove one owner can't open the
+//     other's business (owners also manage the team, so invitations are tested with them).
+// The test workflow picks a new random password on each run and gives the server only its hash
+// (SKYFLY_E2E_PASSWORD_HASH, set through the Render deployment settings); the password is never
+// stored. Without that setting they cannot sign in. Accounts the tests create through an invitation
+// use the same reserved addresses (e2e-…@skyfly.invalid) and are disabled with them.
 export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
-const E2E_BUSINESSES = ['skyfly-import-test', 'skyfly-demo'];
+export const E2E_OWNER_A = 'e2e-owner-a@skyfly.invalid';
+export const E2E_OWNER_B = 'e2e-owner-b@skyfly.invalid';
+export const E2E_EMAIL_LIKE = 'e2e-%@skyfly.invalid';
+export const isE2eEmail = (email) => /^e2e-[a-z0-9.-]+@skyfly\.invalid$/.test(String(email || '').toLowerCase());
+const E2E_ACCOUNTS = [
+  { email: E2E_EMAIL, name: 'Automated live tests', role: 'manager', businesses: ['skyfly-import-test', 'skyfly-demo'] },
+  { email: E2E_OWNER_A, name: 'Live test owner A', role: 'owner', businesses: ['skyfly-demo'] },
+  { email: E2E_OWNER_B, name: 'Live test owner B', role: 'owner', businesses: ['skyfly-import-test'] },
+];
 // Each sign-in the test workflow sets (a new random password per run, given here only as its
 // hash) works for E2E_WINDOW_MS after it is first seen, once: a later start with the same hash
-// (e.g. if the workflow's "disable" step never ran) keeps the account disabled. When the window
-// ends the account is disabled again in the database and its signed-in sessions are ended.
+// (e.g. if the workflow's "disable" step never ran) keeps the accounts disabled. When the window
+// ends they are disabled again in the database and their signed-in sessions are ended.
 export const E2E_WINDOW_MS = 20 * 60000;
 let e2eTimer = null;
 export async function disableE2eAccount(pool, log = console) {
-  const { rows: [user] } = await pool.query("UPDATE users SET password_hash = 'disabled' WHERE email = $1 RETURNING id", [E2E_EMAIL]);
-  if (!user) return;
-  await pool.query('DELETE FROM business_members WHERE user_id = $1', [user.id]);
-  await pool.query("DELETE FROM user_sessions WHERE sess->>'userId' = $1", [String(user.id)]);
+  const { rows: users } = await pool.query("UPDATE users SET password_hash = 'disabled', is_platform_admin = false WHERE email LIKE $1 RETURNING id", [E2E_EMAIL_LIKE]);
+  if (!users.length) return;
+  const ids = users.map((u) => u.id);
+  await pool.query('DELETE FROM business_members WHERE user_id = ANY($1::bigint[])', [ids]);
+  await pool.query("DELETE FROM user_sessions WHERE sess->>'userId' = ANY($1::text[])", [ids.map(String)]);
+  await pool.query('UPDATE business_invites SET revoked_at = now() WHERE email LIKE $1 AND accepted_at IS NULL AND revoked_at IS NULL', [E2E_EMAIL_LIKE]);
   log.log('Live-test account: disabled (sign-in window over; its sessions were ended)');
 }
 
@@ -248,21 +263,27 @@ export async function ensureE2eAccount(pool, log = console, { now = Date.now() }
     until = since + E2E_WINDOW_MS;
     usable = until > now;
   }
-  const { rows: [user] } = await pool.query(
-    `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, 'disabled', 'Automated live tests', false)
-     ON CONFLICT (email) DO UPDATE SET is_platform_admin = false RETURNING id`, [E2E_EMAIL]);
+  const users = [];
+  for (const a of E2E_ACCOUNTS) {
+    const { rows: [user] } = await pool.query(
+      `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, 'disabled', $2, false)
+       ON CONFLICT (email) DO UPDATE SET is_platform_admin = false RETURNING id`, [a.email, a.name]);
+    users.push({ ...a, id: user.id });
+  }
   if (!usable) {
     await disableE2eAccount(pool, { log() {} });
     log.log(`Live-test account: disabled (${hash && hash !== 'disabled' ? 'this sign-in was already used and has expired' : 'no SKYFLY_E2E_PASSWORD_HASH'})`);
     return false;
   }
-  await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [user.id, hash]);
-  await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [user.id, E2E_BUSINESSES]);
-  await pool.query(
-    `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, 'manager' FROM businesses WHERE slug = ANY($2::text[])
-     ON CONFLICT (business_id, user_id) DO UPDATE SET role = 'manager'`, [user.id, E2E_BUSINESSES]);
+  for (const u of users) {
+    await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [u.id, hash]);
+    await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [u.id, u.businesses]);
+    await pool.query(
+      `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, $3 FROM businesses WHERE slug = ANY($2::text[])
+       ON CONFLICT (business_id, user_id) DO UPDATE SET role = EXCLUDED.role`, [u.id, u.businesses, u.role]);
+  }
   e2eTimer = setTimeout(() => disableE2eAccount(pool, log).catch((err) => log.error('Live-test account: disable failed:', err.message)), until - now);
   e2eTimer.unref?.();
-  log.log(`Live-test account: can sign in until ${new Date(until).toISOString()} (test businesses only: ${E2E_BUSINESSES.join(', ')})`);
+  log.log(`Live-test account: can sign in until ${new Date(until).toISOString()} (test businesses only: ${E2E_ACCOUNTS.map((a) => `${a.email} ${a.role} of ${a.businesses.join(' + ')}`).join('; ')})`);
   return true;
 }
