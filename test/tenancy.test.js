@@ -83,7 +83,7 @@ describe('platform owner and client workspaces', () => {
     assert.equal(home.headers.location, `/businesses/${biz.A.id}`);
     const dash = await biz.A.client.get(`/businesses/${biz.A.id}`).expect(200);
     const nav = dash.text.match(/<nav class="side-nav">([\s\S]*?)<\/nav>/)[1];
-    for (const label of ['Overview', 'Orders', 'Products', 'Customers', 'Landing Pages', 'Email Contacts', 'Email Automations', 'Pixels &amp; Integrations', 'Subscription', 'Settings']) assert.ok(nav.includes(label), label);
+    for (const label of ['Overview', 'Orders', 'Products', 'Customers', 'Landing Pages', 'Email Contacts', 'Email Automations', 'Tracking &amp; Pixels', 'Integrations', 'Subscription', 'Settings']) assert.ok(nav.includes(label), label);
     assert.ok(!nav.includes('Platform admin'));
     assert.doesNotMatch(nav, /Ads|Campaign/i);
   });

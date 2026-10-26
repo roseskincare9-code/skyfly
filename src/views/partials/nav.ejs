@@ -1,6 +1,6 @@
 <%
   const rawTab = typeof active === 'undefined' ? '' : active;
-  const tab = ({ pixels: 'integrations', sheet: 'integrations', apikeys: 'integrations', activity: 'settings', analytics: 'overview' })[rawTab] || rawTab;
+  const tab = ({ sheet: 'integrations', apikeys: 'integrations', activity: 'settings', analytics: 'overview' })[rawTab] || rawTab;
   const hasBiz = typeof business !== 'undefined' && business;
   const user = typeof currentUser !== 'undefined' ? currentUser : null;
   const bizList = typeof userBusinesses !== 'undefined' ? userBusinesses : [];
@@ -17,7 +17,8 @@
     allowed('catalog') && item('pages', base + '/landing-pages', 'layout', 'Landing Pages'),
     allowed('marketing') && item('contacts', base + '/email-contacts', 'mail', 'Email Contacts'),
     allowed('marketing') && item('email', base + '/email', 'send', 'Email Automations'),
-    allowed('integrations') && item('integrations', base + '/integrations', 'target', 'Pixels & Integrations'),
+    allowed('integrations') && item('pixels', base + '/pixels', 'target', 'Tracking & Pixels'),
+    allowed('integrations') && item('integrations', base + '/integrations', 'key', 'Integrations'),
     item('subscription', base + '/subscription', 'card', 'Subscription'),
     allowed('settings') && item('settings', base + '/settings', 'gear', 'Settings'),
   ].filter(Boolean) : [];

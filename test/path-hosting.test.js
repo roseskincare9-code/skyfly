@@ -127,7 +127,7 @@ describe('demo site', () => {
     assert.equal(await ensureDemoSite(pool, { demoSite: false }, quiet), null);
     const { rows: [b] } = await pool.query("SELECT name, subscription_status, default_sheet_connection_id FROM businesses WHERE id = $1", [id]);
     assert.deepEqual([b.name, b.subscription_status, b.default_sheet_connection_id], ['Skyfly Demo Shop (test)', 'internal', null]);
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM pixel_settings WHERE business_id = $1', [id])).rows[0].n, 0);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM tracking_pixels WHERE business_id = $1', [id])).rows[0].n, 0);
     const page = await request(app).get('/p/skyfly-demo/').expect(200);
     assert.match(page.text, /data-skyfly-checkout/);
     await request(app).get('/p/skyfly-demo/hero.jpg').expect(200).expect('Content-Type', /image\/jpeg/);

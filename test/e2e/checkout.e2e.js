@@ -58,7 +58,7 @@ try {
     await dash.click('button[type=submit]');
     await dash.waitForURL(`${DASH}/`);
     businessId = await seedLarose(pool, 'owner@larose.test');
-    await pool.query('DELETE FROM additional_pixels'); // this test covers one pixel (see additional-pixels.test.js)
+    await pool.query("DELETE FROM tracking_pixels WHERE business_id = $1 AND name <> 'Main Meta pixel'", [businessId]); // this test covers one pixel (tracking.e2e.js covers many)
     await dash.goto(`${DASH}/businesses/${businessId}/landing-pages`);
     await dash.fill('#imp-name', 'Glow Drop');
     await dash.setInputFiles('#imp-file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(PAGE_HTML) });

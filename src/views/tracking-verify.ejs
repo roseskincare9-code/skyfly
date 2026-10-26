@@ -1,0 +1,59 @@
+<%- include('partials/head', { title: 'Verify tracking ID' }) %>
+<%- include('partials/nav') %>
+<main style="max-width:820px">
+  <p><a href="<%= base %>/pixels?platform=<%= p.platform %>">← Tracking &amp; Pixels</a></p>
+  <h1>Verify <%= p.name %> <span class="muted" style="font-size:1rem"><%= SHORT_LABELS[p.platform] %> <%= p.pixel_id %></span></h1>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+  <div class="card">
+    <h2>Status</h2>
+    <dl class="kv" data-verify-status>
+      <dt>Saved</dt><dd>Yes</dd>
+      <dt>Enabled</dt><dd><%= p.enabled ? 'Yes' : 'No: switch it on to load it on its pages' %></dd>
+      <dt>Assigned to pages</dt><dd><%= p.all_pages ? 'All pages' : p.pages.length ? p.pages.map((x) => x.name).join(', ') : 'None yet: edit it and choose pages' %></dd>
+      <dt>Browser tag loaded</dt><dd><%= p.browser_seen_at ? 'Yes, on ' + (p.browser_seen_page || 'a page') + ', ' + formatDate(p.browser_seen_at) : 'Not seen yet: open an assigned page (below)' %></dd>
+      <dt>Events received</dt><dd><%= p.test_event_at ? 'Test event accepted by ' + SHORT_LABELS[p.platform] + ' on ' + formatDate(p.test_event_at) : p.browser_verified_at ? 'Confirmed by you in ' + SHORT_LABELS[p.platform] + '\'s test tool on ' + formatDate(p.browser_verified_at) : 'Not verified yet' %></dd>
+      <% if (PROVIDERS.includes(p.platform)) { %>
+      <dt>Server-side</dt><dd><%= p.server_purchase && p.access_token_enc ? 'Configured' + (p.server_verified_at ? '; delivery confirmed ' + formatDate(p.server_verified_at) : '; delivery not confirmed yet') : 'Not configured (optional)' %></dd>
+      <% } %>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>1. Check the page</h2>
+    <p>Open an assigned page with Skyfly's check panel. It lists every tracking ID on the page, whether its script loaded, and each event sent to it.</p>
+    <ul style="padding-left:18px">
+      <% pages.forEach((pg) => { %><li><%= pg.name %>: <% if (urls[pg.id]) { %><a href="<%= urls[pg.id] %>" target="_blank" rel="noopener" data-check-link>open with check panel</a><% } else { %><span class="muted">no address</span><% } %></li><% }) %>
+      <% if (!pages.length) { %><li class="muted">No pages assigned yet.</li><% } %>
+    </ul>
+    <p class="muted" style="font-size:13px">Expected: <strong>PageView</strong> once on load<% if (p.events.includes('ViewContent')) { %>, <strong>ViewContent</strong> once<% } %>; tapping the order form sends <strong>InitiateCheckout</strong> once. A test order (name starting "TEST ORDER") sends <strong>no Purchase</strong>.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. Confirm in <%= SHORT_LABELS[p.platform] %></h2>
+    <% if (p.platform === 'meta') { %><p>Meta Events Manager → your pixel → <strong>Test events</strong> (or the Meta Pixel Helper extension): open the page and check PageView arrives once for <%= p.pixel_id %>.</p>
+    <% } else if (p.platform === 'tiktok') { %><p>TikTok Events Manager → your pixel → <strong>Test events</strong> (or the TikTok Pixel Helper extension): open the page and check PageView arrives once.</p>
+    <% } else { %><p>X Ads → Tools → <strong>Events Manager</strong> → your pixel: page visits appear after a few minutes; each event shows its own activity once it has fired (X Pixel Helper extension shows them live).</p><% } %>
+    <form method="post" action="<%= base %>/pixels/<%= p.id %>/browser-verified">
+      <%- include('partials/csrf') %>
+      <% if (p.browser_verified_at) { %><input type="hidden" name="verified" value="false"><button class="secondary" type="submit">Mark as not verified</button>
+      <% } else { %><input type="hidden" name="verified" value="true"><button class="secondary" type="submit">I've checked: events arrive once</button><% } %>
+    </form>
+  </div>
+
+  <% if (PROVIDERS.includes(p.platform)) { %>
+  <div class="card">
+    <h2>3. Server test event (optional)</h2>
+    <% if (p.access_token_enc && p.test_event_code) { %>
+      <p>Sends one clearly labelled test Purchase with the test event code: it shows only in <%= SHORT_LABELS[p.platform] %>'s Test events screen, never in real reporting.</p>
+      <form method="post" action="<%= base %>/pixels/<%= p.id %>/test"><%- include('partials/csrf') %><button type="submit">Send test Purchase</button></form>
+    <% } else { %><p class="muted">Add an access token and a test event code (Edit) to send a server test event.</p><% } %>
+    <% if (recent.length) { %>
+      <h3 style="font-size:1rem">Latest server events</h3>
+      <ul style="padding-left:18px"><% recent.forEach((r) => { %><li><%= r.event_name %> · <a href="<%= base %>/orders/<%= r.order_id %>"><%= r.reference %></a> · <strong><%= r.status %></strong><%= r.last_error ? ' (' + r.last_error + ')' : '' %> · <%= formatDate(r.at) %></li><% }) %></ul>
+    <% } %>
+  </div>
+  <% } %>
+</main>
+</body></html>

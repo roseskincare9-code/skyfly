@@ -180,8 +180,11 @@ export async function validateVersion(pool, config, page, versionId) {
   if (!number) add('whatsapp', 'WhatsApp support button', 'WARNING', 'No WhatsApp number is set, so the thank-you page has no WhatsApp button (optional).', 'Settings → WhatsApp number.');
 
   // 10. Optional integrations (never block publishing).
-  const { rows: px } = await pool.query("SELECT provider FROM pixel_settings WHERE business_id = $1 AND enabled AND pixel_id IS NOT NULL AND (landing_page_id IS NULL OR landing_page_id = $2)", [page.business_id, page.id]);
-  add('pixels', 'Pixels (optional)', 'PASS', px.length ? `${[...new Set(px.map((p) => p.provider))].join(', ')} pixel of this business; Purchase fires only after a saved order.` : 'None set up (optional).');
+  const { rows: px } = await pool.query(
+    `SELECT platform FROM tracking_pixels tp WHERE tp.business_id = $1 AND tp.enabled
+        AND (tp.all_pages OR EXISTS (SELECT 1 FROM tracking_pixel_pages pp WHERE pp.tracking_pixel_id = tp.id AND pp.landing_page_id = $2))`, [page.business_id, page.id]);
+  const names = { meta: 'Meta', tiktok: 'TikTok', x: 'X' };
+  add('pixels', 'Pixels (optional)', 'PASS', px.length ? `${px.length} tracking ID(s) on this page (${[...new Set(px.map((p) => names[p.platform]))].join(', ')}); Purchase fires only after a saved order.` : 'None assigned to this page (optional; Tracking & Pixels).');
   const { rows: [sheet] } = await pool.query(
     'SELECT sc.name FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id JOIN sheet_connections sc ON sc.id = coalesce(lp.sheet_connection_id, b.default_sheet_connection_id) AND sc.business_id = lp.business_id WHERE lp.id = $1', [page.id]);
   add('sheets', 'Google Sheets (optional)', 'PASS', sheet ? `Orders are copied to "${sheet.name}" after they are saved, following this business's settings.` : 'Not set up (optional): orders are kept in Skyfly.');

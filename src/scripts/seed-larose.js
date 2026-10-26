@@ -64,21 +64,13 @@ export async function seedLarose(pool, ownerEmail) {
        ON CONFLICT DO NOTHING`,
       [businessId],
     );
-    // The Meta Pixel already on the live page (public ID). Its access token is added by the owner on the Pixels screen.
-    await client.query(
-      `INSERT INTO pixel_settings (business_id, provider, enabled, pixel_id, events)
-       VALUES ($1, 'meta', true, $2, ARRAY['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'])
-       ON CONFLICT (business_id, provider) WHERE landing_page_id IS NULL DO NOTHING`,
-      [businessId, LAROSE_META_PIXEL_ID],
-    );
-    // "Pixel New", added by the owner next to the main pixel (see migration 025).
-    await client.query(
-      `INSERT INTO additional_pixels (business_id, provider, name, pixel_id) VALUES ($1, 'meta', 'Pixel New', $2) ON CONFLICT DO NOTHING`,
-      [businessId, LAROSE_PIXEL_NEW_ID],
-    );
-    for (const p of LAROSE_AD_ACCOUNT_PIXELS) {
+    // Larose's tracking IDs (public Meta Pixel IDs, on all of its pages): the pixel already on the live
+    // page, "Pixel New" and the pixels of the owner's other ad accounts. Access tokens are added by the
+    // owner under Tracking & Pixels.
+    for (const p of [{ name: 'Main Meta pixel', id: LAROSE_META_PIXEL_ID }, { name: 'Pixel New', id: LAROSE_PIXEL_NEW_ID }, ...LAROSE_AD_ACCOUNT_PIXELS]) {
       await client.query(
-        `INSERT INTO additional_pixels (business_id, provider, name, pixel_id) VALUES ($1, 'meta', $2, $3) ON CONFLICT DO NOTHING`,
+        `INSERT INTO tracking_pixels (business_id, platform, name, pixel_id, enabled, all_pages)
+         VALUES ($1, 'meta', $2, $3, true, true) ON CONFLICT (business_id, platform, pixel_id) DO NOTHING`,
         [businessId, p.name, p.id],
       );
     }

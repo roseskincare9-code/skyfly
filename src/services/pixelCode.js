@@ -1,4 +1,4 @@
-// Reads a Meta or TikTok base code pasted by the owner and returns its Pixel ID.
+// Reads a Meta, TikTok or X base code pasted by the owner and returns its Pixel ID.
 // The pasted code is NEVER stored or run: Skyfly only takes the ID out of it and
 // loads the official script itself, so a page can never get the pixel twice.
 // Anything that is not the platform's own base code is rejected.
@@ -19,6 +19,13 @@ const RULES = {
     hosts: ['analytics.tiktok.com'],
     ids: [/ttq\.load\s*\(\s*['"]([A-Za-z0-9]{10,40})['"]/g],
     missing: 'Paste the whole TikTok Pixel base code from TikTok Events Manager (it contains ttq.load(\'…\')).',
+  },
+  x: {
+    name: 'X Pixel',
+    required: [/static\.ads-twitter\.com\/uwt\.js/, /twq\s*\(/],
+    hosts: ['static.ads-twitter.com'],
+    ids: [/twq\s*\(\s*['"]config['"]\s*,\s*['"]([A-Za-z0-9]{4,12})['"]/g],
+    missing: 'Paste the whole X Pixel base code from X Ads → Tools → Events Manager (it contains twq(\'config\', \'…\')).',
   },
 };
 
@@ -46,9 +53,10 @@ export function parsePixelCode(provider, code) {
   if (!text) return { error: `Paste your ${rule.name} code first.` };
   if (text.length > MAX_LENGTH) return { error: 'That is much longer than a pixel base code. Paste only the base code.' };
 
-  const other = provider === 'meta' ? RULES.tiktok : RULES.meta;
-  if (other.required.every((re) => re.test(text)) && !rule.required.every((re) => re.test(text))) {
-    return { error: `This looks like ${other.name} code. Paste it in the ${other.name} box instead.` };
+  for (const other of Object.values(RULES).filter((r) => r !== rule)) {
+    if (other.required.every((re) => re.test(text)) && !rule.required.every((re) => re.test(text))) {
+      return { error: `This looks like ${other.name} code. Choose ${other.name.replace(' Pixel', '')} as the platform instead.` };
+    }
   }
   if (!rule.required.every((re) => re.test(text))) return { error: rule.missing };
 
@@ -61,8 +69,13 @@ export function parsePixelCode(provider, code) {
   }
 
   const ids = new Set();
-  for (const re of rule.ids) for (const m of text.matchAll(re)) ids.add(provider === 'tiktok' ? m[1].toUpperCase() : m[1]);
+  for (const re of rule.ids) for (const m of text.matchAll(re)) ids.add(provider === 'tiktok' ? m[1].toUpperCase() : provider === 'x' ? m[1].toLowerCase() : m[1]);
   if (ids.size === 0) return { error: `No Pixel ID was found in this code. ${rule.missing}` };
-  if (ids.size > 1) return { error: `This code contains ${ids.size} different pixels (${[...ids].join(', ')}). Add one pixel per platform.` };
-  return { pixelId: [...ids][0] };
+  if (ids.size > 1) return { error: `This code contains ${ids.size} different pixels (${[...ids].join(', ')}). Add each pixel on its own.` };
+  const pixelId = [...ids][0];
+  // X event codes in the pasted code (twq('event', 'tw-<pixel>-<event>', …)): their event IDs, to choose from.
+  const eventIds = provider === 'x'
+    ? [...new Set([...text.matchAll(/['"]tw-([a-z0-9]{4,12})-([a-z0-9]{4,12})['"]/gi)].filter((m) => m[1].toLowerCase() === pixelId).map((m) => m[2].toLowerCase()))]
+    : [];
+  return { pixelId, eventIds };
 }

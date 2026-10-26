@@ -1,0 +1,23 @@
+<%- include('partials/head', { title: 'Remove tracking ID' }) %>
+<%- include('partials/nav') %>
+<main style="max-width:720px">
+  <p><a href="<%= base %>/pixels?platform=<%= p.platform %>">← Tracking &amp; Pixels</a></p>
+  <h1>Remove <%= p.name %>?</h1>
+  <div class="card" data-dependencies>
+    <p><%= SHORT_LABELS[p.platform] %> pixel <code><%= p.pixel_id %></code> will stop tracking straight away. The other tracking IDs are not changed.</p>
+    <ul style="padding-left:18px">
+      <li>Pages: <strong><%= p.all_pages ? 'all ' + pageCount + ' landing page(s)' : p.pages.length ? p.pages.map((x) => x.name).join(', ') : 'none' %></strong> will no longer send events to it.</li>
+      <li>Events: <%= p.enabled ? 'it is enabled now (' + p.events.join(', ') + ')' : 'it is disabled' %>.</li>
+      <% if (p.access_token_enc) { %><li>Its saved server access token is deleted too.</li><% } %>
+      <li><%= events %> server event record(s) for this pixel stay on their orders (history is kept).</li>
+    </ul>
+    <p class="muted">To pause it instead, use <strong>Disable</strong>: its settings stay saved.</p>
+    <form method="post" action="<%= base %>/pixels/<%= p.id %>/remove">
+      <%- include('partials/csrf') %>
+      <label for="confirm">Type the pixel ID <code><%= p.pixel_id %></code> to confirm</label>
+      <input id="confirm" name="confirm" autocomplete="off" required>
+      <p><button type="submit">Remove tracking ID</button> <a href="<%= base %>/pixels?platform=<%= p.platform %>">Cancel</a></p>
+    </form>
+  </div>
+</main>
+</body></html>

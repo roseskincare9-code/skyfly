@@ -5,10 +5,10 @@ import { asyncHandler } from '../lib/http.js';
 import { createOrder, OrderError, validateOrderInput, isTestName } from '../services/orders.js';
 import { recordPurchase } from '../services/pixels.js';
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
-import { allKnownOrigins } from '../lib/origins.js';
+import { allKnownOrigins, originsForPage } from '../lib/origins.js';
 import { hashApiKey } from '../lib/apiKeys.js';
 import { subscriptionState } from '../services/tenancy.js';
-import { browserConfig } from '../services/pixels.js';
+import { browserConfig, markBrowserSeen } from '../services/pixels.js';
 import { confirmVerification } from '../services/orderNotifications.js';
 import { validateCheckoutInput, saveCheckout, resumeCheckout, linkOrder } from '../services/checkouts.js';
 
@@ -94,6 +94,25 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     res.status(status).json({ ok: false, error: status === 400 ? 'BAD_REQUEST' : 'SERVER_ERROR' });
   });
   router.use('/api/public/checkouts', checkouts);
+
+  // "Browser tag loaded": a published page reports which tracking IDs' scripts loaded on it (text/plain
+  // from navigator.sendBeacon). Only that page's business's IDs that track that page are updated; a
+  // website not registered for the page is refused.
+  const seen = Router();
+  seen.use(cors(pool, config));
+  seen.use(rateLimit({ windowMs: 10 * 60 * 1000, limit: config.orderRateLimit * 15, keyGenerator: (req) => ipKeyGenerator(req.ip), standardHeaders: 'draft-7', legacyHeaders: false, skip: (req) => req.method === 'OPTIONS', handler: (req, res) => res.status(429).json({ ok: false }) }));
+  seen.use(express.text({ limit: '10kb', type: 'text/plain' }), express.json({ limit: '10kb' }));
+  seen.post('/', asyncHandler(async (req, res) => {
+    let body = req.body;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ ok: false }); } }
+    const { rows: [page] } = await pool.query(
+      `SELECT lp.id, lp.slug, lp.business_id, lp.url, lp.custom_domain, (lp.published_version_id IS NOT NULL) AS hosted, b.subdomain AS business_subdomain
+         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND lp.status = 'active'`, [String(body?.page ?? '').toLowerCase()]);
+    if (!page || !originsForPage(page, config).has(req.headers.origin)) return res.status(403).json({ ok: false });
+    await markBrowserSeen(pool, page, body?.pixels);
+    res.json({ ok: true });
+  }));
+  router.use('/api/public/pixels-seen', seen);
 
   const api = Router();
   api.use(cors(pool, config));

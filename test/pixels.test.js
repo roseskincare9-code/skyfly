@@ -39,14 +39,23 @@ let n = 0;
 const META_TOKEN = 'EAAB-meta-secret-token-1234567890';
 const TIKTOK_TOKEN = 'tiktok-secret-token-abcdefghijklmnop';
 
-function save(fields, page = null) {
+const ids = {};
+// Adds a tracking ID through the dashboard form; returns the response.
+function add(fields) {
   const sent = (async () => {
-    const path = `/businesses/${businessId}/pixels${page ? `?page=${page}` : ''}`;
-    const _csrf = await csrfToken(owner, path);
-    return owner.post(`/businesses/${businessId}/pixels`).type('form').send({ _csrf, ...(page ? { page } : {}), ...fields });
+    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels/new`);
+    return owner.post(`/businesses/${businessId}/pixels`).type('form').send({ _csrf, name: 'Pixel', all_pages: 'on', ...fields });
   })();
   return { expect: (status) => sent.then((res) => { assert.equal(res.status, status, res.text.slice(0, 300)); return res; }) };
 }
+function edit(id, fields) {
+  const sent = (async () => {
+    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels/${id}/edit`);
+    return owner.post(`/businesses/${businessId}/pixels/${id}`).type('form').send({ _csrf, name: 'Pixel', all_pages: 'on', ...fields });
+  })();
+  return { expect: (status) => sent.then((res) => { assert.equal(res.status, status, res.text.slice(0, 300)); return res; }) };
+}
+const idOf = async (platform, pixelId) => (await pool.query('SELECT id FROM tracking_pixels WHERE business_id = $1 AND platform = $2 AND pixel_id = $3', [businessId, platform, pixelId])).rows[0]?.id;
 
 async function placeOrder(overrides = {}) {
   n += 1;
@@ -71,7 +80,7 @@ before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
   businessId = await seedLarose(pool, 'owner@larose.test');
-  await pool.query('DELETE FROM additional_pixels'); // these tests cover the main pixels only (see additional-pixels.test.js)
+  await pool.query('DELETE FROM tracking_pixels WHERE business_id = $1', [businessId]); // these tests set up their own IDs (see tracking-manager.test.js for the seeded ones)
 });
 after(async () => {
   await pool.end();
@@ -80,38 +89,42 @@ after(async () => {
 
 describe('pixel settings', () => {
   test('invalid IDs are rejected with a helpful message', async () => {
-    const res = await save({ provider: 'meta', enabled: 'on', pixel_id: 'abc123' }).expect(400);
+    const res = await add({ platform: 'meta', enabled: 'on', events: ['PageView'], pixel_id: 'abc123' }).expect(400);
     assert.match(res.text, /should be a number of 10–20 digits/);
-    const tt = await save({ provider: 'tiktok', enabled: 'on', pixel_id: 'x' }).expect(400);
+    const tt = await add({ platform: 'tiktok', enabled: 'on', events: ['PageView'], pixel_id: 'x' }).expect(400);
     assert.match(tt.text, /10–40 letters and digits/);
   });
 
   test('server Purchase needs a token; tokens are encrypted and never shown again', async () => {
-    assert.match((await save({ provider: 'meta', enabled: 'on', pixel_id: '123456789012345', server_purchase: 'on' }).expect(400)).text, /needs an access token/);
-    await save({
-      provider: 'meta', enabled: 'on', pixel_id: '123456789012345', events: ['PageView', 'InitiateCheckout', 'Lead'],
+    assert.match((await add({ platform: 'meta', enabled: 'on', events: ['PageView'], pixel_id: '123456789012345', server_purchase: 'on' }).expect(400)).text, /needs an access token/);
+    await add({
+      platform: 'meta', name: 'Main Meta', enabled: 'on', pixel_id: '123456789012345', events: ['PageView', 'InitiateCheckout', 'Lead'],
       server_purchase: 'on', access_token: META_TOKEN, test_event_code: 'TEST123',
     }).expect(302);
-    await save({
-      provider: 'tiktok', enabled: 'on', pixel_id: 'c4abcdefgh1234567890', events: ['PageView', 'Lead'],
+    await add({
+      platform: 'tiktok', name: 'Main TikTok', enabled: 'on', pixel_id: 'c4abcdefgh1234567890', events: ['PageView', 'Lead'],
       server_purchase: 'on', access_token: TIKTOK_TOKEN,
     }).expect(302);
-    const { rows } = await pool.query('SELECT * FROM pixel_settings ORDER BY provider');
+    const { rows } = await pool.query('SELECT * FROM tracking_pixels ORDER BY platform');
     assert.equal(rows[1].pixel_id, 'C4ABCDEFGH1234567890', 'TikTok ID upper-cased');
     for (const r of rows) {
       assert.ok(!JSON.stringify(r).includes(META_TOKEN) && !JSON.stringify(r).includes(TIKTOK_TOKEN), 'no plaintext token in DB');
     }
     assert.equal(decrypt(encryptionKey, rows[0].access_token_enc), META_TOKEN);
-    const page = await owner.get(`/businesses/${businessId}/pixels`).expect(200);
-    assert.ok(!page.text.includes(META_TOKEN) && !page.text.includes(TIKTOK_TOKEN));
-    assert.match(page.text, /saved; leave blank to keep it/);
+    ids.meta = await idOf('meta', '123456789012345');
+    ids.tiktok = await idOf('tiktok', 'C4ABCDEFGH1234567890');
+    for (const path of ['', `/${ids.meta}/edit`, `/${ids.meta}/verify`, `/${ids.meta}/remove`]) {
+      const page = await owner.get(`/businesses/${businessId}/pixels${path}`).expect(200);
+      assert.ok(!page.text.includes(META_TOKEN) && !page.text.includes(TIKTOK_TOKEN));
+    }
+    assert.match((await owner.get(`/businesses/${businessId}/pixels/${ids.meta}/edit`).expect(200)).text, /saved; leave blank to keep it/);
 
     // Saving again with a blank token keeps the stored one.
-    await save({ provider: 'meta', enabled: 'on', pixel_id: '123456789012345', events: ['PageView', 'Lead'], server_purchase: 'on', test_event_code: 'TEST123' }).expect(302);
-    const { rows: [meta] } = await pool.query("SELECT access_token_enc, events FROM pixel_settings WHERE provider = 'meta'");
+    await edit(ids.meta, { name: 'Main Meta', enabled: 'on', pixel_id: '123456789012345', events: ['PageView', 'Lead'], server_purchase: 'on', test_event_code: 'TEST123' }).expect(302);
+    const { rows: [meta] } = await pool.query("SELECT access_token_enc, events FROM tracking_pixels WHERE platform = 'meta'");
     assert.equal(decrypt(encryptionKey, meta.access_token_enc), META_TOKEN);
     assert.deepEqual(meta.events, ['PageView', 'Lead']);
-    const audit = await pool.query("SELECT details FROM audit_log WHERE action = 'pixel.updated'");
+    const audit = await pool.query("SELECT details FROM audit_log WHERE action LIKE 'tracking.%'");
     assert.ok(!JSON.stringify(audit.rows).includes(META_TOKEN), 'tokens never in the audit log');
   });
 
@@ -122,7 +135,7 @@ describe('pixel settings', () => {
       page: 'larosenigeria',
       pixels: [
         { provider: 'meta', id: '123456789012345', events: ['PageView', 'Lead'] },
-        { provider: 'tiktok', id: 'C4ABCDEFGH1234567890', events: ['PageView', 'Lead'] },
+        { provider: 'tiktok', id: 'C4ABCDEFGH1234567890', events: ['PageView', 'Lead'], purchaseEvent: 'CompletePayment' },
       ],
     });
     assert.ok(!JSON.stringify(res.body).match(/TEST123|token/i));
@@ -208,32 +221,40 @@ describe('Purchase events', () => {
     assert.deepEqual(after, { status: 'sent', attempts: 2, event_id: `purchase_${order.reference}` });
   });
 
-  test('a page can use its own pixel instead of the business default', async () => {
+  test('a second Meta ID assigned to one page also gets the Purchase; switching it off stops only it', async () => {
     const { rows: [lp] } = await pool.query("SELECT id FROM landing_pages WHERE slug = 'larosenigeria'");
-    await save({ provider: 'meta', enabled: 'on', pixel_id: '999999999999999', events: ['PageView'], server_purchase: 'on', access_token: 'EAAB-page-specific-token-999' }, lp.id).expect(302);
-    await save({ provider: 'tiktok', pixel_id: 'C4ABCDEFGH1234567890' }, lp.id).expect(302); // TikTok off for this page
+    await add({ platform: 'meta', name: 'Ad account 2', enabled: 'on', pixel_id: '999999999999999', events: ['PageView'], server_purchase: 'on', access_token: 'EAAB-page-specific-token-999', all_pages: '', pages: [String(lp.id)] }).expect(302);
+    const second = await idOf('meta', '999999999999999');
     calls.length = 0;
     const order = await placeOrder();
     await setPayment(order.id, 'paid');
-    assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/999999999999999\/events\?access_token=EAAB-page-specific-token-999$/);
+    assert.equal(calls.length, 3, 'two Meta IDs and one TikTok ID');
+    assert.ok(calls.some((c) => /\/999999999999999\/events\?access_token=EAAB-page-specific-token-999$/.test(c.url)));
+    assert.ok(calls.some((c) => /\/123456789012345\/events/.test(c.url)));
     const cfg = await request(app).get('/api/public/pages/larosenigeria/tracking').expect(200);
-    assert.deepEqual(cfg.body.pixels, [{ provider: 'meta', id: '999999999999999', events: ['PageView'] }]);
+    assert.deepEqual(cfg.body.pixels.map((p) => p.id), ['123456789012345', 'C4ABCDEFGH1234567890', '999999999999999']);
 
-    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels?page=${lp.id}`);
-    await owner.post(`/businesses/${businessId}/pixels/remove-override`).type('form').send({ _csrf, page: lp.id }).expect(302);
+    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels`);
+    await owner.post(`/businesses/${businessId}/pixels/${second}/toggle`).type('form').send({ _csrf, enabled: 'false' }).expect(302);
     const back = await request(app).get('/api/public/pages/larosenigeria/tracking').expect(200);
-    assert.equal(back.body.pixels.length, 2);
+    assert.deepEqual(back.body.pixels.map((p) => p.id), ['123456789012345', 'C4ABCDEFGH1234567890']);
+    calls.length = 0;
+    const later = await placeOrder();
+    await setPayment(later.id, 'paid');
+    assert.equal(calls.length, 2);
+    await pool.query('DELETE FROM tracking_pixels WHERE id = $1', [second]);
   });
 
   test('the test button sends a Purchase marked with the test event code', async () => {
     calls.length = 0;
-    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels`);
-    const res = await owner.post(`/businesses/${businessId}/pixels/test`).type('form').send({ _csrf, provider: 'meta' }).expect(200);
-    assert.match(res.text, /Test Purchase accepted/);
+    const _csrf = await csrfToken(owner, `/businesses/${businessId}/pixels/${ids.meta}/verify`);
+    const res = await owner.post(`/businesses/${businessId}/pixels/${ids.meta}/test`).type('form').send({ _csrf }).expect(200);
+    assert.match(res.text, /accepted the test Purchase/);
     assert.equal(calls[0].body.test_event_code, 'TEST123');
-    const csrf2 = await csrfToken(owner, `/businesses/${businessId}/pixels`);
-    const tt = await owner.post(`/businesses/${businessId}/pixels/test`).type('form').send({ _csrf: csrf2, provider: 'tiktok' }).expect(502);
+    const { rows: [m] } = await pool.query('SELECT test_event_at FROM tracking_pixels WHERE id = $1', [ids.meta]);
+    assert.ok(m.test_event_at, 'shown as "Test event received"');
+    const csrf2 = await csrfToken(owner, `/businesses/${businessId}/pixels/${ids.tiktok}/verify`);
+    const tt = await owner.post(`/businesses/${businessId}/pixels/${ids.tiktok}/test`).type('form').send({ _csrf: csrf2 }).expect(502);
     assert.match(tt.text, /Add a test event code first/);
   });
 });
@@ -267,10 +288,10 @@ describe('hosted page injection', () => {
 describe('Purchase when the order is saved (pixels set to count Purchase at save)', () => {
   const waitCalls = async (want) => { for (let i = 0; i < 50 && calls.length < want; i += 1) await new Promise((r) => setTimeout(r, 20)); };
   before(async () => {
-    await pool.query("UPDATE pixel_settings SET events = ARRAY['PageView', 'Lead', 'Purchase'] WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+    await pool.query("UPDATE tracking_pixels SET events = ARRAY['PageView', 'Lead', 'Purchase'] WHERE business_id = $1 AND platform = 'meta'", [businessId]);
   });
   after(async () => {
-    await pool.query("UPDATE pixel_settings SET events = ARRAY['PageView', 'Lead'] WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+    await pool.query("UPDATE tracking_pixels SET events = ARRAY['PageView', 'Lead'] WHERE business_id = $1 AND platform = 'meta'", [businessId]);
   });
 
   test('one server Purchase per saved order, with the browser\'s event ID; replays, Paid and test orders add none', async () => {
@@ -309,7 +330,7 @@ describe('Purchase when the order is saved (pixels set to count Purchase at save
     const order = await placeOrder({ customer: { name: 'TEST ORDER pixel check', phone: '0803 555 0101', address: '7 Pixel Lane, Lagos' } });
     assert.equal(order.test, true, 'the page is told it is a test order');
     await new Promise((r) => setTimeout(r, 200));
-    const { rows: [meta] } = await pool.query("SELECT test_event_code FROM pixel_settings WHERE business_id = $1 AND provider = 'meta'", [businessId]);
+    const { rows: [meta] } = await pool.query("SELECT test_event_code FROM tracking_pixels WHERE business_id = $1 AND platform = 'meta'", [businessId]);
     const sent = calls.length;
     assert.ok(calls.every((c) => c.body.test_event_code), 'anything sent carries the test event code');
     assert.equal(sent, meta.test_event_code ? 1 : 0);

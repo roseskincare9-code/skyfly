@@ -1,8 +1,8 @@
-<%- include('partials/head', { title: 'Pixels & Integrations' }) %>
+<%- include('partials/head', { title: 'Integrations' }) %>
 <%- include('partials/nav', { active: 'integrations' }) %>
 <main class="narrow">
-  <div class="page-head"><div><h1>Pixels &amp; Integrations</h1><p>Tracking pixels, Google Sheets and order API keys for <%= business.name %>. No ad-account login is ever needed.</p></div></div>
-  <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/pixels"><h2 style="margin-top:0">Tracking pixels</h2><p class="muted" style="margin:0">Meta Pixel and TikTok Pixel IDs for your landing pages: enable, disable and check them. Only the pixel ID is used.</p></a>
+  <div class="page-head"><div><h1>Integrations</h1><p>Tracking &amp; Pixels, Google Sheets and order API keys for <%= business.name %>. No ad-account login is ever needed.</p></div></div>
+  <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/pixels"><h2 style="margin-top:0">Tracking &amp; Pixels</h2><p class="muted" style="margin:0">Any number of Meta, TikTok and X tracking IDs: assign them to landing pages, enable, disable and verify them.</p></a>
   <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/google-sheets"><h2 style="margin-top:0">Google Sheets</h2><p class="muted" style="margin:0">Copy every order to your spreadsheet, with sync status and retries.</p></a>
   <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/api-keys"><h2 style="margin-top:0">Order API keys</h2><p class="muted" style="margin:0">For servers that send orders to Skyfly. Keep keys on the server: never in a web page.</p></a>
   <a class="card" style="display:block;text-decoration:none;color:inherit" href="<%= base %>/email?tab=setup"><h2 style="margin-top:0">Email sending</h2><p class="muted" style="margin:0">Your email provider for automations (Resend, Brevo or SendGrid).</p></a>

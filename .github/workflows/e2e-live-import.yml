@@ -11,6 +11,11 @@ on:
       url:
         description: Verified Skyfly service address (https://<name>.onrender.com)
         required: true
+      suite:
+        description: Which checks to run (the live-test sign-in lasts 20 minutes)
+        type: choice
+        default: all
+        options: [all, tracking]
 permissions:
   contents: read
 jobs:
@@ -29,21 +34,27 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       - name: Import → publish → order → dashboard (import test business)
+        if: inputs.suite == 'all'
         run: node test/e2e/live-import.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
       - name: Hosting, add-on and owner import/edit/republish/unpublish (demo shop)
-        if: always()
+        if: always() && inputs.suite == 'all'
         run: node test/e2e/live-hosting.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
       - name: Business owners' sign-in, isolation, switching, invitation, phone (test businesses only)
-        if: always()
+        if: always() && inputs.suite == 'all'
         run: node test/e2e/live-tenancy.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
-      - name: Abandoned checkouts on the demo shop (in progress → abandoned → resumed → recovered; about 12 minutes)
+      - name: Tracking & Pixels — add, load, switch off and remove Meta, TikTok and X IDs (import test business)
         if: always()
+        run: node test/e2e/live-tracking.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: Abandoned checkouts on the demo shop (in progress → abandoned → resumed → recovered; about 12 minutes)
+        if: always() && inputs.suite == 'all'
         run: node test/e2e/live-abandoned.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}

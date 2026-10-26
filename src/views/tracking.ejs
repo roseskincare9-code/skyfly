@@ -1,0 +1,64 @@
+<%- include('partials/head', { title: 'Tracking & Pixels' }) %>
+<%- include('partials/nav') %>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <h1>Tracking &amp; Pixels</h1>
+    <a class="btn" data-add href="<%= base %>/pixels/new?platform=<%= platform %>">+ Add <%= SHORT_LABELS[platform] %> tracking ID</a>
+  </div>
+  <p class="muted" style="margin-top:0">Add as many tracking IDs as you need for each platform, and choose which landing pages each one tracks. Each ID is saved on its own: adding, editing or switching one off never changes the others. New IDs are used on their pages straight away.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+
+  <nav class="row" role="tablist" aria-label="Platforms" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <% PLATFORMS.forEach((pl) => { const c = byPlatform[pl]; %>
+      <a role="tab" data-tab="<%= pl %>" aria-selected="<%= pl === platform %>" class="btn <%= pl === platform ? '' : 'secondary' %>" href="<%= base %>/pixels?platform=<%= pl %>"><%= PLATFORM_LABELS[pl] %> <span class="pill" style="margin-left:4px"><%= c ? c.on + ' on / ' + c.n : 0 %></span></a>
+    <% }) %>
+  </nav>
+
+  <% if (skyfly) { %><div class="notice" data-skyfly-pixel>This Skyfly business uses <strong>Skyfly's own Meta pixel <%= skyfly.pixel_id %></strong> (set on the server) while it has no Meta tracking ID of its own.</div><% } %>
+
+  <div class="card">
+  <% if (!list.length) { %>
+    <p class="muted" data-empty>No <%= SHORT_LABELS[platform] %> tracking IDs yet. <a href="<%= base %>/pixels/new?platform=<%= platform %>">Add the first one</a>.</p>
+  <% } else { %>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Tracking ID</th><th>Pages</th><th>Events</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      <% list.forEach((p) => { const ev = last[p.platform + ':' + p.pixel_id]; const xMissing = p.platform === 'x' ? p.events.filter((e) => X_EVENTS.includes(e) && !(p.settings.eventIds || {})[e]) : []; const serverReady = PROVIDERS.includes(p.platform) && p.server_purchase && p.access_token_enc; %>
+        <tr data-pixel="<%= p.pixel_id %>" data-enabled="<%= p.enabled %>">
+          <td><strong><%= p.name %></strong><br><code><%= p.pixel_id %></code></td>
+          <td><% if (p.all_pages) { %>All pages<% } else if (p.page_count) { %><%= p.page_names %><% } else { %><span class="pill pending">Not assigned</span><% } %></td>
+          <td style="font-size:13px"><%= p.events.join(', ') || '—' %><% if (xMissing.length) { %><br><span class="pill pending" style="white-space:normal" title="Add the X event ID for these events">needs X event ID: <%= xMissing.join(', ') %></span><% } %></td>
+          <td style="font-size:13px" data-statuses>
+            <span class="pill active">Saved</span>
+            <span class="pill <%= p.enabled ? 'active' : '' %>"><%= p.enabled ? 'Enabled' : 'Disabled' %></span>
+            <span class="pill <%= p.all_pages || p.page_count ? 'active' : 'pending' %>"><%= p.all_pages || p.page_count ? 'Assigned' : 'No pages' %></span>
+            <span class="pill <%= p.browser_seen_at ? 'active' : '' %>" title="The platform's script loaded with this ID on a live page"><%= p.browser_seen_at ? 'Tag loaded ' + formatDate(p.browser_seen_at) : 'Tag not seen yet' %></span>
+            <span class="pill <%= p.browser_verified_at || p.test_event_at ? 'active' : '' %>"><%= p.test_event_at ? 'Test event received' : p.browser_verified_at ? 'Events confirmed by you' : 'Events not verified' %></span>
+            <% if (PROVIDERS.includes(p.platform)) { %><span class="pill <%= serverReady ? (p.server_verified_at ? 'active' : 'pending') : '' %>"><%= serverReady ? (p.server_verified_at ? 'Server delivery confirmed' : 'Server configured, not confirmed') : 'Server-side off' %></span><% } %>
+            <% if (ev) { %><br><span class="muted">Last server event: <%= ev.event_name %> <%= ev.status %> <%= ev.reference ? '(' + ev.reference + ')' : '' %> <%= formatDate(ev.at) %></span><% } %>
+          </td>
+          <td>
+            <div class="row" style="gap:6px;flex-wrap:wrap">
+              <a class="btn secondary" href="<%= base %>/pixels/<%= p.id %>/edit">Edit</a>
+              <a class="btn secondary" href="<%= base %>/pixels/<%= p.id %>/verify">Verify</a>
+              <form method="post" action="<%= base %>/pixels/<%= p.id %>/toggle"><%- include('partials/csrf') %><input type="hidden" name="enabled" value="<%= !p.enabled %>"><button class="secondary" type="submit"><%= p.enabled ? 'Disable' : 'Enable' %></button></form>
+              <a class="btn secondary" href="<%= base %>/pixels/<%= p.id %>/remove">Remove</a>
+            </div>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+  <% } %>
+  </div>
+
+  <div class="card">
+    <h2>How tracking works</h2>
+    <ul style="padding-left:18px;margin-top:0">
+      <li>Every enabled tracking ID assigned to a page is loaded there <strong>once</strong>, with the platform's official script, and gets only the events ticked for it.</li>
+      <li><strong>Purchase</strong> is sent only after Skyfly has saved a real order (never for test orders or unfinished checkouts), once per order, with the saved total. Browser and server events share the order's event ID, so each platform counts it once. "Order placed" is not "delivered and paid": an order's payment status is on the order page.</li>
+      <li>Statuses come from evidence: <em>Tag loaded</em> = a live page reported the platform's script loaded with this ID; <em>Test event received</em> = the platform accepted a server test event; <em>Server delivery confirmed</em> = the platform accepted a server event from Skyfly.</li>
+    </ul>
+  </div>
+</main>
+</body></html>

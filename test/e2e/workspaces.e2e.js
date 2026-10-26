@@ -104,7 +104,7 @@ try {
     await p.click('main button[type=submit]');
     await p.waitForURL(`${DASH}/businesses/${bizId}`);
     const nav = await p.textContent('nav.side-nav');
-    for (const s of ['Overview', 'Orders', 'Products', 'Customers', 'Landing Pages', 'Email Contacts', 'Email Automations', 'Pixels & Integrations', 'Subscription', 'Settings']) assert.ok(nav.includes(s), s);
+    for (const s of ['Overview', 'Orders', 'Products', 'Customers', 'Landing Pages', 'Email Contacts', 'Email Automations', 'Tracking & Pixels', 'Integrations', 'Subscription', 'Settings']) assert.ok(nav.includes(s), s);
     assert.ok(!nav.includes('Platform admin'));
     const larose = (await pool.query("SELECT id FROM businesses WHERE slug = 'larose-nigeria'")).rows[0].id;
     const other = await p.goto(`${DASH}/businesses/${larose}/orders`);

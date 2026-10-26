@@ -1,34 +1,40 @@
-// Pixel settings, browser tracking config, and server-side Purchase events
-// (Meta Conversions API, TikTok Events API). Purchase is sent once per order and pixel, when
-// the order is saved or marked Paid (per pixel setting); test orders go only to Test events.
+// Tracking & Pixels: any number of tracking IDs per business and platform (Meta, TikTok, X), each
+// assigned to all of the business's landing pages or to chosen ones (tracking_pixels,
+// tracking_pixel_pages). The browser gets only enabled IDs for its page, without secrets; the
+// server sends Purchase (Meta Conversions API, TikTok Events API) once per order and ID, when the
+// order is saved or marked Paid (per ID); test orders go only to Test events.
 import { createHash } from 'node:crypto';
 import { decrypt, encrypt } from '../lib/secrets.js';
 
+export const PLATFORMS = ['meta', 'tiktok', 'x'];
+export const PLATFORM_LABELS = { meta: 'Meta (Facebook & Instagram)', tiktok: 'TikTok', x: 'X (Twitter)' };
+export const SHORT_LABELS = { meta: 'Meta', tiktok: 'TikTok', x: 'X' };
+// Platforms Skyfly can send server-side Purchase to (X's Conversions API needs an X developer app: not supported).
 export const PROVIDERS = ['meta', 'tiktok'];
-// Purchase (browser) fires once per order, only after Skyfly has saved it (never for test orders).
-export const BROWSER_EVENTS = ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'];
-// With browser Purchase on, Purchase means "order saved"; otherwise it means "marked Paid".
+// Skyfly's events. Purchase (browser) fires once per order, only after Skyfly has saved it (never for test orders).
+export const EVENTS = ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'];
+export const BROWSER_EVENTS = EVENTS;
+// With Purchase on, Purchase means "order saved"; otherwise (Meta/TikTok server) it means "marked Paid".
 export const purchaseOnSave = (s) => Array.isArray(s?.events) && s.events.includes('Purchase');
 export const PIXEL_ID_RULES = {
   meta: { re: /^\d{10,20}$/, hint: 'a number of 10–20 digits, e.g. 123456789012345' },
   tiktok: { re: /^[A-Z0-9]{10,40}$/, hint: '10–40 letters and digits, e.g. C4ABCDEFGH1234567890' },
+  x: { re: /^[a-z0-9]{4,12}$/, hint: '4–12 letters and digits, e.g. o1abc (from twq(\'config\', \'o1abc\'))' },
 };
+export const normalizePixelId = (platform, raw) => {
+  const v = String(raw ?? '').replace(/\s/g, '');
+  return platform === 'tiktok' ? v.toUpperCase() : platform === 'x' ? v.toLowerCase() : v;
+};
+// X: each conversion event has its own event ID from X Events Manager (the part after the pixel ID
+// in tw-<pixel>-<event>). PageView needs none: twq('config', pixel) records the page view.
+export const X_EVENT_RE = /^[a-z0-9]{4,12}$/;
+export const X_EVENTS = ['ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'];
+// TikTok's name for a completed purchase: CompletePayment (long-standing) or Purchase (newer accounts).
+export const TIKTOK_PURCHASE_EVENTS = ['CompletePayment', 'Purchase'];
+export const tiktokPurchaseEvent = (s, config = null) => (TIKTOK_PURCHASE_EVENTS.includes(s?.settings?.purchaseEvent) ? s.settings.purchaseEvent : (config?.tiktokPurchaseEvent || 'CompletePayment'));
 
-// Page-specific settings win over the business default, per provider. A Skyfly-owned business
-// with no Meta pixel of its own uses Skyfly's pixel (from the server config; nothing is stored).
-export async function effectiveSettings(pool, businessId, landingPageId, config = null) {
-  const { rows } = await pool.query(
-    `SELECT * FROM pixel_settings WHERE business_id = $1 AND (landing_page_id IS NULL OR landing_page_id = $2)
-      ORDER BY landing_page_id NULLS LAST`,
-    [businessId, landingPageId ?? 0],
-  );
-  const result = {};
-  for (const provider of PROVIDERS) result[provider] = rows.find((r) => r.provider === provider) ?? null;
-  if (!result.meta && config) result.meta = await platformPixel(pool, config, businessId);
-  return result;
-}
-
-// Skyfly's own pixel, for the businesses named in config.skyflyPixel.businesses only.
+// Skyfly's own pixel, for the businesses named in config.skyflyPixel.businesses only (used when such a
+// business has no Meta pixel of its own on the page). Lives in the server config; nothing is stored.
 export async function platformPixel(pool, config, businessId) {
   const p = config?.skyflyPixel;
   if (!p?.id || !PIXEL_ID_RULES.meta.re.test(p.id) || !p.businesses?.length) return null;
@@ -36,33 +42,56 @@ export async function platformPixel(pool, config, businessId) {
   if (!b || !p.businesses.includes(b.slug)) return null;
   const tokenEnc = p.accessToken && config.encryptionKey ? encrypt(config.encryptionKey, p.accessToken) : null;
   return {
-    id: null, platform: true, provider: 'meta', enabled: true, pixel_id: p.id, events: [...BROWSER_EVENTS],
+    id: null, platform: 'meta', provider: 'meta', skyfly: true, name: 'Skyfly pixel', enabled: true, pixel_id: p.id, events: [...EVENTS], settings: {},
     server_purchase: Boolean(tokenEnc), access_token_enc: tokenEnc, test_event_code: p.testEventCode,
   };
 }
 
-// Every pixel used for a page: the main one per provider (above), then the business's additional
-// named pixels (e.g. "Pixel New"). A pixel ID is listed once, whichever row names it first.
+// Every tracking ID of the business that tracks this page (on all pages, or assigned to it), in the
+// order they were added. Only IDs of the page's own business are ever returned.
 export async function pagePixels(pool, businessId, landingPageId, config = null) {
-  const settings = await effectiveSettings(pool, businessId, landingPageId, config);
-  const { rows: extra } = await pool.query(
-    'SELECT *, true AS extra FROM additional_pixels WHERE business_id = $1 ORDER BY id', [businessId]);
-  const list = [];
-  for (const s of [...PROVIDERS.map((p) => settings[p]), ...extra]) {
-    if (s && !list.some((x) => x.provider === s.provider && x.pixel_id === s.pixel_id)) list.push(s);
+  const { rows } = await pool.query(
+    `SELECT tp.*, tp.platform AS provider FROM tracking_pixels tp
+      WHERE tp.business_id = $1
+        AND (tp.all_pages OR EXISTS (SELECT 1 FROM tracking_pixel_pages pp WHERE pp.tracking_pixel_id = tp.id AND pp.landing_page_id = $2))
+      ORDER BY tp.id`, [businessId, landingPageId ?? 0]);
+  if (config && !rows.some((r) => r.platform === 'meta')) {
+    const own = await platformPixel(pool, config, businessId);
+    if (own) rows.push(own);
   }
-  return list;
+  return rows;
 }
 
-// What the browser needs: only enabled pixels with valid IDs. No secrets.
+// What the browser needs: enabled IDs with valid IDs and their events. No tokens, no settings beyond
+// the event names and X event IDs (both public: they are in the page's tracking calls anyway).
 export async function browserConfig(pool, page, config = null) {
   const pixels = [];
   for (const s of await pagePixels(pool, page.business_id, page.id, config)) {
-    if (s.enabled && s.pixel_id && PIXEL_ID_RULES[s.provider].re.test(s.pixel_id)) {
-      pixels.push({ provider: s.provider, id: s.pixel_id, events: s.events.filter((e) => BROWSER_EVENTS.includes(e)) });
+    if (!s.enabled || !PIXEL_ID_RULES[s.platform]?.re.test(s.pixel_id)) continue;
+    const p = { provider: s.platform, id: s.pixel_id, events: s.events.filter((e) => EVENTS.includes(e)) };
+    if (s.platform === 'tiktok') p.purchaseEvent = tiktokPurchaseEvent(s, config);
+    if (s.platform === 'x') {
+      p.eventIds = Object.fromEntries(X_EVENTS.filter((e) => X_EVENT_RE.test(s.settings?.eventIds?.[e] ?? '')).map((e) => [e, s.settings.eventIds[e]]));
     }
+    pixels.push(p);
   }
   return { page: page.slug, pixels };
+}
+
+// A published page reports which tracking IDs' scripts loaded (the "Browser tag loaded" status).
+// Only IDs of that page's business that track that page are updated, at most every 10 minutes.
+export async function markBrowserSeen(pool, page, reported) {
+  const ids = (Array.isArray(reported) ? reported : []).slice(0, 200)
+    .filter((r) => PLATFORMS.includes(r?.provider) && typeof r.id === 'string' && r.id.length <= 40);
+  if (!ids.length) return 0;
+  const { rowCount } = await pool.query(
+    `UPDATE tracking_pixels tp SET browser_seen_at = now(), browser_seen_page = $3
+      WHERE tp.business_id = $1 AND tp.enabled
+        AND (tp.platform, tp.pixel_id) IN (SELECT * FROM unnest($4::text[], $5::text[]))
+        AND (tp.all_pages OR EXISTS (SELECT 1 FROM tracking_pixel_pages pp WHERE pp.tracking_pixel_id = tp.id AND pp.landing_page_id = $2))
+        AND (tp.browser_seen_at IS NULL OR tp.browser_seen_at < now() - interval '10 minutes')`,
+    [page.business_id, page.id, page.slug, ids.map((r) => r.provider), ids.map((r) => r.id)]);
+  return rowCount;
 }
 
 const sha256 = (v) => createHash('sha256').update(v).digest('hex');
@@ -150,7 +179,7 @@ async function deliver(config, provider, settings, order, items, eventId, { test
       return { ok, status: r.status, error: ok ? null : (r.json?.error?.message || r.text) };
     }
     const r = await post(`${config.tiktokApiBase}/event/track/`, { 'Access-Token': token },
-      tiktokPayload(order, items, eventId, settings.pixel_id, config.tiktokPurchaseEvent || 'CompletePayment', testCode));
+      tiktokPayload(order, items, eventId, settings.pixel_id, tiktokPurchaseEvent(settings, config), testCode));
     const ok = r.status === 200 && r.json?.code === 0;
     return { ok, status: r.status, error: ok ? null : (r.json?.message || r.text) };
   } catch (err) {
@@ -165,7 +194,7 @@ async function loadOrder(pool, orderId) {
 }
 
 function serverReady(config, s) {
-  return Boolean(s?.enabled && s.server_purchase && s.pixel_id && s.access_token_enc && config.encryptionKey);
+  return Boolean(s?.enabled && PROVIDERS.includes(s.platform) && s.server_purchase && s.pixel_id && s.access_token_enc && config.encryptionKey);
 }
 
 // Server-side Purchase: when an order is saved (pixels counting Purchase at save) or when it is
@@ -214,15 +243,16 @@ async function recordTestPurchase(pool, config, order, items) {
   return results;
 }
 
-// The platform accepting an event is what makes server-side Purchase "verified".
-export async function markServerVerified(pool, settingsId, extra = false) {
-  if (!settingsId) return; // Skyfly's own pixel lives in the server config, not in pixel_settings
-  await pool.query(`UPDATE ${extra ? 'additional_pixels' : 'pixel_settings'} SET server_verified_at = now() WHERE id = $1`, [settingsId]);
+// The platform accepting an event is what makes server-side Purchase "verified" (Skyfly's own pixel
+// lives in the server config, not in tracking_pixels).
+export async function markServerVerified(pool, trackingId, { test = false } = {}) {
+  if (!trackingId) return;
+  await pool.query(`UPDATE tracking_pixels SET server_verified_at = now()${test ? ', test_event_at = now()' : ''} WHERE id = $1`, [trackingId]);
 }
 
 async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId, { test = false } = {}) {
   const r = await deliver(config, provider, settings, order, items, eventId, { test });
-  if (r.ok) await markServerVerified(pool, settings.id, Boolean(settings.extra));
+  if (r.ok) await markServerVerified(pool, settings.id, { test });
   await pool.query(
     `UPDATE conversion_events SET attempts = attempts + 1, status = $2, response_code = $3, last_error = $4,
             sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END WHERE id = $1`,

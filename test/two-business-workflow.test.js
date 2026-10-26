@@ -119,9 +119,9 @@ describe('1. each business is created and configured', () => {
       for (const [code, name, price] of [...c.products, ...(c.upsell ? [c.upsell] : [])]) {
         await form(c.agent, `${base}/products`, `${base}/products`, { code, name, price: String(price), options: code === c.upsell?.[0] ? '' : 'Size: 30ml, 50ml (+5000)' });
       }
-      const fields = { provider: 'meta', enabled: 'on', pixel_id: c.pixel, events: ['PageView', 'InitiateCheckout', 'Lead', 'Purchase'] };
+      const fields = { platform: 'meta', name: `${c.name} pixel`, all_pages: 'on', enabled: 'on', pixel_id: c.pixel, events: ['PageView', 'InitiateCheckout', 'Lead', 'Purchase'] };
       if (c.token) Object.assign(fields, { server_purchase: 'on', access_token: c.token, test_event_code: c.testCode });
-      await form(c.agent, `${base}/pixels`, `${base}/pixels`, fields);
+      await form(c.agent, `${base}/pixels/new`, `${base}/pixels`, fields);
       const sheets = await c.agent.get(`${base}/google-sheets`).expect(200);
       scripts[k].key = sheets.text.match(/name="script_key" value="([A-Za-z0-9_-]{32})"/)[1];
       await form(c.agent, `${base}/google-sheets`, `${base}/google-sheets/connections`,
@@ -284,12 +284,15 @@ describe('10–11. spreadsheets and emails, per business', () => {
 describe('12. one business cannot reach another\'s data or credentials', () => {
   test('B\'s owner gets "not found" for A\'s orders, pixels, sheets, settings and page; A\'s token never appears', async () => {
     const { rows: [o] } = await pool.query('SELECT id FROM orders WHERE reference = $1', [BIZ.a.realRef]);
-    for (const p of ['', '/orders', `/orders/${o.id}`, '/orders/export.csv', '/pixels', '/google-sheets', '/settings', `/landing-pages/${BIZ.a.pageId}`, '/products']) {
+    const { rows: [{ id: pixelA }] } = await pool.query('SELECT id FROM tracking_pixels WHERE business_id = $1', [BIZ.a.id]);
+    for (const p of ['', '/orders', `/orders/${o.id}`, '/orders/export.csv', '/pixels', `/pixels/${pixelA}/edit`, `/pixels/${pixelA}/verify`, '/google-sheets', '/settings', `/landing-pages/${BIZ.a.pageId}`, '/products']) {
       await BIZ.b.agent.get(`/businesses/${BIZ.a.id}${p}`).expect(404);
     }
-    const own = await BIZ.a.agent.get(`/businesses/${BIZ.a.id}/pixels`).expect(200);
-    assert.ok(!own.text.includes(BIZ.a.token), 'even its own token is never shown again');
-    const { rows: [px] } = await pool.query("SELECT access_token_enc FROM pixel_settings WHERE business_id = $1 AND provider = 'meta'", [BIZ.a.id]);
+    for (const p of ['', `/${pixelA}/edit`, `/${pixelA}/verify`]) {
+      const own = await BIZ.a.agent.get(`/businesses/${BIZ.a.id}/pixels${p}`).expect(200);
+      assert.ok(!own.text.includes(BIZ.a.token), 'even its own token is never shown again');
+    }
+    const { rows: [px] } = await pool.query("SELECT access_token_enc FROM tracking_pixels WHERE business_id = $1 AND platform = 'meta'", [BIZ.a.id]);
     assert.ok(px.access_token_enc && !px.access_token_enc.includes(BIZ.a.token), 'stored encrypted');
   });
 });

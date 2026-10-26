@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
-import { setup, resetDatabase, signUp, ORIGIN, openClientSignup } from './helpers.js';
+import { setup, resetDatabase, signUp, ORIGIN, openClientSignup, addTrackingPixel } from './helpers.js';
 import { seedLarose } from '../src/scripts/seed-larose.js';
 import { encrypt } from '../src/lib/secrets.js';
 import { retryEvent } from '../src/services/pixels.js';
@@ -53,12 +53,14 @@ before(async () => {
   larose = await seedLarose(pool, 'owner@larose.test');
   await openClientSignup(pool);
   // Larose: Meta (browser + server) and TikTok, both counting Purchase when the order is saved.
-  await pool.query(
-    `UPDATE pixel_settings SET pixel_id = $2, events = ARRAY['PageView','InitiateCheckout','Lead','Purchase'], server_purchase = true, access_token_enc = $3
-      WHERE business_id = $1 AND provider = 'meta'`, [larose, LAROSE_PIXEL, encrypt(encryptionKey, 'META-LAROSE-TOKEN')]);
-  await pool.query(
-    `INSERT INTO pixel_settings (business_id, provider, enabled, pixel_id, events, server_purchase, access_token_enc)
-     VALUES ($1, 'tiktok', true, 'C4LAROSE0000000000', ARRAY['PageView','Lead','Purchase'], true, $2)`, [larose, encrypt(encryptionKey, 'TT-LAROSE-TOKEN')]);
+  // (Larose's seeded pixels are replaced by these two; tracking-manager.test.js covers many IDs.)
+  await pool.query('DELETE FROM tracking_pixels WHERE business_id = $1', [larose]);
+  await addTrackingPixel(pool, larose, {
+    platform: 'meta', pixelId: LAROSE_PIXEL, events: ['PageView', 'InitiateCheckout', 'Lead', 'Purchase'], serverPurchase: true, tokenEnc: encrypt(encryptionKey, 'META-LAROSE-TOKEN'),
+  });
+  await addTrackingPixel(pool, larose, {
+    platform: 'tiktok', pixelId: 'C4LAROSE0000000000', events: ['PageView', 'Lead', 'Purchase'], serverPurchase: true, tokenEnc: encrypt(encryptionKey, 'TT-LAROSE-TOKEN'),
+  });
   // A second business with its own page, product and Meta pixel.
   const { rows: [u] } = await pool.query("INSERT INTO users (email, password_hash, name) VALUES ('other@shop.test', 'x', 'Other') RETURNING id");
   other = (await pool.query("INSERT INTO businesses (owner_id, name, slug, currency) VALUES ($1, 'Other Shop', 'other-shop', 'NGN') RETURNING id", [u.id])).rows[0].id;
@@ -66,9 +68,7 @@ before(async () => {
   const p = (await pool.query("INSERT INTO products (business_id, code, name, price_minor) VALUES ($1, 'glow-oil', 'Glow oil', 1500000) RETURNING id", [other])).rows[0].id;
   const lp = (await pool.query("INSERT INTO landing_pages (business_id, slug, name, url, status) VALUES ($1, 'other-page', 'Other page', $2, 'active') RETURNING id", [other, `${OTHER_ORIGIN}/`])).rows[0].id;
   await pool.query('INSERT INTO landing_page_products (landing_page_id, product_id) VALUES ($1, $2)', [lp, p]);
-  await pool.query(
-    `INSERT INTO pixel_settings (business_id, provider, enabled, pixel_id, events, server_purchase, access_token_enc)
-     VALUES ($1, 'meta', true, $2, ARRAY['PageView','Purchase'], true, $3)`, [other, OTHER_PIXEL, encrypt(encryptionKey, 'META-OTHER-TOKEN')]);
+  await addTrackingPixel(pool, other, { platform: 'meta', pixelId: OTHER_PIXEL, events: ['PageView', 'Purchase'], serverPurchase: true, tokenEnc: encrypt(encryptionKey, 'META-OTHER-TOKEN') });
   clearOriginCache();
 });
 after(async () => { await pool.end(); mock.close(); });
@@ -156,7 +156,7 @@ describe('one saved order, one Purchase', () => {
     // The browser SDK sends Meta "Purchase" with eventID purchase_<reference>, and TikTok "CompletePayment".
     const sdk = await request(app).get('/sdk/skyfly.js');
     assert.match(sdk.text, /track\('Purchase', \{ data: \{ value: data\.total, currency: data\.currency[^}]*\}, eventId: 'purchase_' \+ data\.reference \}/);
-    assert.match(sdk.text, /Purchase: 'CompletePayment'/);
+    assert.match(sdk.text, /Purchase: p\.purchaseEvent \|\| 'CompletePayment'/, 'TikTok: the name chosen for the pixel, CompletePayment by default (the server uses the same)');
   });
 
   test('H. opening the order confirmation again (or refreshing it) sends nothing', async () => {
@@ -222,7 +222,7 @@ describe('one saved order, one Purchase', () => {
   });
 
   test('with a test event code saved, a test order\'s server Purchase goes only to Test events (value, currency, labelled), once', async () => {
-    await pool.query("UPDATE pixel_settings SET test_event_code = 'TEST98765' WHERE business_id = $1 AND provider = 'meta'", [larose]);
+    await pool.query("UPDATE tracking_pixels SET test_event_code = 'TEST98765' WHERE business_id = $1 AND platform = 'meta'", [larose]);
     calls.length = 0;
     const body = orderBody({ customer: { name: 'TEST ORDER test events check', phone: '08031112222', address: '5 Allen Avenue, Ikeja' } });
     const res = await send(body);
@@ -244,7 +244,7 @@ describe('one saved order, one Purchase', () => {
     assert.equal(again.body.reference, res.body.reference);
     await settle();
     assert.equal(calls.length, 1, 'a repeated submission sends nothing more');
-    await pool.query("UPDATE pixel_settings SET test_event_code = NULL WHERE business_id = $1 AND provider = 'meta'", [larose]);
+    await pool.query("UPDATE tracking_pixels SET test_event_code = NULL WHERE business_id = $1 AND platform = 'meta'", [larose]);
   });
 });
 
