@@ -9,7 +9,7 @@ import { authRoutes } from './routes/auth.js';
 import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
-import { adminRoutes } from './routes/admin.js';
+import { adminRoutes, backupKeyRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
 import { pageServer, sandboxPreview, pathPages } from './hosting/server.js';
@@ -149,6 +149,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   }));
 
   app.use(authRoutes({ pool, config }));
+  app.use(backupKeyRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
   app.use(adminRoutes({ pool, config }));
   app.use(workspaceRoutes({ pool, config, onPaid, onOrderSaved }));

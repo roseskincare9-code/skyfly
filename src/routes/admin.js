@@ -2,6 +2,7 @@
 // owner confirms payment; there is no payment gateway), setup progress, team invites and
 // platform settings. Only users with is_platform_admin may open it.
 import { Router } from 'express';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { requireAuth, slugify } from '../lib/auth.js';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
@@ -34,6 +35,42 @@ function addMonths(dateText, months) {
   const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   target.setUTCDate(Math.min(d, last));
   return target.toISOString().slice(0, 10);
+}
+
+// One read-only snapshot of every table, streamed as the backup file, and logged.
+async function sendBackup(pool, req, res, { via }) {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  res.set('Content-Type', 'application/json; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="skyfly-backup-${stamp}.json"`);
+  res.set('Cache-Control', 'no-store');
+  // One read-only snapshot, so every table is from the same moment.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const counts = await exportBackup(client, (chunk) => res.write(chunk));
+    await client.query('COMMIT');
+    await audit(pool, req, { action: 'admin.backup_downloaded', details: { rows: Object.values(counts).reduce((a, b) => a + b, 0), via } });
+  } finally {
+    client.release();
+  }
+  res.end();
+}
+
+// Mounted before the sign-in check: the backup download with the server's backup key, for the backup
+// workflow. Only this one read-only download; a missing key goes on to the normal sign-in check.
+export function backupKeyRoutes({ pool, config }) {
+  const router = Router();
+  router.get('/admin/backup.json', asyncHandler(async (req, res, next) => {
+    const sent = /^Bearer (.+)$/.exec(req.get('authorization') || '')?.[1];
+    if (!sent || !config.backupKey) return next();
+    const digest = (v) => createHash('sha256').update(v).digest();
+    if (!timingSafeEqual(digest(sent), digest(config.backupKey))) {
+      await audit(pool, req, { action: 'admin.backup_key_refused' });
+      return res.status(401).json({ error: 'Wrong backup key.' });
+    }
+    await sendBackup(pool, req, res, { via: 'backup key' });
+  }));
+  return router;
 }
 
 export function adminRoutes({ pool, config }) {
@@ -253,23 +290,8 @@ export function adminRoutes({ pool, config }) {
     res.render('admin/system', { counts, db, migrations, lastBackup: last[0] ?? null, uncovered: await uncoveredTables(pool), dbExpiresAt: config.databaseExpiresAt });
   }));
 
-  router.get('/admin/backup.json', asyncHandler(async (req, res) => {
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    res.set('Content-Type', 'application/json; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="skyfly-backup-${stamp}.json"`);
-    res.set('Cache-Control', 'no-store');
-    // One read-only snapshot, so every table is from the same moment.
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      const counts = await exportBackup(client, (chunk) => res.write(chunk));
-      await client.query('COMMIT');
-      await audit(pool, req, { action: 'admin.backup_downloaded', details: { rows: Object.values(counts).reduce((a, b) => a + b, 0) } });
-    } finally {
-      client.release();
-    }
-    res.end();
-  }));
+  router.get('/admin/backup.json', asyncHandler(async (req, res) => sendBackup(pool, req, res, { via: 'signed in' })));
+
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
     res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null });

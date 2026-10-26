@@ -1,7 +1,7 @@
-# Full backup of the live Skyfly database through Platform admin → System (/admin/backup.json),
-# checked by restoring it into a throwaway database. The file is uploaded ENCRYPTED (this
-# repository is public): AES-256 with the BACKUP_PASSPHRASE secret, or the owner's password if
-# that secret is not set. Logs show only sizes and row counts. Manual only; reads, never writes.
+# Full backup of the live Skyfly database through /admin/backup.json (with the server's backup key,
+# read from Render, or the owner's sign-in), checked by restoring it into a throwaway database. The
+# file is uploaded ENCRYPTED (this repository is public): AES-256 with the BACKUP_PASSPHRASE secret,
+# else the owner's password, else the backup key. Logs show only sizes and row counts. Reads only.
 name: Database backup
 on: workflow_dispatch
 permissions:
@@ -25,32 +25,34 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - name: Read the backup key from Render (masked; never printed)
+        run: node scripts/render-backup-key.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       - name: Download and check the backup
-        id: dl
         run: |
           set +e
           node scripts/backup-live.mjs backup.json; code=$?
-          if [ $code = 2 ]; then echo "blocked=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # No backup made: fail visibly, never a green run without a backup file.
+          if [ $code = 2 ]; then echo "::error::No backup was made: set SKYFLY_BACKUP_KEY on Render or add the owner sign-in secrets."; exit 1; fi
           exit $code
         env:
           SKYFLY_URL: https://skyfly-gybf.onrender.com
           SKYFLY_OWNER_EMAIL: ${{ secrets.SKYFLY_OWNER_EMAIL }}
           SKYFLY_OWNER_PASSWORD: ${{ secrets.SKYFLY_OWNER_PASSWORD }}
       - name: Restore into an empty throwaway database (proves the file is complete and usable)
-        if: steps.dl.outputs.blocked != '1'
         run: node scripts/restore-backup.mjs backup.json
         env:
           DATABASE_URL: postgres://restore:restore@localhost:5432/restore_check
       - name: Encrypt (the plain file never leaves this machine)
-        if: steps.dl.outputs.blocked != '1'
         run: |
           openssl enc -aes-256-cbc -pbkdf2 -iter 250000 -salt -in backup.json -out skyfly-backup.json.enc -pass env:PASS
           shred -u backup.json
           ls -l skyfly-backup.json.enc
         env:
-          PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD }}
+          # Your BACKUP_PASSPHRASE secret if set; otherwise the backup key itself (Render → skyfly → Environment).
+          PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD || env.SKYFLY_BACKUP_KEY }}
       - uses: actions/upload-artifact@v4
-        if: steps.dl.outputs.blocked != '1'
         with:
           name: skyfly-backup-encrypted
           path: skyfly-backup.json.enc
