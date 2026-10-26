@@ -92,3 +92,20 @@ for (const b of bizRows) {
   const real = mine.filter((o) => !o.is_test).map((o) => o.created_at).sort();
   if (real.length) console.log(`        real orders: ${real.length}, first ${real[0]}, last ${real.at(-1)}`);
 }
+
+// Eligibility of the real orders still waiting for a sheet copy (reference, date, page, total, status;
+// no names, phones or addresses). "looks like a test" and "possible repeat" are computed here and shown as flags only.
+const items = objects('order_items');
+const pageSlug = (id) => pages.find((p) => String(p.id) === String(id))?.slug ?? 'none';
+for (const b of bizRows) {
+  const waiting = orders.filter((o) => String(o.business_id) === String(b.id) && !o.is_test && ['pending', 'failed'].includes(o.sheet_sync_status));
+  if (!waiting.length) continue;
+  console.log(`      Real orders of ${b.slug} waiting for a sheet copy (${waiting.length}):`);
+  for (const o of waiting.sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)))) {
+    const lines = items.filter((i) => String(i.order_id) === String(o.id));
+    const testy = /\btest\b/i.test(`${o.customer_name} ${o.address} ${o.email ?? ''} ${o.customer_notes ?? ''}`);
+    const repeat = orders.filter((x) => x.id !== o.id && String(x.business_id) === String(o.business_id) && x.phone === o.phone
+      && Math.abs(new Date(x.created_at) - new Date(o.created_at)) < 24 * 3600 * 1000).map((x) => x.reference);
+    console.log(`        ${o.reference}  ${o.created_at}  page ${pageSlug(o.landing_page_id)}  ${lines.map((i) => `${i.product_name} x${i.quantity}${i.is_upsell ? ' (add-on)' : ''}`).join(' + ')}  total ${Number(o.total_minor) / 100} ${o.currency ?? ''}  status ${o.status}  sheet ${o.sheet_sync_status}${o.sheet_connection_id ? ` → #${o.sheet_connection_id}` : ''}, attempts ${o.sheet_sync_attempts}${testy ? '  FLAG: details mention "test"' : ''}${repeat.length ? `  FLAG: same phone within 24h as ${repeat.join(', ')}` : ''}`);
+  }
+}
