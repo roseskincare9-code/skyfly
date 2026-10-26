@@ -65,3 +65,30 @@ for (const b of biz) {
   console.log(`        ${b.slug.padEnd(26)} ${mine.filter((o) => !o.is_test).length} / ${mine.filter((o) => o.is_test).length}  (subscription ${b.status}${latest ? `, latest order ${latest}` : ''})`);
 }
 console.log(`      Integration settings present: sheet connections ${rows.sheet_connections ?? 0}, pixel settings ${rows.pixel_settings ?? 0}, email settings ${rows.email_settings ?? 0}, API keys ${rows.api_keys ?? 0}`);
+
+// Google Sheet set-up per business (names, statuses and counts only; never order or customer details).
+const conns = objects('sheet_connections');
+const bizRows = objects('businesses');
+const pages = objects('landing_pages');
+console.log('      Spreadsheet connections:');
+for (const c of conns) {
+  const b = bizRows.find((x) => String(x.id) === String(c.business_id));
+  const isDefault = String(b?.default_sheet_connection_id) === String(c.id);
+  const onPages = pages.filter((p) => String(p.sheet_connection_id) === String(c.id)).map((p) => p.slug);
+  console.log(`        #${c.id} ${b?.slug}: "${c.name}" (${c.provider}, tab ${c.sheet_tab || 'first'}) — check ${c.check_status ?? 'none'}${isDefault ? ', BUSINESS DEFAULT' : ''}${onPages.length ? `, used by pages ${onPages.join(', ')}` : ''}; created ${c.created_at}; backlog released ${c.backlog_released_at ?? 'no'}; last success ${c.last_success_at ?? 'never'}; last error ${String(c.last_error ?? 'none').slice(0, 120)}`);
+}
+for (const b of bizRows) {
+  const mine = orders.filter((o) => String(o.business_id) === String(b.id));
+  if (!mine.length) continue;
+  const by = {};
+  for (const o of mine) {
+    const k = `${o.is_test ? 'test' : 'real'} ${o.sheet_sync_status}${o.sheet_connection_id ? ` → #${o.sheet_connection_id}` : ''}`;
+    by[k] = (by[k] || 0) + 1;
+  }
+  console.log(`      Sheet status of ${b.slug} orders (default sheet #${b.default_sheet_connection_id ?? 'none'}): ${Object.entries(by).map(([k, v]) => `${k}: ${v}`).join('; ')}`);
+  const reasons = {};
+  for (const o of mine.filter((x) => !x.is_test && x.sheet_sync_error)) reasons[String(o.sheet_sync_error).slice(0, 140)] = (reasons[String(o.sheet_sync_error).slice(0, 140)] || 0) + 1;
+  for (const [r, v] of Object.entries(reasons)) console.log(`        real orders waiting because: "${r}" (${v})`);
+  const real = mine.filter((o) => !o.is_test).map((o) => o.created_at).sort();
+  if (real.length) console.log(`        real orders: ${real.length}, first ${real[0]}, last ${real.at(-1)}`);
+}
