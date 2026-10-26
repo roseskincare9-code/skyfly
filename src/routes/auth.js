@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
-import { ensureLaroseForOwner, E2E_EMAIL } from '../services/setup.js';
+import { ensureLaroseForOwner, E2E_EMAIL_LIKE } from '../services/setup.js';
 import { requestResetEmail, findReset, completeReset } from '../services/passwordReset.js';
 import { platformSettings, findInvite, acceptInvite } from '../services/tenancy.js';
 
@@ -12,7 +12,7 @@ export function authRoutes({ pool, config }) {
   // owner has opened client sign-up (Platform settings). Invite links always work.
   async function signupOpen() {
     if (!config.allowSignup) return false;
-    const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email <> $1) AS any', [E2E_EMAIL]);
+    const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
     if (!rows[0].any) return true;
     if (!config.signupFirstOnly) return true;
     return (await platformSettings(pool)).clientSignup === 'open';
@@ -27,7 +27,7 @@ export function authRoutes({ pool, config }) {
       // Serialise sign-ups so two people can't both become "the first account".
       await client.query('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
       // The automated live-test account (created at start-up, never a person) does not count.
-      const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users WHERE email <> $1) AS any', [E2E_EMAIL]);
+      const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
       const { rows } = await client.query(
         `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, $3, $4)
          ON CONFLICT (email) DO NOTHING RETURNING id`,

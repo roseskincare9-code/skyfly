@@ -272,6 +272,58 @@ describe('live-test account', () => {
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1', [E2E_EMAIL])).rows[0].n, 0);
   });
 
+  test('owner A and owner B each own one test business only; accounts they invite are disabled with them', async () => {
+    const { ensureE2eAccount, E2E_OWNER_A, E2E_OWNER_B, isE2eEmail } = await import('../src/services/setup.js');
+    const { hashPassword } = await import('../src/lib/passwords.js');
+    const quiet = { log: () => {}, error: () => {} };
+    await pool.query(`INSERT INTO businesses (owner_id, name, slug, currency, order_prefix, subscription_status)
+      SELECT owner_id, 'Skyfly Demo Shop (test)', 'skyfly-demo', 'NGN', 'DM', 'internal' FROM businesses WHERE slug = 'skyfly-import-test'
+      ON CONFLICT (slug) DO NOTHING`);
+    process.env.SKYFLY_E2E_PASSWORD_HASH = await hashPassword('owners-password-0123456789');
+    assert.equal(await ensureE2eAccount(pool, quiet), true);
+    const memberships = async (email) => (await pool.query(
+      'SELECT b.slug, m.role FROM business_members m JOIN businesses b ON b.id = m.business_id JOIN users u ON u.id = m.user_id WHERE u.email = $1 ORDER BY 1', [email])).rows;
+    assert.deepEqual(await memberships(E2E_OWNER_A), [{ slug: 'skyfly-demo', role: 'owner' }]);
+    assert.deepEqual(await memberships(E2E_OWNER_B), [{ slug: 'skyfly-import-test', role: 'owner' }]);
+    const signIn = async (email) => {
+      const agent = request.agent(app);
+      const _csrf = await csrfToken(agent, '/login');
+      assert.equal((await agent.post('/login').type('form').send({ _csrf, email, password: 'owners-password-0123456789' })).status, 302);
+      return agent;
+    };
+    const { rows: [demo] } = await pool.query("SELECT id FROM businesses WHERE slug = 'skyfly-demo'");
+    const { rows: [imp] } = await pool.query("SELECT id FROM businesses WHERE slug = 'skyfly-import-test'");
+    const { rows: [larose] } = await pool.query("SELECT id FROM businesses WHERE slug = 'larose-nigeria'");
+    const a = await signIn(E2E_OWNER_A);
+    for (const path of ['', '/orders', '/settings', '/pixels', '/google-sheets', '/email', '/team']) {
+      assert.equal((await a.get(`/businesses/${demo.id}${path}`)).status, 200, `A opens its own ${path || '/'}`);
+      assert.equal((await a.get(`/businesses/${imp.id}${path}`)).status, 404, `A cannot open B's ${path || '/'}`);
+      if (larose) assert.equal((await a.get(`/businesses/${larose.id}${path}`)).status, 404, `A cannot open Larose ${path || '/'}`);
+    }
+    assert.equal((await a.get('/admin')).status, 404, 'not a platform admin');
+    // A invites a reserved test address; the account it creates is disabled with the others.
+    const _csrf = await csrfToken(a, `/businesses/${demo.id}/team`);
+    const inv = await a.post(`/businesses/${demo.id}/team/invite`).type('form').send({ _csrf, email: 'e2e-invitee-1@skyfly.invalid', role: 'staff' });
+    const link = inv.text.match(/\/invite\/([A-Za-z0-9_-]+)/);
+    assert.ok(link, 'invitation link shown');
+    const joiner = request.agent(app);
+    const page = await joiner.get(link[0]);
+    const token = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
+    const join = await joiner.post(link[0]).type('form').send({ _csrf: token, name: 'Invited tester', password: 'invitee-password-123' });
+    assert.match(join.headers.location ?? '', new RegExp(`/businesses/${demo.id}$`));
+    assert.equal((await joiner.get(`/businesses/${demo.id}/settings`)).status, 403, 'staff: no settings');
+    assert.equal((await joiner.get(`/businesses/${imp.id}`)).status, 404, 'staff of A cannot open B');
+    assert.ok(isE2eEmail('e2e-invitee-1@skyfly.invalid') && !isE2eEmail('owner@larose.test'));
+    delete process.env.SKYFLY_E2E_PASSWORD_HASH;
+    await ensureE2eAccount(pool, quiet);
+    assert.match((await joiner.get('/')).headers.location ?? '', /\/login/, 'the invited test account is signed out');
+    const { rows: left } = await pool.query("SELECT u.email FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email LIKE 'e2e-%@skyfly.invalid'");
+    assert.deepEqual(left, [], 'no test account keeps any membership');
+    const { rows: [inv2] } = await pool.query("SELECT count(*)::int AS n FROM users WHERE email LIKE 'e2e-%@skyfly.invalid' AND password_hash <> 'disabled'");
+    assert.equal(inv2.n, 0, 'every test account is disabled');
+    await pool.query("DELETE FROM businesses WHERE slug = 'skyfly-demo'");
+  });
+
   test('each sign-in works only for its time window: then the account is disabled and signed out, even if the setting stays', async () => {
     const { ensureE2eAccount, disableE2eAccount, E2E_EMAIL, E2E_WINDOW_MS } = await import('../src/services/setup.js');
     const { hashPassword } = await import('../src/lib/passwords.js');

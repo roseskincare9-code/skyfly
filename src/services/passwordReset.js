@@ -4,7 +4,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { hashPassword } from '../lib/passwords.js';
 import { sendEmail } from './emailProviders.js';
-import { E2E_EMAIL } from './setup.js';
+import { isE2eEmail } from './setup.js';
 
 const EMAIL_LINK_MINUTES = 60;
 export const ADMIN_LINK_HOURS = 24;
@@ -54,7 +54,7 @@ export async function completeReset(pool, token, password) {
 // The page says the same thing either way, so it never reveals which addresses have accounts.
 export async function requestResetEmail(pool, config, email, base) {
   const sender = config.notifyEmail;
-  if (!sender || email === E2E_EMAIL) return { sent: false, reason: sender ? 'no account' : 'no sender' };
+  if (!sender || isE2eEmail(email)) return { sent: false, reason: sender ? 'no account' : 'no sender' };
   const { rows: [u] } = await pool.query('SELECT id, name, email FROM users WHERE email = $1', [email]);
   if (!u) return { sent: false, reason: 'no account' };
   const token = await createResetLink(pool, u.id);

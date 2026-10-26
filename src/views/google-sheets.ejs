@@ -49,7 +49,7 @@
     <% } %>
     <p class="muted">Skyfly writes only to its own tab (“<%= skyflyTab %>”, created automatically), never changes or deletes your other tabs, and checks every tab before adding an order so it is never added twice. Orders that were already waiting are held until you compare them with the spreadsheet and send them.</p>
     <label for="google-name">Name</label>
-    <input id="google-name" name="name" maxlength="120" placeholder="e.g. Laroseorders" value="<%= form.kind === 'google_api' ? (form.name || '') : '' %>">
+    <input id="google-name" name="name" maxlength="120" placeholder="e.g. Orders sheet" value="<%= form.kind === 'google_api' ? (form.name || '') : '' %>">
     <label for="google-link">Google Sheet link (or its ID)</label>
     <input id="google-link" name="spreadsheet_url" required placeholder="https://docs.google.com/spreadsheets/d/…/edit" value="<%= form.kind === 'google_api' ? (form.spreadsheet_url || '') : '' %>">
     <label for="google-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”)</label>
@@ -75,7 +75,7 @@
     <p style="margin:6px 0 0"><button type="button" class="secondary" data-copy="script-code">Copy script</button></p>
     <script src="/static/copy.js" defer></script>
     <label for="script-name">Name</label>
-    <input id="script-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
+    <input id="script-name" name="name" maxlength="120" placeholder="e.g. Orders sheet" value="<%= form.kind === 'apps_script' ? (form.name || '') : '' %>">
     <label for="script-url">Web app URL</label>
     <input id="script-url" name="api_url" required autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
     <label for="script-tab">Tab Skyfly writes to (empty = a new tab named “<%= skyflyTab %>”; your existing tabs and their history are never changed)</label>
@@ -186,7 +186,7 @@
     <p class="muted" style="margin-top:0">Free SheetDB plans have a small monthly request limit; when it is used up, copies wait (orders stay safe in Skyfly).</p>
     <p class="muted" style="margin-top:0">Use the SheetDB API URL of the Google Sheet (in SheetDB: your API → “API URL”). It is stored encrypted and never shown again; anyone with it can add rows, so keep it private.</p>
     <label for="new-name">Name</label>
-    <input id="new-name" name="name" maxlength="120" placeholder="e.g. Larose orders" value="<%= form.name || '' %>">
+    <input id="new-name" name="name" maxlength="120" placeholder="e.g. Orders sheet" value="<%= form.name || '' %>">
     <label for="new-url">SheetDB API URL</label>
     <input id="new-url" name="api_url" required autocomplete="off" placeholder="https://sheetdb.io/api/v1/…">
     <label for="new-tab">Tab name (optional, empty = first tab)</label>

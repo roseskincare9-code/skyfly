@@ -53,13 +53,15 @@ after(async () => { await pool.end(); mock.close(); });
 
 describe('first account', () => {
   test('the first real sign-up is open and becomes the platform owner, even though the live-test account exists', async () => {
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n, 1);
+    // Only the live-test accounts (manager, owner A, owner B) exist so far.
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email NOT LIKE 'e2e-%@skyfly.invalid'")).rows[0].n, 0);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email LIKE 'e2e-%@skyfly.invalid'")).rows[0].n, 3);
     assert.match((await request(app).get('/signup').expect(200)).text, /name="password"/);
     owner = await signUp(app, { email: 'owner@skyfly.test' });
     const { rows: [u] } = await pool.query("SELECT is_platform_admin FROM users WHERE email = 'owner@skyfly.test'");
     assert.equal(u.is_platform_admin, true);
-    const { rows: [e2e] } = await pool.query('SELECT is_platform_admin FROM users WHERE email = $1', [E2E_EMAIL]);
-    assert.equal(e2e.is_platform_admin, false);
+    const { rows: e2e } = await pool.query("SELECT is_platform_admin FROM users WHERE email LIKE 'e2e-%@skyfly.invalid'");
+    assert.ok(e2e.length === 3 && e2e.every((x) => !x.is_platform_admin));
   });
   test('after that, sign-up is closed again (invitation only)', async () => {
     await request(app).get('/signup').expect(404);
