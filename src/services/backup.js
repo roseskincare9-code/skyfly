@@ -12,7 +12,7 @@ export const TABLE_ORDER = [
   'email_settings', 'email_contacts', 'email_templates', 'email_automations', 'email_automation_steps', 'email_messages',
   'audit_log',
 ];
-export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations']; // sign-ins and migration bookkeeping are not data
+export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets']; // sign-ins, migration bookkeeping and one-time reset links are not data
 const LATE = { businesses: ['default_sheet_connection_id'], landing_pages: ['published_version_id'] };
 
 async function columnsOf(db, table) {

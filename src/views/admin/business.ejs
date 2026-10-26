@@ -7,6 +7,32 @@
   <% if (notice) { %><div class="notice" role="status"><%= notice %><% if (link) { %><br><code style="word-break:break-all"><%= link %></code><% } %></div><% } %>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
 
+  <div class="card" id="setup">
+    <h2>Client setup checklist</h2>
+    <p class="muted">Each step shows what is actually set up and checked for this business. Open the workspace to do a step.</p>
+    <ol style="padding-left:20px;margin:0">
+      <% checklist.forEach((c) => { %>
+        <li style="margin:8px 0" data-step="<%= c.key %>" data-done="<%= c.done %>">
+          <strong><%= c.done ? '✓' : '○' %> <%= c.label %></strong>
+          <% if (c.href) { %> · <a href="<%= c.href %>"><%= c.done ? 'View' : 'Set up' %></a><% } %>
+          <br><span class="muted"><%= c.detail %></span>
+        </li>
+      <% }) %>
+    </ol>
+    <p class="muted" style="margin-top:10px"><%= checklist.filter((c) => c.done).length %> of <%= checklist.length %> done.</p>
+  </div>
+
+  <form class="card" method="post" action="/admin/businesses/<%= b.id %>/details">
+    <h2>Business and contact details</h2>
+    <%- include('../partials/csrf') %>
+    <label for="bd-name">Business name</label><input id="bd-name" name="name" value="<%= b.name %>" required maxlength="120">
+    <label for="bd-cn">Contact person</label><input id="bd-cn" name="contact_name" value="<%= b.contact_name || '' %>" maxlength="120">
+    <label for="bd-cp">Contact phone</label><input id="bd-cp" name="contact_phone" type="tel" value="<%= b.contact_phone || '' %>" maxlength="40">
+    <label for="bd-ce">Contact email</label><input id="bd-ce" name="contact_email" type="email" value="<%= b.contact_email || '' %>" maxlength="200">
+    <label for="bd-w">Website</label><input id="bd-w" name="website" type="url" placeholder="https://" value="<%= b.website || '' %>" maxlength="300">
+    <button type="submit">Save details</button>
+  </form>
+
   <% if (b.subscription_status !== 'internal') { %>
   <form class="card" method="post" action="/admin/businesses/<%= b.id %>/renew">
     <%- include('../partials/csrf') %>
@@ -43,7 +69,8 @@
 
   <div class="card">
     <h2>People</h2>
-    <% members.forEach((m) => { %><p style="margin:4px 0"><%= m.name %> · <%= m.email %> <span class="pill"><%= ROLE_LABELS[m.role] %></span></p><% }) %>
+    <% members.forEach((m) => { %><div class="row" style="margin:4px 0;align-items:center;gap:8px;flex-wrap:wrap"><span><%= m.name %> · <%= m.email %> <span class="pill"><%= ROLE_LABELS[m.role] %></span></span>
+      <form method="post" action="/admin/businesses/<%= b.id %>/members/<%= m.id %>/reset-link" style="margin:0"><%- include('../partials/csrf') %><button class="secondary" type="submit" style="padding:4px 10px;font-size:13px">Password reset link</button></form></div><% }) %>
     <% invites.forEach((i) => { %><p class="muted" style="margin:4px 0">Invited: <%= i.email %> (<%= ROLE_LABELS[i.role] %>) until <%= formatDate(i.expires_at) %></p><% }) %>
     <form method="post" action="/admin/businesses/<%= b.id %>/invite" class="row" style="margin-top:12px">
       <%- include('../partials/csrf') %>
