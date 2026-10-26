@@ -13,6 +13,7 @@ import { formatMoney } from '../lib/money.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../lib/statuses.js';
 import { sendEmail, renderEmail, SendError, PROVIDERS } from './emailProviders.js';
 import { subscriptionState, expireSubscriptions } from './tenancy.js';
+import { classifyCheckouts } from './checkouts.js';
 import { planOrderNotifications, sendOrderNotifications } from './orderNotifications.js';
 
 const RETRY_MINUTES = [5, 30, 120];
@@ -270,7 +271,9 @@ export async function runEmailJobs(pool, config) {
   // Order notifications to the business (separate from customer emails; see orderNotifications.js).
   await planOrderNotifications(pool);
   const notified = await sendOrderNotifications(pool, config);
-  return { planned, cancelled, sent, notified };
+  // Checkout sessions: idle ones become abandoned; the retention policy is applied.
+  const checkouts = await classifyCheckouts(pool);
+  return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned };
 }
 
 export function startEmailWorker(pool, config, { intervalMs = 60000, log = console } = {}) {

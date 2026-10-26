@@ -1,0 +1,78 @@
+<%- include('partials/head', { title: 'Checkout' }) %>
+<%- include('partials/nav', { active: 'checkouts' }) %>
+<main>
+  <p><a href="<%= base %>/checkouts">← Abandoned checkouts</a></p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <h1>Checkout <span class="pill" data-status="<%= s.status %>"><%= STATUS_LABELS[s.status] %></span><% if (s.is_test) { %> <span class="pill">TEST</span><% } %></h1>
+  <p class="muted" style="margin-top:0">Not an order: not counted in sales<%= s.order_reference ? '' : ' until the customer places it' %>.</p>
+
+  <% if (s.order_id) { %>
+    <div class="notice" data-order>The customer placed order <a href="<%= base %>/orders/<%= s.order_id %>"><strong><%= s.order_reference %></strong></a><%= s.status === 'recovered' ? ' after leaving the checkout (recovered)' : '' %>.</div>
+  <% } %>
+
+  <div class="card">
+    <h2>Customer</h2>
+    <% if (s.details_erased_at) { %>
+      <p class="muted">Personal details were erased on <%= formatDate(s.details_erased_at) %> (retention policy).</p>
+    <% } else { %>
+    <dl class="kv">
+      <dt>Name</dt><dd><%= s.customer_name || '—' %></dd>
+      <dt>Phone</dt><dd><%= s.phone || '—' %></dd>
+      <dt>Email</dt><dd><%= s.email || '—' %><% if (s.email) { %> <span class="muted">(email offers: <%= s.marketing_consent ? 'agreed' : 'not agreed' %>)</span><% } %></dd>
+      <dt>Address</dt><dd><%= s.address || '—' %><%= s.state ? ', ' + s.state : '' %></dd>
+      <dt>Notes</dt><dd><%= s.notes || '—' %></dd>
+    </dl>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <h2>Chosen products</h2>
+    <% if (!(s.items || []).length) { %><p class="muted">No product chosen yet.</p><% } else { %>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Product</th><th>Unit price</th><th>Qty</th><th>Line total</th></tr></thead>
+      <tbody>
+        <% s.items.forEach((i) => { %><tr><td><%= i.name %><%= i.upsell ? ' (add-on)' : '' %></td><td><%= formatMoney(i.unitPrice, s.currency) %></td><td><%= i.quantity %></td><td><%= formatMoney(i.lineTotal, s.currency) %></td></tr><% }) %>
+        <% if (Number(s.delivery_fee_minor)) { %><tr><td colspan="3">Delivery</td><td><%= formatMoney(s.delivery_fee_minor, s.currency) %></td></tr><% } %>
+        <tr><td colspan="3"><strong>Total</strong></td><td><strong data-value><%= formatMoney(s.total_minor, s.currency) %></strong></td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="font-size:13px">Prices from your catalog when the customer last changed the checkout.</p>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <h2>Activity</h2>
+    <dl class="kv">
+      <dt>Page</dt><dd><%= s.page_name || '—' %></dd>
+      <dt>Started</dt><dd><%= formatDate(s.started_at) %></dd>
+      <dt>Last activity</dt><dd><%= formatDate(s.last_activity_at) %></dd>
+      <dt>Reached</dt><dd><%= ({ started: 'Started the form', details: 'Entered contact details', review: 'Reviewed the order' })[s.step] || '—' %></dd>
+      <% if (s.abandoned_at) { %><dt>Abandoned</dt><dd><%= formatDate(s.abandoned_at) %></dd><% } %>
+      <% if (s.completed_at) { %><dt>Ordered</dt><dd><%= formatDate(s.completed_at) %></dd><% } %>
+      <dt>Contacted</dt><dd><%= s.follow_up_count ? s.follow_up_count + '× (last ' + formatDate(s.followed_up_at) + ')' : 'Not yet' %></dd>
+      <% if (s.utm_campaign || s.utm_source) { %><dt>Campaign</dt><dd><%= [s.utm_source, s.utm_campaign].filter(Boolean).join(' · ') %></dd><% } %>
+    </dl>
+  </div>
+
+  <% if (contact) { %>
+  <div class="card" data-follow-up>
+    <h2>Follow up</h2>
+    <p class="muted" style="margin-top:0">Contact this customer yourself, once, about their own unfinished order. Skyfly never sends messages automatically. Don't add them to marketing unless they agreed to receive offers.</p>
+    <div class="row">
+      <% if (contact.whatsapp) { %><a class="btn wa" data-contact="whatsapp" href="<%= contact.whatsapp %>" target="_blank" rel="noopener">WhatsApp</a><% } %>
+      <% if (contact.call) { %><a class="btn secondary" data-contact="call" href="<%= contact.call %>">📞 Call</a><% } %>
+      <% if (contact.email) { %><a class="btn secondary" data-contact="email" href="<%= contact.email %>">Email</a><% } %>
+      <% if (!contact.whatsapp && !contact.call && !contact.email) { %><span class="muted">No contact details were entered.</span><% } %>
+    </div>
+    <% if (link) { %><p class="muted" style="font-size:13px">The message includes a link that brings back the chosen products on the order form: <code style="word-break:break-all"><%= link %></code></p><% } %>
+    <% if (contact.whatsapp || contact.call || contact.email) { %>
+    <form method="post" action="<%= base %>/checkouts/<%= s.id %>/contacted" class="row" style="margin-top:8px">
+      <%- include('partials/csrf') %>
+      <select name="channel" aria-label="How you contacted them"><option value="whatsapp">WhatsApp</option><option value="call">Call</option><option value="email">Email</option></select>
+      <button type="submit" class="secondary">Mark as contacted</button>
+    </form>
+    <% } %>
+  </div>
+  <% } %>
+</main>
+</body></html>

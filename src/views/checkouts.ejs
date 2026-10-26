@@ -1,0 +1,65 @@
+<%- include('partials/head', { title: 'Abandoned checkouts' }) %>
+<%- include('partials/nav', { active: 'checkouts' }) %>
+<main>
+  <h1>Abandoned checkouts <span class="muted" style="font-weight:400;font-size:1rem">(<%= total %>)</span></h1>
+  <p class="muted" style="margin-top:0">Customers who started an order form but did not place the order. These are not orders: they are never counted in sales, revenue, ad Purchase events or your Google Sheet.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+
+  <div class="stats" data-checkout-summary style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+    <div class="card" style="margin:0"><div class="muted">Abandoned (30 days)</div><strong data-abandoned style="font-size:1.4rem"><%= summary.abandoned %></strong><div class="muted"><%= formatMoney(summary.abandonedValue, business.currency) %> not ordered</div></div>
+    <div class="card" style="margin:0"><div class="muted">Recovered (30 days)</div><strong data-recovered style="font-size:1.4rem"><%= summary.recovered %></strong><div class="muted"><%= formatMoney(summary.recoveredValue, business.currency) %> ordered later</div></div>
+    <div class="card" style="margin:0"><div class="muted">Recovery rate</div><strong style="font-size:1.4rem"><%= summary.rate === null ? '—' : summary.rate + '%' %></strong><div class="muted">of abandoned checkouts</div></div>
+  </div>
+
+  <form class="card filters" method="get" action="<%= base %>/checkouts">
+    <div><label for="status">Show</label>
+      <select id="status" name="status">
+        <% FILTERS.forEach((f) => { %><option value="<%= f %>" <%= status === f ? 'selected' : '' %>><%= f === 'all' ? 'All checkouts' : STATUS_LABELS[f] %></option><% }) %>
+      </select></div>
+    <div><label for="test">Test checkouts</label>
+      <select id="test" name="test"><option value="">Hide</option><option value="include" <%= test ? 'selected' : '' %>>Include</option></select></div>
+    <div class="row"><button type="submit">Filter</button><a href="<%= base %>/checkouts">Clear</a></div>
+  </form>
+
+  <div class="card">
+  <% if (sessions.length === 0) { %>
+    <p class="muted" data-empty>No <%= status === 'all' ? '' : STATUS_LABELS[status].toLowerCase() + ' ' %>checkouts.</p>
+  <% } else { %>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Status</th><th>Customer</th><th>Products</th><th>Value</th><th>Last activity</th></tr></thead>
+      <tbody>
+      <% sessions.forEach((s) => { %>
+        <tr data-checkout="<%= s.id %>">
+          <td><a href="<%= base %>/checkouts/<%= s.id %>"><span class="pill" data-status="<%= s.status %>"><%= STATUS_LABELS[s.status] %></span></a><% if (s.is_test) { %> <span class="pill">TEST</span><% } %><% if (s.follow_up_count) { %><br><span class="muted" style="font-size:12px">Contacted <%= s.follow_up_count %>×</span><% } %></td>
+          <td><% if (s.details_erased_at) { %><span class="muted">Details erased (retention)</span><% } else { %><a href="<%= base %>/checkouts/<%= s.id %>"><%= s.customer_name || 'No name yet' %></a><% if (s.phone) { %><br><span class="muted"><%= s.phone %></span><% } %><% if (s.email) { %><br><span class="muted"><%= s.email %></span><% } %><% if (!s.phone && !s.email) { %><br><span class="muted" style="font-size:12px">No contact details</span><% } %><% } %></td>
+          <td><%= itemsText(s.items) || '—' %><% if (s.page_name) { %><br><span class="muted" style="font-size:12px"><%= s.page_name %></span><% } %></td>
+          <td><%= s.total_minor > 0 ? formatMoney(s.total_minor, s.currency || business.currency) : '—' %></td>
+          <td class="muted"><%= formatDate(s.last_activity_at) %></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+    <% if (pageCount > 1) { %>
+      <div class="row" style="margin-top:12px">
+        <% if (pageNumber > 1) { %><a class="btn secondary" href="?status=<%= status %><%= test ? '&test=include' : '' %>&p=<%= pageNumber - 1 %>">← Newer</a><% } %>
+        <span class="muted">Page <%= pageNumber %> of <%= pageCount %></span>
+        <% if (pageNumber < pageCount) { %><a class="btn secondary" href="?status=<%= status %><%= test ? '&test=include' : '' %>&p=<%= pageNumber + 1 %>">Older →</a><% } %>
+      </div>
+    <% } %>
+  <% } %>
+  </div>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <p class="muted" style="margin-top:0">A checkout counts as abandoned when the customer has done nothing for <strong><%= minutes %> minutes</strong> without placing the order. If they order later, it shows as <em>Recovered</em> and the order appears under Orders (only once). Personal details are erased <%= EXPIRE_DAYS %> days after a checkout ends, and every checkout is deleted after <%= DELETE_DAYS %> days. Skyfly never stores payment details and never messages customers by itself.</p>
+    <% if (canSettings) { %>
+    <form method="post" action="<%= base %>/checkouts/settings" class="row" style="align-items:flex-end">
+      <%- include('partials/csrf') %>
+      <div><label for="abandoned_after_minutes">Abandoned after (minutes of inactivity)</label>
+        <input id="abandoned_after_minutes" name="abandoned_after_minutes" type="number" min="10" max="10080" value="<%= minutes %>" required></div>
+      <button type="submit" class="secondary">Save</button>
+    </form>
+    <% } %>
+  </div>
+</main>
+</body></html>

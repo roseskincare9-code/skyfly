@@ -151,11 +151,99 @@
     return store('skyfly_key');
   }
 
+  // ---------- checkout progress (abandoned checkouts) ----------
+  // What the customer chooses and types is kept as they go: on this device (the chosen products for
+  // 7 days; name, phone, address… only for this browser session) and in Skyfly, so a refresh or a lost
+  // connection loses nothing and the business can see checkouts that were started but not finished.
+  // Nothing about payment is ever collected. Saving never blocks or slows the order form.
+  function local(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); }
+    catch (e) { return v === undefined ? store(k) : store(k, v === null ? '' : v); }
+  }
+  function readJson(text) { try { return JSON.parse(text || 'null'); } catch (e) { return null; } }
+  var CO_DAYS = 7;
+  var sessions = {}; // per page: { token, seq, last, dirty, timer, retry }
+  function session(page) {
+    var c = sessions[page];
+    if (c) return c;
+    c = sessions[page] = { seq: 0 };
+    var saved = readJson(local('skyfly_co_' + page));
+    if (saved && saved.t && Date.now() - saved.at < CO_DAYS * 864e5) { c.token = saved.t; c.seq = saved.seq || 0; c.items = saved.items || []; c.step = saved.step; }
+    return c;
+  }
+  function remember(page) {
+    var c = sessions[page];
+    local('skyfly_co_' + page, JSON.stringify({ t: c.token, at: Date.now(), seq: c.seq, items: (c.last && c.last.items) || c.items || [], step: c.last && c.last.step }));
+  }
+  // Called whenever the customer changes something: { customer, items, step }.
+  function saveProgress(page, data) {
+    if (!page || !data || !window.JSON) return;
+    var c = session(page);
+    if (!c.token) c.token = randomId();
+    c.last = data; c.dirty = true;
+    remember(page);
+    store('skyfly_co_d_' + page, JSON.stringify(data.customer || {}));
+    clearTimeout(c.timer);
+    c.timer = setTimeout(function () { flush(page); }, 1200);
+  }
+  function body(page) {
+    var c = sessions[page];
+    c.seq += 1; remember(page);
+    return JSON.stringify({ token: c.token, seq: c.seq, landingPage: page, step: c.last.step || 'started', customer: c.last.customer || {}, items: c.last.items || [], attribution: attribution() });
+  }
+  function flush(page, closing) {
+    var c = sessions[page];
+    if (!c || !c.dirty || !c.last || !api) return;
+    clearTimeout(c.timer); clearTimeout(c.retry);
+    var text = body(page);
+    c.dirty = false;
+    // The page is being closed: the browser sends this even as it leaves.
+    if (closing && navigator.sendBeacon) { try { if (navigator.sendBeacon(api + '/api/public/checkouts', new Blob([text], { type: 'text/plain' }))) return; } catch (e) { /* fall back to fetch */ } }
+    fetch(api + '/api/public/checkouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text, keepalive: true })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (r && r.ended) restart(page); }, function () {
+        // Offline or the server could not be reached: try again shortly and when the connection is back.
+        c.dirty = true; c.retry = setTimeout(function () { flush(page); }, 15000);
+      });
+  }
+  // After an order (or when the session ended elsewhere): the next checkout is a new session.
+  function restart(page) {
+    var c = sessions[page];
+    if (c) { clearTimeout(c.timer); clearTimeout(c.retry); }
+    sessions[page] = { seq: 0 };
+    local('skyfly_co_' + page, null);
+    store('skyfly_co_d_' + page, '');
+  }
+  function flushAll(closing) { Object.keys(sessions).forEach(function (p) { flush(p, closing); }); }
+  window.addEventListener('pagehide', function () { flushAll(true); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushAll(true); });
+  window.addEventListener('online', function () { flushAll(false); });
+  // What was saved for this page on this device: { items, step, customer } (empty when nothing).
+  function savedProgress(page) {
+    var c = session(page);
+    return { items: (c.last && c.last.items) || c.items || [], step: c.step, customer: readJson(store('skyfly_co_d_' + page)) || {} };
+  }
+  // A resume link (?skyfly_checkout=<id>, e.g. sent by the business on WhatsApp) continues that
+  // session on this device: its chosen products come back (never personal details).
+  function resumeFromLink(page) {
+    var id = new URLSearchParams(location.search).get('skyfly_checkout');
+    if (!id || !/^[A-Za-z0-9_-]{16,100}$/.test(id) || !api) return Promise.resolve(null);
+    return fetch(api + '/api/public/checkouts/' + encodeURIComponent(id)).then(function (r) { return r.ok ? r.json() : null; }).then(function (r) {
+      if (!r || !r.ok || (r.landingPage && r.landingPage !== page)) return null;
+      var c = session(page); c.token = id; c.items = r.items || []; c.step = r.step; c.last = null;
+      remember(page);
+      return r;
+    }, function () { return null; });
+  }
+
   // Resolves with { ok: true, reference, confirmationUrl, ... } only after Skyfly has saved the order.
   var attempted = {};
   function submitOrder(order) {
     order = Object.assign({ landingPage: pageKey }, order);
     order.idempotencyKey = keyFor(order);
+    // The checkout session this order completes (so it is not shown as abandoned).
+    var co = sessions[order.landingPage] || session(order.landingPage);
+    if (co.token) { order.checkoutId = co.token; clearTimeout(co.timer); }
     // A replayed order that this visit never sent was saved (and counted) on an earlier visit:
     // e.g. a refresh, then the same details sent again. Without storage, only this tells them apart.
     var earlierVisit = !canStore && !attempted[order.idempotencyKey];
@@ -168,6 +256,7 @@
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {
         if (res.ok && data && data.ok) {
+          restart(order.landingPage);
           if (!(data.replayed && earlierVisit)) {
             track('Lead', { data: { value: data.total, currency: data.currency }, eventId: 'lead_' + data.reference }, data.reference);
             purchase(data);
@@ -204,35 +293,65 @@
     }
     return box;
   }
+  function formPage(form) { return form.getAttribute('data-skyfly-form') || pageKey; }
+  // What the form holds now (the order it would send).
+  function gather(form) {
+    var productEl = marked(form, 'product')[0] || form.elements.product;
+    var opt = productEl && productEl.options ? productEl.options[productEl.selectedIndex] : null;
+    var product = opt ? (opt.getAttribute('data-product') || opt.value) : (productEl ? productEl.value : form.getAttribute('data-product'));
+    var displayed = opt && opt.getAttribute('data-price');
+    var order = {
+      landingPage: formPage(form),
+      customer: {}, items: [{ product: product, quantity: parseInt(field(form, ['quantity', 'qty']), 10) || 1 }],
+      website: form.elements.website ? String(form.elements.website.value || '') : '',
+    };
+    if (displayed) order.items[0].unitPrice = Number(displayed);
+    // The product's options chosen on the page (size, colour…): Skyfly checks and prices them.
+    var chosen = {}; var anyChoice = false;
+    Array.prototype.forEach.call(form.querySelectorAll('select[data-skyfly-option]'), function (sel) {
+      var o = sel.options[sel.selectedIndex];
+      var v = o ? (o.getAttribute('data-option-value') || '') : '';
+      if (v) { chosen[sel.getAttribute('data-skyfly-option')] = v; anyChoice = true; }
+    });
+    if (anyChoice) order.items[0].options = chosen;
+    Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
+    return order;
+  }
+  function progressOf(form) {
+    var o = gather(form);
+    var typed = ['name', 'phone', 'email', 'address'].some(function (k) { return o.customer[k]; });
+    return { customer: o.customer, items: o.items[0].product ? o.items : [], step: typed ? 'details' : 'started' };
+  }
+  // Puts back what this customer typed earlier in this browser session (after a refresh), without
+  // overwriting anything already in the form.
+  function restoreForm(form) {
+    var saved = savedProgress(formPage(form));
+    Object.keys(FIELDS).forEach(function (k) {
+      var v = saved.customer[k];
+      if (!v) return;
+      var el = marked(form, FIELDS[k][0])[0];
+      for (var i = 0; !el && i < FIELDS[k].length; i++) el = form.elements[FIELDS[k][i]];
+      if (el && el.value !== undefined && !el.value && el.tagName !== 'SELECT') el.value = v;
+    });
+    var first = saved.items[0];
+    var sel = marked(form, 'product')[0] || form.elements.product;
+    if (first && sel && sel.options) for (var j = 0; j < sel.options.length; j++) if ((sel.options[j].getAttribute('data-product') || sel.options[j].value) === first.product) sel.selectedIndex = j;
+  }
   function bind(form) {
     if (form.__skyfly) return;
     form.__skyfly = true;
+    try { restoreForm(form); } catch (e) { /* never break the form */ }
     form.addEventListener('focusin', function () { track('InitiateCheckout'); });
+    var changed = function () { try { saveProgress(formPage(form), progressOf(form)); } catch (e) { /* never break the form */ } };
+    form.addEventListener('input', changed);
+    form.addEventListener('change', changed);
     // Imported forms (data-skyfly-exclusive) are handled in the capture phase (see below), so the
     // page's own scripts can't also send the order to WhatsApp or another service.
     if (!form.hasAttribute('data-skyfly-exclusive')) form.addEventListener('submit', function (e) { e.preventDefault(); send(form); });
   }
   function send(form) {
       if (form.__busy) return;
-      var productEl = marked(form, 'product')[0] || form.elements.product;
-      var opt = productEl && productEl.options ? productEl.options[productEl.selectedIndex] : null;
-      var product = opt ? (opt.getAttribute('data-product') || opt.value) : (productEl ? productEl.value : form.getAttribute('data-product'));
-      var displayed = opt && opt.getAttribute('data-price');
-      var order = {
-        landingPage: form.getAttribute('data-skyfly-form') || pageKey,
-        customer: {}, items: [{ product: product, quantity: parseInt(field(form, ['quantity', 'qty']), 10) || 1 }],
-        website: form.elements.website ? String(form.elements.website.value || '') : '',
-      };
-      if (displayed) order.items[0].unitPrice = Number(displayed);
-      // The product's options chosen on the page (size, colour…): Skyfly checks and prices them.
-      var chosen = {}; var anyChoice = false;
-      Array.prototype.forEach.call(form.querySelectorAll('select[data-skyfly-option]'), function (sel) {
-        var o = sel.options[sel.selectedIndex];
-        var v = o ? (o.getAttribute('data-option-value') || '') : '';
-        if (v) { chosen[sel.getAttribute('data-skyfly-option')] = v; anyChoice = true; }
-      });
-      if (anyChoice) order.items[0].options = chosen;
-      Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
+      var order = gather(form);
       var btn = form.querySelector('[type=submit],button:not([type])');
       var label = btn && btn.textContent;
       form.__busy = true;
@@ -320,6 +439,29 @@
     var cat = null; var st8 = { product: box.getAttribute('data-product') || '', qty: 1, c: {}, addon: false, opts: {} }; var started = false;
     box.innerHTML = '<p class="sky-muted">Loading the order form…</p>';
     function start() { if (!started) { started = true; track('InitiateCheckout'); } }
+    var reviewing = false;
+    // Saves what the customer has chosen and typed so far (see saveProgress).
+    function progress() {
+      if (!cat || !product()) return;
+      var items = [{ product: st8.product, quantity: st8.qty }];
+      if (groups().length) { items[0].options = {}; groups().forEach(function (g) { items[0].options[g.name] = choice(g).label; }); }
+      if (addon()) items.push({ product: addon().code, quantity: 1, upsell: true });
+      var c = st8.c;
+      var typed = ['name', 'phone', 'email', 'address'].some(function (k) { return c[k]; });
+      saveProgress(page, { customer: { name: c.name || '', phone: c.phone || '', email: c.email || '', address: c.address || '', state: c.state || '', notes: c.notes || '', marketingConsent: Boolean(c.marketingConsent) },
+        items: items, step: reviewing ? 'review' : typed ? 'details' : 'started' });
+    }
+    function restoreProgress() {
+      var saved = savedProgress(page);
+      var main = null; var hasAddon = false;
+      saved.items.forEach(function (i) { if (i.upsell) hasAddon = true; else if (!main) main = i; });
+      if (main && cat.products.some(function (p) { return p.code === main.product; })) {
+        st8.product = main.product; st8.qty = Math.max(1, Math.min(10, main.quantity || 1)); st8.opts = main.options || {};
+      }
+      st8.addon = hasAddon && Boolean(cat.upsell);
+      ['name', 'phone', 'address', 'state', 'email', 'notes'].forEach(function (n) { if (saved.customer[n] && !st8.c[n]) st8.c[n] = saved.customer[n]; });
+      if (saved.customer.marketingConsent) st8.c.marketingConsent = true;
+    }
     function product() { for (var i = 0; i < cat.products.length; i++) if (cat.products[i].code === st8.product) return cat.products[i]; return null; }
     function wa() { return cat.whatsapp ? '<p class="sky-muted" style="margin-top:14px">Questions? <a href="https://wa.me/' + esc(cat.whatsapp) + '" target="_blank" rel="noopener">Chat with us on WhatsApp</a> (optional)</p>' : ''; }
     // The page's optional add-on, when the customer has added it.
@@ -388,8 +530,14 @@
           'Total: <b data-skyfly-total>' + esc(money(sum(), cat.currency)) + '</b> <span class="sky-muted">(confirmed by our system when you order)</span>' : '';
       }
       var addBtn = box.querySelector('[data-addon]');
-      if (addBtn) addBtn.onclick = function () { st8.addon = !st8.addon; addBtn.textContent = st8.addon ? 'Added ✓ (remove)' : 'Add'; total(); };
+      if (addBtn) addBtn.onclick = function () { st8.addon = !st8.addon; addBtn.textContent = st8.addon ? 'Added ✓ (remove)' : 'Add'; total(); progress(); };
       f.addEventListener('focusin', start);
+      // Typing: keep the details (for a refresh) and save the progress.
+      f.addEventListener('input', function (e) {
+        if (['name', 'phone', 'address', 'state', 'email', 'notes'].indexOf(e.target.name) === -1) return;
+        st8.c[e.target.name] = String(e.target.value || '');
+        progress();
+      });
       f.addEventListener('change', function (e) {
         if (e.target.name === 'sky_product') { st8.product = e.target.value; Array.prototype.forEach.call(f.querySelectorAll('.sky-opt'), function (o) { o.classList.toggle('on', o.querySelector('input').checked); }); }
         if (e.target.name === 'qty') st8.qty = parseInt(e.target.value, 10) || 1;
@@ -398,10 +546,12 @@
         if (e.target.name === 'sky_product' && cat.products.some(function (x) { return x.options; })) {
           // Keep what the customer typed, then show the new package's options.
           ['name', 'phone', 'address', 'state', 'email', 'notes'].forEach(function (n) { st8.c[n] = String(f.elements[n].value || ''); });
-          st8.opts = {}; return form();
+          st8.opts = {}; form(); return progress();
         }
         if (e.target.name === 'sky_product') st8.opts = {};
+        if (e.target.name === 'consent') st8.c.marketingConsent = e.target.checked;
         total();
+        progress();
       });
       total();
       f.addEventListener('submit', function (e) {
@@ -421,6 +571,7 @@
     }
     function review(message) {
       var p = product(); var c = st8.c;
+      reviewing = true; progress();
       box.innerHTML = '<h3>Review your order</h3><div class="sky-rows">' +
         '<div><span>Package</span><b>' + esc(p.name) + ' × ' + st8.qty + '</b></div>' +
         (optionText() ? '<div><span>Options</span><b>' + esc(optionText()) + '</b></div>' : '') +
@@ -433,7 +584,7 @@
         '<div class="sky-err" data-err' + (message ? '' : ' hidden') + ' role="alert">' + esc(message || '') + '</div>' +
         '<button class="sky-btn" type="button" data-place>' + esc(box.getAttribute('data-place') || 'Place my order') + '</button>' +
         '<p style="text-align:center"><button type="button" class="sky-link" data-edit>Change details</button></p>';
-      box.querySelector('[data-edit]').onclick = function () { form(); };
+      box.querySelector('[data-edit]').onclick = function () { reviewing = false; form(); };
       var btn = box.querySelector('[data-place]');
       btn.onclick = function () {
         if (btn.disabled) return;
@@ -480,12 +631,13 @@
       var saved = store(doneKey);
       if (saved) { try { return showConfirmation(JSON.parse(saved)); } catch (e) { /* show the form */ } }
       if (!cat.products.length) { box.innerHTML = '<p class="sky-err">Ordering is not available on this page right now.</p>' + wa(); return; }
+      try { restoreProgress(); } catch (e) { /* start fresh */ }
       if (!product()) st8.product = cat.products[0].code;
       form();
     }
     fetch(api + '/api/public/pages/' + encodeURIComponent(page) + '/catalog')
       .then(function (r) { if (!r.ok) throw new Error('catalog'); return r.json(); })
-      .then(function (data) { cat = data; render(); }, function () {
+      .then(function (data) { cat = data; return resumeFromLink(page).then(render); }, function () {
         box.innerHTML = '<p class="sky-err">The order form could not load. Please refresh the page.</p>';
       });
   }
@@ -501,6 +653,15 @@
     // For pages that save orders themselves: call with Skyfly's reply after a successful save.
     // Fires Purchase once per order (never for test orders, never twice on retries or refreshes).
     trackPurchase: function (data) { purchase(data); },
+    // For pages with their own order form: call as the customer types or chooses, with
+    // { landingPage?, customer: { name, phone, email, address, state, notes }, items: [{ product, quantity, upsell? }], step? }.
+    // Skyfly then shows checkouts that were started but not finished; submitOrder() completes them.
+    saveCheckout: function (progress) {
+      progress = progress || {};
+      saveProgress(progress.landingPage || pageKey, { customer: progress.customer || {}, items: progress.items || [], step: progress.step || 'details' });
+    },
+    // The current checkout session's ID, for pages that send orders themselves (as "checkoutId").
+    checkoutId: function (page) { return session(page || pageKey).token || null; },
     trackLead: function (value, currency, reference) {
       track('Lead', { data: { value: value, currency: currency }, eventId: 'lead_' + reference }, reference, true);
     },
