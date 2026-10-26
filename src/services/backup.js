@@ -7,7 +7,7 @@
 // because they point "forward" (circular references).
 export const TABLE_ORDER = [
   'users', 'businesses', 'platform_settings', 'business_members', 'business_invites', 'api_keys', 'products',
-  'landing_pages', 'landing_page_products', 'page_blobs', 'page_versions', 'page_files', 'pixel_settings', 'additional_pixels',
+  'landing_pages', 'landing_page_products', 'page_blobs', 'page_versions', 'page_files', 'pixel_settings', 'additional_pixels', 'tracking_pixels', 'tracking_pixel_pages',
   'sheet_connections', 'orders', 'order_items', 'order_status_history', 'conversion_events', 'sheet_recoveries', 'checkout_sessions',
   'email_settings', 'email_contacts', 'email_templates', 'email_automations', 'email_automation_steps', 'email_messages',
   'audit_log',

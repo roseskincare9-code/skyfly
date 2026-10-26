@@ -94,7 +94,8 @@ for (const [me, other] of [['A', 'B'], ['B', 'A']]) {
       const html = await (await p.request.get(`${SKYFLY}/businesses/${ids[me]}${s}`)).text();
       if (html.includes(NAMES[other].replace(' (test)', ''))) found.push(`${s || '/'}: ${other}'s name`);
       if (REF[other].test(html)) found.push(`${s || '/'}: ${other}'s order reference ${html.match(REF[other])[0]}`);
-      if (/Larose/i.test(html)) found.push(`${s || '/'}: Larose`);
+      // Email addresses are left out here: /team lists the platform owner, whose address may name Larose.
+      if (/Larose/i.test(html.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, ''))) found.push(`${s || '/'}: Larose`);
       if (SECRET.test(html)) found.push(`${s || '/'}: a secret-looking value`);
     }
     const csv = await (await p.request.get(`${SKYFLY}/businesses/${ids[me]}/orders/export.csv`)).text();

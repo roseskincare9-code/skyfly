@@ -61,3 +61,18 @@ export async function signUp(app, { name = 'Owner', email, password = 'correct-h
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
   return agent;
 }
+
+// Adds a tracking ID (Tracking & Pixels) straight to the database, as the dashboard saves it.
+// pages: landing page ids it tracks (allPages: every page of the business).
+export async function addTrackingPixel(pool, businessId, {
+  platform = 'meta', pixelId, name = null, enabled = true, allPages = true, pages = [],
+  events = ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase'], settings = {},
+  serverPurchase = false, tokenEnc = null, testCode = null, installMethod = 'id',
+} = {}) {
+  const { rows: [p] } = await pool.query(
+    `INSERT INTO tracking_pixels (business_id, platform, name, pixel_id, enabled, all_pages, events, settings, server_purchase, access_token_enc, test_event_code, install_method)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+    [businessId, platform, name ?? `${platform} ${pixelId}`, pixelId, enabled, allPages, events, JSON.stringify(settings), serverPurchase, tokenEnc, testCode, installMethod]);
+  for (const pageId of pages) await pool.query('INSERT INTO tracking_pixel_pages (tracking_pixel_id, landing_page_id) VALUES ($1, $2)', [p.id, pageId]);
+  return p;
+}

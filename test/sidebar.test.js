@@ -31,7 +31,7 @@ test('every sidebar item opens a working page and is highlighted there', async (
   assert.equal(all[0], '/admin', 'the platform owner also sees Platform admin');
   const links = all.slice(1);
   assert.deepEqual(links.map((l) => l.replace(`/businesses/${id}`, '') || '/'),
-    ['/', '/orders', '/checkouts', '/products', '/customers', '/landing-pages', '/email-contacts', '/email', '/integrations', '/subscription', '/settings']);
+    ['/', '/orders', '/checkouts', '/products', '/customers', '/landing-pages', '/email-contacts', '/email', '/pixels', '/integrations', '/subscription', '/settings']);
   for (const link of links) {
     const res = await owner.get(link).expect(200);
     assert.match(res.text, /<a href="[^"]+" class="on" aria-current=page>/, `${link} highlights its item`);

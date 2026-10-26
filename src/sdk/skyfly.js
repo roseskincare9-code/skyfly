@@ -31,12 +31,14 @@
   // ---------- pixels ----------
   var pixels = [];
   // A pixel ID already present in the page's own code is left to the page, so it is never loaded or counted twice.
-  function inPage(id) {
+  function inPage(p) {
     var scripts = document.getElementsByTagName('script');
     for (var i = 0; i < scripts.length; i++) {
       var s = scripts[i];
       if (s.src || s.hasAttribute('data-skyfly-config')) continue; // Skyfly's own config is not the page's pixel code
-      if (s.text.indexOf(id) !== -1) return true;
+      var t = s.text;
+      // X IDs are short: only the page's own twq('config', '<id>') counts.
+      if (p.provider === 'x' ? new RegExp("twq\\(\\s*['\"]config['\"]\\s*,\\s*['\"]" + p.id + "['\"]").test(t) : t.indexOf(p.id) !== -1) return true;
     }
     return false;
   }
@@ -46,16 +48,20 @@
     function go() { if (window.requestIdleCallback) requestIdleCallback(fn, { timeout: 2000 }); else setTimeout(fn, 1); }
     if (document.readyState === 'complete') go(); else window.addEventListener('load', go);
   }
-  function addScript(src) {
+  function addScript(src, onload) {
     var t = document.createElement('script'); t.async = true; t.src = src;
+    if (onload) t.onload = onload;
     var s = document.getElementsByTagName('script')[0]; s ? s.parentNode.insertBefore(t, s) : document.head.appendChild(t);
   }
+  // Which platforms' official scripts actually loaded on this page (for "Browser tag loaded").
+  var loadedScripts = {};
+  function scriptLoaded(provider) { return function () { loadedScripts[provider] = true; reportSeen(); debugShow(); }; }
   function loadMeta(p) {
     if (!window.fbq) {
       /* Meta Pixel base code (queue now, script after load) */
       var n = window.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
       if (!window._fbq) window._fbq = n; n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
-      later(function () { addScript('https://connect.facebook.net/en_US/fbevents.js'); });
+      later(function () { addScript('https://connect.facebook.net/en_US/fbevents.js', scriptLoaded('meta')); });
     }
     window.fbq('init', p.id);
   }
@@ -67,43 +73,108 @@
         for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
         ttq.instance = function (t) { for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]); return e; };
         ttq.load = function (e, n) { var r = 'https://analytics.tiktok.com/i18n/pixel/events.js'; ttq._i = ttq._i || {}; ttq._i[e] = []; ttq._i[e]._u = r; ttq._t = ttq._t || {}; ttq._t[e] = +new Date(); ttq._o = ttq._o || {}; ttq._o[e] = n || {};
-          later(function () { addScript(r + '?sdkid=' + e + '&lib=' + t); }); };
+          later(function () { addScript(r + '?sdkid=' + e + '&lib=' + t, scriptLoaded('tiktok')); }); };
       }(window, document, 'ttq');
     }
     window.ttq.load(p.id);
   }
+  function loadX(p) {
+    if (!window.twq) {
+      /* X (Twitter) website tag base code: queue now, uwt.js after load */
+      var s = window.twq = function () { s.exe ? s.exe.apply(s, arguments) : s.queue.push(arguments); };
+      s.version = '1.1'; s.queue = [];
+      later(function () { addScript('https://static.ads-twitter.com/uwt.js', scriptLoaded('x')); });
+    }
+    window.twq('config', p.id); // records the page view for this pixel
+  }
+  var LOADERS = { meta: loadMeta, tiktok: loadTikTok, x: loadX };
   function wants(p, event) { return p.events.indexOf(event) !== -1; }
 
-  // Fires an event once per page view (or once per key, e.g. per order reference).
+  // Fires an event once per page view (or once per key, e.g. per order reference), to every tracking
+  // ID on the page that wants it, in each platform's own way.
   function track(event, params, onceKey, skipOwn) {
     var key = event + ':' + (onceKey || '');
     if (fired[key]) return;
     fired[key] = true;
+    var data = params && params.data || {};
+    var eventId = params && params.eventId;
     pixels.forEach(function (p) {
       if (!wants(p, event) || (skipOwn && p.own)) return;
       try {
         if (p.provider === 'meta' && window.fbq) {
-          window.fbq('trackSingle', p.id, event, params && params.data || {}, params && params.eventId ? { eventID: params.eventId } : undefined);
+          window.fbq('trackSingle', p.id, event, data, eventId ? { eventID: eventId } : undefined);
+          debugLog(p, event);
         } else if (p.provider === 'tiktok' && window.ttq) {
-          var ev = { PageView: null, ViewContent: 'ViewContent', InitiateCheckout: 'InitiateCheckout', Lead: 'SubmitForm', Purchase: 'CompletePayment' }[event];
+          var ev = { PageView: null, ViewContent: 'ViewContent', InitiateCheckout: 'InitiateCheckout', Lead: 'SubmitForm', Purchase: p.purchaseEvent || 'CompletePayment' }[event];
           var inst = window.ttq.instance(p.id);
           if (event === 'PageView') inst.page();
-          else if (ev) inst.track(ev, params && params.data || {}, params && params.eventId ? { event_id: params.eventId } : undefined);
+          else if (ev) inst.track(ev, data, eventId ? { event_id: eventId } : undefined);
+          debugLog(p, ev || 'PageView');
+        } else if (p.provider === 'x' && window.twq) {
+          // PageView is recorded by twq('config'); other events need their X event ID.
+          if (event === 'PageView') { debugLog(p, 'PageView'); return; }
+          var eid = p.eventIds && p.eventIds[event];
+          if (!eid) return;
+          var xp = {};
+          if (data.value !== undefined) { xp.value = data.value; xp.currency = data.currency; }
+          // conversion_id lets X count a purchase once (same as the order reference).
+          if (event === 'Purchase' && eventId) xp.conversion_id = eventId;
+          window.twq('event', 'tw-' + p.id + '-' + eid, xp);
+          debugLog(p, event);
         }
       } catch (e) { /* tracking must never break the page */ }
     });
   }
 
+  // "Browser tag loaded": tells Skyfly once per page view which tracking IDs' scripts loaded here.
+  var seenSent = {};
+  var seenTimer = null;
+  function reportSeen() {
+    clearTimeout(seenTimer);
+    seenTimer = setTimeout(function () {
+      var list = pixels.filter(function (p) { return !p.own && loadedScripts[p.provider] && !seenSent[p.provider + p.id]; });
+      if (!list.length || !pageKey || !api) return;
+      list.forEach(function (p) { seenSent[p.provider + p.id] = true; });
+      var body = JSON.stringify({ page: pageKey, pixels: list.map(function (p) { return { provider: p.provider, id: p.id }; }) });
+      try { if (navigator.sendBeacon && navigator.sendBeacon(api + '/api/public/pixels-seen', new Blob([body], { type: 'text/plain' }))) return; } catch (e) { /* fall back */ }
+      fetch(api + '/api/public/pixels-seen', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body, keepalive: true }).catch(function () {});
+    }, 1500);
+  }
+
+  // ?skyfly_debug=1: a small panel listing every tracking ID on this page and the events sent to it,
+  // so the owner can check a page without browser extensions. Shows nothing otherwise.
+  var debugOn = /[?&]skyfly_debug=1\b/.test(location.search);
+  var debugEvents = {};
+  function debugLog(p, name) { if (!debugOn) return; var k = p.provider + ':' + p.id; (debugEvents[k] = debugEvents[k] || []).push(name); debugShow(); }
+  function debugShow() {
+    if (!debugOn || !document.body) return;
+    var box = document.getElementById('skyfly-debug');
+    if (!box) { box = document.createElement('div'); box.id = 'skyfly-debug'; box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:2147483647;max-width:360px;max-height:50vh;overflow:auto;background:#111;color:#fff;font:12px/1.4 monospace;padding:8px 10px;border-radius:8px;opacity:.92'; document.body.appendChild(box); }
+    box.textContent = '';
+    var h = document.createElement('div'); h.style.fontWeight = 'bold'; h.textContent = 'Skyfly tracking (' + pixels.length + ' IDs)'; box.appendChild(h);
+    pixels.forEach(function (p) {
+      var row = document.createElement('div');
+      row.setAttribute('data-skyfly-debug-pixel', p.provider + ':' + p.id);
+      row.textContent = p.provider + ' ' + p.id + (p.own ? ' (page\'s own code)' : '') + ' · script ' + (p.own || loadedScripts[p.provider] ? 'loaded' : 'loading…') + ' · ' + ((debugEvents[p.provider + ':' + p.id] || []).join(', ') || 'no events yet');
+      box.appendChild(row);
+    });
+  }
+
   function startPixels(config) {
+    var seen = {};
     (config.pixels || []).forEach(function (p) {
-      var own = inPage(p.id); // the page already loads this pixel and fires its own PageView
+      if (!LOADERS[p.provider] || seen[p.provider + p.id]) return; // each ID once per page
+      seen[p.provider + p.id] = true;
+      var own = inPage(p); // the page already loads this pixel and fires its own PageView
       try {
-        if (!own) (p.provider === 'meta' ? loadMeta : loadTikTok)(p);
+        if (!own) LOADERS[p.provider](p);
       } catch (e) { return; }
-      pixels.push({ provider: p.provider, id: p.id, own: own, events: own ? p.events.filter(function (e) { return e !== 'PageView'; }) : p.events });
+      pixels.push({ provider: p.provider, id: p.id, own: own, purchaseEvent: p.purchaseEvent, eventIds: p.eventIds || {},
+        events: own ? p.events.filter(function (e) { return e !== 'PageView'; }) : p.events });
     });
     track('PageView');
     track('ViewContent');
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', debugShow); else debugShow();
   }
 
   // ---------- orders ----------

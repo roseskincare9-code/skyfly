@@ -19,7 +19,7 @@ test('signing up the owner sets up Larose once; running it again changes nothing
   const home = await owner.get('/').expect(200);
   assert.match(home.text, /Larose Natural Skincare Nigeria/);
   assert.doesNotMatch(home.text, /<button type="submit">Set up Larose<\/button>/);
-  const { rows: [meta] } = await pool.query("SELECT pixel_id, enabled FROM pixel_settings WHERE provider = 'meta'");
+  const { rows: [meta] } = await pool.query("SELECT pixel_id, enabled FROM tracking_pixels WHERE platform = 'meta' ORDER BY id LIMIT 1");
   assert.deepEqual(meta, { pixel_id: '1357015185691765', enabled: true });
 });
 

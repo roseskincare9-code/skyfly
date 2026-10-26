@@ -61,7 +61,7 @@ describe('where the Skyfly pixel loads', () => {
     const res = await request(app).get('/api/public/pages/larosenigeria/tracking').expect(200);
     assert.ok(res.body.pixels.length >= 1);
     assert.ok(res.body.pixels.every((p) => p.id !== SKYFLY_PIXEL), 'customer businesses never get the Skyfly pixel');
-    const { rows } = await pool.query('SELECT count(*)::int AS n FROM pixel_settings WHERE pixel_id = $1', [SKYFLY_PIXEL]);
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM tracking_pixels WHERE pixel_id = $1', [SKYFLY_PIXEL]);
     assert.equal(rows[0].n, 0, 'nothing stored: it comes from the server config');
   });
 });
@@ -120,7 +120,7 @@ describe('dashboard', () => {
     const owner = await signUp(app, { email: 'second@larose.test' });
     await pool.query("INSERT INTO business_members (business_id, user_id, role) SELECT $1, id, 'owner' FROM users WHERE email = 'second@larose.test' ON CONFLICT DO NOTHING", [larose]);
     const page = await owner.get(`/businesses/${larose}/pixels`).expect(200);
-    assert.match(page.text, /Tracking pixels/);
+    assert.match(page.text, /Tracking &amp; Pixels/);
     assert.ok(!page.text.includes('data-skyfly-pixel') && !page.text.includes(SKYFLY_PIXEL));
   });
 });

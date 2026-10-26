@@ -51,7 +51,7 @@ describe('connecting spreadsheets centrally', () => {
     const hub = await owner.get(`${base}/integrations`).expect(200);
     assert.match(hub.text, new RegExp(`href="${base}/google-sheets"[^>]*><h2[^>]*>Google Sheets`));
     const page = await owner.get(`${base}/google-sheets`).expect(200);
-    assert.match(page.text, /class="on" aria-current=page>[\s\S]{0,300}Pixels &amp; Integrations/, 'highlighted under Pixels & Integrations');
+    assert.match(page.text, /class="on" aria-current=page>[\s\S]{0,300}Integrations/, 'highlighted under Integrations');
     assert.match(page.text, /No spreadsheet connected yet/);
     const old = await owner.get(`${base}/sheet-backup?check=1`).expect(301);
     assert.equal(old.headers.location, `${base}/google-sheets?check=1`);

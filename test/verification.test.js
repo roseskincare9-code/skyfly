@@ -93,7 +93,7 @@ describe('test orders', () => {
     const pixPath = `/businesses/${businessId}/pixels`;
     let _csrf = await csrfToken(owner, pixPath);
     await owner.post(pixPath).type('form').send({
-      _csrf, provider: 'meta', enabled: 'on', pixel_id: '123456789012345', events: ['PageView'], server_purchase: 'on', access_token: 'EAAB-verify-token-123456789',
+      _csrf, platform: 'meta', name: 'Server pixel', all_pages: 'on', enabled: 'on', pixel_id: '123456789012345', events: ['PageView'], server_purchase: 'on', access_token: 'EAAB-verify-token-123456789',
     }).expect(302);
 
     const path = `/businesses/${businessId}/orders/${order.id}`;
@@ -129,46 +129,50 @@ describe('test orders', () => {
   });
 });
 
-describe('pixel: configured vs verified', () => {
+describe('tracking ID: configured vs verified', () => {
   const pixPath = () => `/businesses/${businessId}/pixels`;
-  const status = (html, provider) => html.match(new RegExp(`<dl class="kv"[^>]*data-status="${provider}">([\\s\\S]*?)</dl>`))[1].replace(/\s+/g, ' ');
+  let id;
+  const verify = async () => (await owner.get(`${pixPath()}/${id}/verify`).expect(200)).text.match(/<dl class="kv" data-verify-status>([\s\S]*?)<\/dl>/)[1].replace(/\s+/g, ' ');
+  const statuses = async () => (await owner.get(`${pixPath()}?platform=meta`).expect(200)).text
+    .match(new RegExp(`data-pixel="${(await pool.query('SELECT pixel_id FROM tracking_pixels WHERE id = $1', [id])).rows[0].pixel_id}"[\\s\\S]*?data-statuses>([\\s\\S]*?)</td>`))[1].replace(/\s+/g, ' ');
 
   test('server Purchase became verified when the platform accepted a real event', async () => {
-    const page = await owner.get(pixPath()).expect(200);
-    const meta = status(page.text, 'meta');
-    assert.match(meta, /Configured<\/dt><dd>Yes: pixel 123456789012345 is on/);
-    assert.match(meta, /Browser events<\/dt><dd> <span class="pill pending">Not verified/);
-    assert.match(meta, /Server Purchase<\/dt><dd> <span class="pill active">Verified<\/span> <span class="muted">Meta accepted an event/);
-    assert.match(status(page.text, 'tiktok'), /Configured<\/dt><dd>No/);
+    ({ rows: [{ id }] } = await pool.query("SELECT id FROM tracking_pixels WHERE pixel_id = '123456789012345'"));
+    const v = await verify();
+    assert.match(v, /Enabled<\/dt><dd>Yes/);
+    assert.match(v, /Assigned to pages<\/dt><dd>All pages/);
+    assert.match(v, /Events received<\/dt><dd>Not verified yet/);
+    assert.match(v, /Server-side<\/dt><dd>Configured; delivery confirmed/);
+    assert.match(await statuses(), /Server delivery confirmed/);
+    // Seeded Larose IDs without a token are not shown as server-configured.
+    const { rows: [seeded] } = await pool.query("SELECT id FROM tracking_pixels WHERE name = 'Pixel New'");
+    assert.match((await owner.get(`${pixPath()}/${seeded.id}/verify`).expect(200)).text, /Server-side<\/dt><dd>Not configured \(optional\)/);
   });
 
   test('browser events are verified only when the owner confirms, and reset when the ID changes', async () => {
-    let _csrf = await csrfToken(owner, pixPath());
-    const off = await owner.post(`${pixPath()}/browser-verified`).type('form').send({ _csrf, provider: 'tiktok', verified: 'true' }).expect(400);
-    assert.match(off.text, /Turn the pixel on/);
-
-    _csrf = await csrfToken(owner, pixPath());
-    await owner.post(`${pixPath()}/browser-verified`).type('form').send({ _csrf, provider: 'meta', verified: 'true' }).expect(302);
-    let page = await owner.get(pixPath()).expect(200);
-    assert.match(status(page.text, 'meta'), /Browser events<\/dt><dd> <span class="pill active">Verified<\/span> <span class="muted">confirmed by you on/);
-    const { rows: [a] } = await pool.query("SELECT browser_verified_by FROM pixel_settings WHERE provider = 'meta'");
+    let _csrf = await csrfToken(owner, `${pixPath()}/${id}/verify`);
+    await owner.post(`${pixPath()}/${id}/browser-verified`).type('form').send({ _csrf, verified: 'true' }).expect(302);
+    assert.match(await verify(), /Events received<\/dt><dd>Confirmed by you in Meta(&#39;|')s test tool on/);
+    assert.match(await statuses(), /Events confirmed by you/);
+    const { rows: [a] } = await pool.query('SELECT browser_verified_by FROM tracking_pixels WHERE id = $1', [id]);
     assert.ok(a.browser_verified_by);
 
-    _csrf = await csrfToken(owner, pixPath());
-    await owner.post(pixPath()).type('form').send({ _csrf, provider: 'meta', enabled: 'on', pixel_id: '555555555555555', events: ['PageView'], server_purchase: 'on' }).expect(302);
-    page = await owner.get(pixPath()).expect(200);
-    const meta = status(page.text, 'meta');
-    assert.match(meta, /Browser events<\/dt><dd> <span class="pill pending">Not verified/);
-    assert.match(meta, /Server Purchase<\/dt><dd> <span class="pill pending">Not verified/);
+    _csrf = await csrfToken(owner, `${pixPath()}/${id}/edit`);
+    await owner.post(`${pixPath()}/${id}`).type('form').send({ _csrf, name: 'Server pixel', all_pages: 'on', enabled: 'on', pixel_id: '555555555555555', events: ['PageView'], server_purchase: 'on' }).expect(302);
+    const v = await verify();
+    assert.match(v, /Events received<\/dt><dd>Not verified yet/);
+    assert.match(v, /Server-side<\/dt><dd>Configured; delivery not confirmed yet/);
   });
 
   test('a successful test Purchase verifies the server connection', async () => {
-    let _csrf = await csrfToken(owner, pixPath());
-    await owner.post(pixPath()).type('form').send({ _csrf, provider: 'meta', enabled: 'on', pixel_id: '555555555555555', events: ['PageView'], server_purchase: 'on', test_event_code: 'TEST999' }).expect(302);
-    _csrf = await csrfToken(owner, pixPath());
-    await owner.post(`${pixPath()}/test`).type('form').send({ _csrf, provider: 'meta' }).expect(200);
-    const page = await owner.get(pixPath()).expect(200);
-    assert.match(status(page.text, 'meta'), /Server Purchase<\/dt><dd> <span class="pill active">Verified/);
+    let _csrf = await csrfToken(owner, `${pixPath()}/${id}/edit`);
+    await owner.post(`${pixPath()}/${id}`).type('form').send({ _csrf, name: 'Server pixel', all_pages: 'on', enabled: 'on', pixel_id: '555555555555555', events: ['PageView'], server_purchase: 'on', test_event_code: 'TEST999' }).expect(302);
+    _csrf = await csrfToken(owner, `${pixPath()}/${id}/verify`);
+    await owner.post(`${pixPath()}/${id}/test`).type('form').send({ _csrf }).expect(200);
+    const v = await verify();
+    assert.match(v, /Events received<\/dt><dd>Test event accepted by Meta/);
+    assert.match(v, /Server-side<\/dt><dd>Configured; delivery confirmed/);
+    assert.match(await statuses(), /Test event received/);
     assert.equal(calls.at(-1).body.test_event_code, 'TEST999');
   });
 });

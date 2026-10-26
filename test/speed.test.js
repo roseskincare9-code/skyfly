@@ -78,7 +78,9 @@ describe('served pages', () => {
 
   test('ad platform scripts load after the page, with events queued (none lost)', async () => {
     const sdk = await request(app).get('/sdk/skyfly.js').expect(200);
-    assert.match(sdk.text, /later\(function \(\) \{ addScript\('https:\/\/connect\.facebook\.net\/en_US\/fbevents\.js'\); \}\)/);
+    for (const src of ['connect.facebook.net/en_US/fbevents.js', 'static.ads-twitter.com/uwt.js']) {
+      assert.match(sdk.text, new RegExp(`later\\(function \\(\\) \\{ addScript\\('https://${src.replace(/\./g, '\\.')}', scriptLoaded\\('\\w+'\\)\\); \\}\\)`));
+    }
     assert.match(sdk.text, /window\.addEventListener\('load', go\)/);
   });
 

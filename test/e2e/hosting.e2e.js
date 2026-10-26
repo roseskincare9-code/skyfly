@@ -109,7 +109,7 @@ try {
     await dash.click('button[type=submit]');
     await dash.waitForURL(`${DASH}/`);
     await seedLarose(pool, 'owner@larose.test');
-    await pool.query('DELETE FROM additional_pixels'); // this test covers the page's own pixels (see additional-pixels.test.js)
+    await pool.query('DELETE FROM tracking_pixels'); // this test adds its own IDs (tracking.e2e.js covers many IDs per platform)
   });
 
   await step('import a ZIP landing page from the dashboard', async () => {
@@ -146,39 +146,40 @@ try {
     await p.close();
   });
 
-  await step('configure Meta and TikTok pixels', async () => {
+  await step('add a Meta tracking ID (with server-side Purchase) for all pages', async () => {
     await dash.goto(`${DASH}/businesses/1/pixels`);
-    const meta = dash.locator('#meta');
-    await meta.locator('input[name=enabled]').check();
-    await meta.locator('input[name=pixel_id]').fill('123456789012345');
-    await meta.locator('input[name=server_purchase]').check();
-    await meta.locator('input[name=access_token]').fill('EAAB-e2e-meta-token-0123456789');
-    await meta.locator('form[action$="/pixels"] button[type=submit]').click();
-    await dash.waitForSelector('.notice');
-    const tiktok = dash.locator('#tiktok');
-    await tiktok.locator('input[name=enabled]').check();
-    await tiktok.locator('input[name=pixel_id]').fill('C4E2ETEST1234567890A');
-    await tiktok.locator('form[action$="/pixels"] button[type=submit]').click();
-    await dash.waitForSelector('.notice');
-    await noSideScroll(dash, 'pixels');
+    await dash.click('[data-add]');
+    await dash.waitForURL(/pixels\/new\?platform=meta/);
+    await dash.fill('#name', 'Main Meta');
+    await dash.fill('#pixel_id', '123456789012345');
+    await dash.check('input[name=all_pages]');
+    await dash.check('input[name=server_purchase]');
+    await dash.fill('#access_token', 'EAAB-e2e-meta-token-0123456789');
+    await dash.click('[data-tracking-form] button[type=submit]');
+    await dash.waitForURL(/pixels\?platform=meta&done=added/);
+    assert.equal(await dash.locator('tr[data-pixel="123456789012345"]').count(), 1);
+    assert.ok(!(await dash.content()).includes('EAAB-e2e-meta-token'));
+    await noSideScroll(dash, 'tracking list');
   });
 
-  await step('install TikTok by pasting its pixel code: only the matching box shows, the ID is read from the code', async () => {
-    const tiktok = dash.locator('#tiktok');
-    await tiktok.locator('input[name=install_method][value=code]').check();
-    if (await tiktok.locator('input[name=pixel_id]').isVisible()) throw new Error('Pixel ID box still shown in code mode');
-    await tiktok.locator('textarea[name=pixel_code]').fill(`<script>
+  await step('add TikTok by pasting its pixel code: only the matching box shows, the ID is read from the code', async () => {
+    await dash.goto(`${DASH}/businesses/1/pixels/new?platform=tiktok`);
+    await dash.fill('#name', 'TikTok main');
+    await dash.check('input[name=install_method][value=code]');
+    if (await dash.locator('#pixel_id').isVisible()) throw new Error('Pixel ID box still shown in code mode');
+    await dash.fill('#pixel_code', `<script>
 !function (w, d, t) {
   w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";n=document.createElement("script");n.async=!0,n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e)};
   ttq.load('C4E2ETEST1234567890A');
   ttq.page();
 }(window, document, 'ttq');
 </script>`);
-    await tiktok.locator('form[action$="/pixels"] button[type=submit]').click();
-    await dash.waitForSelector('.notice');
-    const text = await dash.locator('#tiktok').textContent();
-    if (!text.includes('Pasted pixel code (Pixel ID C4E2ETEST1234567890A read from it)')) throw new Error('code install not shown');
-    await noSideScroll(dash, 'pixels');
+    await dash.check('input[name=all_pages]');
+    await noSideScroll(dash, 'add tracking ID');
+    await dash.click('[data-tracking-form] button[type=submit]');
+    await dash.waitForURL(/pixels\?platform=tiktok&done=added/);
+    assert.equal(await dash.locator('tr[data-pixel="C4E2ETEST1234567890A"]').count(), 1);
+    await noSideScroll(dash, 'tracking list');
     await dash.screenshot({ path: path.join(shots, 'h2-pixels-mobile.png'), fullPage: true });
   });
 
@@ -201,8 +202,8 @@ try {
     await shop.waitForTimeout(300);
     assert.deepEqual(fbCalls.filter((c) => c[0] === 'init').map((c) => c[1]), ['123456789012345']);
     assert.equal(fbCalls.filter((c) => c[2] === 'PageView').length, 1);
-    const tt = await shop.evaluate(() => window.ttq._i['C4E2ETEST1234567890A'].map((c) => c[0]));
-    assert.deepEqual(tt, ['page']);
+    const tt = await shop.evaluate(() => window.ttq._i['C4E2ETEST1234567890A'].map((c) => c.slice(0, 2).join(':')));
+    assert.deepEqual(tt, ['page', 'track:ViewContent'], 'PageView and ViewContent once each (all events are ticked for a new ID)');
   });
 
   await step('page scripts cannot read the dashboard or its cookie', async () => {
@@ -265,14 +266,14 @@ try {
   await step('the page now shows its order connection as verified by that order', async () => {
     await dash.goto(`${DASH}/businesses/1/landing-pages/${pageId}`);
     assert.match(await dash.textContent('#connection'), new RegExp(`Orders connected ✓ verified[\\s\\S]*${reference}`));
-    await dash.goto(`${DASH}/businesses/1/pixels`);
-    const meta = await dash.textContent('[data-status=meta]');
-    assert.match(meta, /Configured\s*Yes/);
-    assert.match(meta, /Browser events\s*Not verified/);
+    await dash.goto(`${DASH}/businesses/1/pixels?platform=meta`);
+    const meta = await dash.textContent('tr[data-pixel="123456789012345"] [data-statuses]');
+    assert.match(meta, /Enabled/);
+    assert.match(meta, /Events not verified/);
     // Purchase is counted when the order is saved: the server event went out then, with the browser's event ID.
     assert.equal(apiCalls.length, 1, 'one server Purchase, at save');
     assert.equal(apiCalls[0].body.data[0].event_id, `purchase_${reference}`);
-    assert.match(meta, /Server Purchase\s*Verified/);
+    assert.match(meta, /Server delivery confirmed/);
   });
 
   await step('dashboard shows the order; marking Paid later sends no second Purchase', async () => {
@@ -298,8 +299,8 @@ try {
     await dash.locator('form:has(input[name=kind][value=payment]) button').click();
     await dash.waitForSelector('.notice');
     assert.equal(apiCalls.length, 1, 'no duplicate Purchase');
-    await dash.goto(`${DASH}/businesses/1/pixels`);
-    assert.match(await dash.textContent('[data-status=meta]'), /Server Purchase\s*Verified\s*Meta accepted an event/);
+    await dash.goto(`${DASH}/businesses/1/pixels?platform=meta`);
+    assert.match(await dash.textContent('tr[data-pixel="123456789012345"] [data-statuses]'), /Server delivery confirmed[\s\S]*Last server event: Purchase sent/);
     await dash.screenshot({ path: path.join(shots, 'h7-pixel-status-mobile.png'), fullPage: true });
   });
 

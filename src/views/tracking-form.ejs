@@ -1,0 +1,91 @@
+<%- include('partials/head', { title: p ? 'Edit tracking ID' : 'Add tracking ID' }) %>
+<%- include('partials/nav') %>
+<main style="max-width:820px">
+  <p><a href="<%= base %>/pixels?platform=<%= platform %>">← Tracking &amp; Pixels</a></p>
+  <h1><%= p ? 'Edit ' + p.name : 'Add a tracking ID' %></h1>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form method="post" action="<%= base %>/pixels<%= p ? '/' + p.id : '' %>" class="card" data-tracking-form>
+    <%- include('partials/csrf') %>
+    <label>Business</label>
+    <p style="margin:0"><strong><%= business.name %></strong> <span class="muted">(to add an ID for another business, switch business in the menu)</span></p>
+
+    <label for="platform">Platform</label>
+    <% if (p) { %><p style="margin:0"><strong><%= PLATFORM_LABELS[platform] %></strong></p><% } else { %>
+    <select id="platform" name="platform" onchange="location.href='<%= base %>/pixels/new?platform='+this.value">
+      <% PLATFORMS.forEach((pl) => { %><option value="<%= pl %>" <%= pl === platform ? 'selected' : '' %>><%= PLATFORM_LABELS[pl] %></option><% }) %>
+    </select><% } %>
+
+    <label for="name">Tracking name</label>
+    <input id="name" name="name" maxlength="60" value="<%= v.name %>" placeholder="e.g. Ad account 2" required>
+
+    <fieldset class="method">
+      <legend>How to add it</legend>
+      <label class="choice"><input type="radio" name="install_method" value="id" <%= v.method !== 'code' ? 'checked' : '' %>> Enter the <%= SHORT_LABELS[platform] %> pixel ID</label>
+      <label class="choice"><input type="radio" name="install_method" value="code" <%= v.method === 'code' ? 'checked' : '' %>> Paste the <%= SHORT_LABELS[platform] %> pixel code</label>
+    </fieldset>
+    <div class="m-id">
+      <label for="pixel_id"><%= SHORT_LABELS[platform] %> pixel ID</label>
+      <input id="pixel_id" name="pixel_id" value="<%= v.pixel_id %>" autocomplete="off" placeholder="<%= PIXEL_ID_RULES[platform].hint %>">
+    </div>
+    <div class="m-code">
+      <label for="pixel_code">Paste the <%= SHORT_LABELS[platform] %> pixel base code</label>
+      <textarea id="pixel_code" name="pixel_code" rows="6" spellcheck="false" autocomplete="off" style="font-family:ui-monospace,monospace;font-size:13px"></textarea>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">Skyfly only reads the pixel ID<%= platform === 'x' ? ' (and any X event IDs)' : '' %> from the code. The code is never stored or run; Skyfly loads the official script itself.<% if (p && p.install_method === 'code') { %> Leave empty to keep pixel <strong><%= p.pixel_id %></strong>.<% } %></p>
+    </div>
+    <details class="help"><summary>Where do I find it?</summary>
+      <% if (platform === 'meta') { %><p>Meta Events Manager → Data sources → your pixel: the Pixel ID is the long number under its name. Code: Settings → Install code manually → Copy code.</p>
+      <% } else if (platform === 'tiktok') { %><p>TikTok Events Manager → Web events → your pixel: the Pixel ID (e.g. C4AB…) is next to its name. Code: Settings → Manually install pixel code.</p>
+      <% } else { %><p>X Ads → Tools → Events Manager: the pixel ID is in the base code, <code>twq('config', '<strong>o1abc</strong>')</code>. Each conversion event you create there has its own event code <code>tw-o1abc-<strong>o1xyz</strong></code>: put the last part in the event boxes below.</p><% } %>
+    </details>
+
+    <label class="toggle"><input type="checkbox" name="enabled" <%= v.enabled ? 'checked' : '' %>> Enabled (load this tracking ID on its pages)</label>
+
+    <label>Landing pages this ID tracks</label>
+    <label style="color:var(--text)"><input type="checkbox" name="all_pages" <%= v.all_pages ? 'checked' : '' %>> <strong>All pages of <%= business.name %></strong>, including pages added later</label>
+    <% if (!pages.length) { %><p class="muted">No landing pages yet.</p><% } %>
+    <% pages.forEach((pg) => { %>
+      <label style="color:var(--text)"><input type="checkbox" name="pages" value="<%= pg.id %>" <%= v.pages.includes(String(pg.id)) ? 'checked' : '' %>> <%= pg.name %> <span class="muted">(<%= pg.status %>)</span></label>
+    <% }) %>
+    <p class="muted" style="font-size:13px;margin:4px 0 0">Nothing is assigned automatically: choose the pages, or all pages.</p>
+
+    <label>Events</label>
+    <% EVENTS.forEach((e) => { %>
+      <label style="color:var(--text)"><input type="checkbox" name="events" value="<%= e %>" <%= v.events.includes(e) ? 'checked' : '' %>> <strong><%= e %></strong> <span class="muted">· <%= EVENT_HELP[e] %></span></label>
+    <% }) %>
+
+    <% if (platform === 'x') { %>
+      <h3 style="font-size:1rem;margin:16px 0 4px">X event IDs</h3>
+      <p class="muted" style="font-size:13px;margin:0">X counts each event under its own event ID (from X Events Manager). Page views are recorded by the pixel itself. An event without an ID is not sent to X.</p>
+      <% X_EVENTS.forEach((e) => { %>
+        <label for="x_event_<%= e %>"><%= e %> event ID</label>
+        <input id="x_event_<%= e %>" name="x_event_<%= e %>" value="<%= (v.eventIds || {})[e] || '' %>" autocomplete="off" placeholder="e.g. o1xyz (from tw-pixel-o1xyz)">
+      <% }) %>
+    <% } %>
+
+    <% if (platform === 'tiktok') { %>
+      <label for="purchase_event">TikTok event name for a purchase</label>
+      <select id="purchase_event" name="purchase_event">
+        <% TIKTOK_PURCHASE_EVENTS.forEach((e) => { %><option value="<%= e %>" <%= (v.purchaseEvent || 'CompletePayment') === e ? 'selected' : '' %>><%= e %><%= e === 'CompletePayment' ? ' (default)' : '' %></option><% }) %>
+      </select>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">Use the name your TikTok ad campaigns optimise for. Browser and server use the same name and event ID, so TikTok counts it once.</p>
+    <% } %>
+
+    <% if (PROVIDERS.includes(platform)) { %>
+      <h3 style="font-size:1rem;margin:16px 0 4px">Server-side Purchase (optional)</h3>
+      <p class="muted" style="font-size:13px;margin:0">Not needed for browser tracking. Skyfly sends Purchase from its server with the <%= platform === 'meta' ? 'Conversions API' : 'Events API' %> once per order, using the same event ID as the browser so it counts once: when the order is saved if Purchase is ticked, otherwise when you mark it Paid.</p>
+      <% if (!encryptionReady) { %><div class="warn-box" style="margin-top:8px">Unavailable until the server has SKYFLY_ENCRYPTION_KEY set.</div><% } %>
+      <label><input type="checkbox" name="server_purchase" <%= v.server_purchase ? 'checked' : '' %> <%= encryptionReady ? '' : 'disabled' %>> Send Purchase from the server</label>
+      <label for="access_token">Access token <%= p && p.access_token_enc ? '(saved; leave blank to keep it)' : '' %></label>
+      <input id="access_token" name="access_token" type="password" autocomplete="new-password" placeholder="<%= p && p.access_token_enc ? '••••••••  saved' : 'From the ad platform' %>" <%= encryptionReady ? '' : 'disabled' %>>
+      <% if (p && p.access_token_enc) { %><label style="color:var(--text)"><input type="checkbox" name="remove_token"> Remove saved token</label><% } %>
+      <label for="test_event_code">Test event code (optional)</label>
+      <input id="test_event_code" name="test_event_code" value="<%= v.test_event_code %>" placeholder="e.g. TEST12345">
+      <p class="muted" style="font-size:13px;margin:4px 0 0">With a code saved, test orders ("TEST ORDER …") send their Purchase only to the platform's Test events screen, never to real reporting.</p>
+    <% } else { %>
+      <p class="muted" style="font-size:13px">X tracking runs in the browser; Skyfly does not send X events from its server.</p>
+    <% } %>
+
+    <p><button type="submit"><%= p ? 'Save changes' : 'Add tracking ID' %></button> <a href="<%= base %>/pixels?platform=<%= platform %>">Cancel</a></p>
+  </form>
+</main>
+</body></html>
