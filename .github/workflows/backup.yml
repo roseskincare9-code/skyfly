@@ -2,8 +2,12 @@
 # read from Render, or the owner's sign-in), checked by restoring it into a throwaway database. The
 # file is uploaded ENCRYPTED (this repository is public): AES-256 with the BACKUP_PASSPHRASE secret,
 # else the owner's password, else the backup key. Logs show only sizes and row counts. Reads only.
+# Runs every day (each copy is kept 30 days) and on demand.
 name: Database backup
-on: workflow_dispatch
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
