@@ -10,6 +10,7 @@ import { hashApiKey } from '../lib/apiKeys.js';
 import { subscriptionState } from '../services/tenancy.js';
 import { browserConfig } from '../services/pixels.js';
 import { confirmVerification } from '../services/orderNotifications.js';
+import { validateCheckoutInput, saveCheckout, resumeCheckout, linkOrder } from '../services/checkouts.js';
 
 // Used when a business has no WhatsApp number in Settings.
 export const DEFAULT_WHATSAPP = '+2349049206695';
@@ -53,6 +54,46 @@ function baseUrl(req, config) {
 
 export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
   const router = Router();
+
+  // Checkout progress (abandoned checkouts): saved often while a customer fills in an order form, so
+  // it has its own, higher rate limit and never uses up the customer's order attempts. Accepts JSON
+  // and the text/plain body that navigator.sendBeacon sends when the page is closed.
+  const checkouts = Router();
+  checkouts.use(cors(pool, config));
+  checkouts.use((req, res, next) => { res.set('Cross-Origin-Resource-Policy', 'cross-origin'); next(); });
+  checkouts.use(rateLimit({
+    windowMs: 10 * 60 * 1000, limit: config.orderRateLimit * 15, keyGenerator: (req) => ipKeyGenerator(req.ip),
+    standardHeaders: 'draft-7', legacyHeaders: false, skip: (req) => req.method === 'OPTIONS',
+    handler: (req, res) => res.status(429).json({ ok: false, error: 'RATE_LIMITED' }),
+  }));
+  checkouts.use(express.json({ limit: '20kb' }), express.text({ limit: '20kb', type: 'text/plain' }));
+  checkouts.post('/', asyncHandler(async (req, res) => {
+    if (!req.headers.origin) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    let body = req.body;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ ok: false, error: 'BAD_REQUEST' }); } }
+    if (typeof body?.website === 'string' && body.website.trim() !== '') return res.status(400).json({ ok: false, error: 'VALIDATION' });
+    try {
+      const { rows: [dest] } = await pool.query('SELECT order_destination FROM landing_pages WHERE slug = $1', [String(body?.landingPage ?? '').toLowerCase()]);
+      if (dest?.order_destination === 'whatsapp') return res.json({ ok: true, ended: true });
+      res.json(await saveCheckout(pool, validateCheckoutInput(body), { origin: req.headers.origin }, config));
+    } catch (err) {
+      if (err instanceof OrderError) return res.status(err.status).json({ ok: false, error: err.code });
+      throw err;
+    }
+  }));
+  // Resume link (?skyfly_checkout=…): the page and the chosen products only, never personal details.
+  checkouts.get('/:token', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const r = await resumeCheckout(pool, req.params.token);
+    if (!r) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    res.json({ ok: true, ...r });
+  }));
+  checkouts.use((err, req, res, next) => {
+    const status = err.type === 'entity.parse.failed' || err.type === 'entity.too.large' ? 400 : 500;
+    if (status === 500) console.error('Checkout API error:', err.message);
+    res.status(status).json({ ok: false, error: status === 400 ? 'BAD_REQUEST' : 'SERVER_ERROR' });
+  });
+  router.use('/api/public/checkouts', checkouts);
 
   const api = Router();
   api.use(cors(pool, config));
@@ -98,6 +139,9 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
       }
       const client = { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 400) };
       const { order, replayed } = await createOrder(pool, input, { ...(key || { origin: req.headers.origin }), client }, config);
+      // The checkout session this order completes (same business only; a retry changes nothing).
+      await linkOrder(pool, order.id, { checkoutId: typeof req.body?.checkoutId === 'string' ? req.body.checkoutId : null })
+        .catch((err) => console.error('Checkout link error:', err.message));
       if (!replayed) {
         onOrderSaved(order.id);
         recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));

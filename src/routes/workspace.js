@@ -15,6 +15,7 @@ import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 import { audit } from '../lib/audit.js';
 import { workspaceAccess, subscriptionState, expireSubscriptions, platformSettings, can } from '../services/tenancy.js';
 import { teamRoutes } from './team.js';
+import { checkoutRoutes } from './checkouts.js';
 import { emailRoutes, emailContactRoutes } from './email.js';
 
 // Everything under /businesses/:businessId is only visible to that business's members
@@ -133,6 +134,8 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   }));
 
   scoped.use('/orders', need('orders'), ordersRoutes({ pool, config, onPaid, onOrderSaved }));
+  // Abandoned checkouts: separate from orders (never counted as sales).
+  scoped.use('/checkouts', need('orders'), checkoutRoutes({ pool, config }));
   scoped.use('/google-sheets', need('integrations'), googleSheetsRoutes({ pool, config, onOrderSaved }));
   // Old address of the Google Sheets screen.
   scoped.get(['/sheet-backup', '/sheet-backup/*'], (req, res) => {

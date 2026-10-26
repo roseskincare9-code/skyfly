@@ -11,6 +11,7 @@
   const items = hasBiz ? [
     item('overview', base, 'home', 'Overview'),
     allowed('orders') && item('orders', base + '/orders', 'bag', 'Orders', pend ? `<span class="badge" title="${pend} pending">${pend}</span>` : ''),
+    allowed('orders') && item('checkouts', base + '/checkouts', 'clock', 'Abandoned Checkouts'),
     allowed('catalog') && item('products', base + '/products', 'box', 'Products'),
     allowed('orders') && item('customers', base + '/customers', 'users', 'Customers'),
     allowed('catalog') && item('pages', base + '/landing-pages', 'layout', 'Landing Pages'),

@@ -42,6 +42,11 @@ jobs:
         run: node test/e2e/live-tenancy.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
+      - name: Abandoned checkouts on the demo shop (in progress → abandoned → resumed → recovered; about 12 minutes)
+        if: always()
+        run: node test/e2e/live-abandoned.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
       - name: Disable the live-test sign-in again
         if: always()
         run: node scripts/e2e-login.mjs disable

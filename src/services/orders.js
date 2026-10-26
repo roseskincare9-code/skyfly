@@ -119,7 +119,7 @@ function fingerprint(input) {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-async function loadLandingPage(client, slug) {
+export async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
     `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode, lp.upsell_product_id,
             (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain,
@@ -133,7 +133,7 @@ async function loadLandingPage(client, slug) {
 
 // Prices every item from Skyfly's catalog: a package must be on the page; an add-on must be the
 // page's configured upsell. Totals sent by the browser are never used.
-async function loadPricedItems(client, page, items) {
+export async function loadPricedItems(client, page, items) {
   const codes = items.map((i) => i.code);
   const { rows } = await client.query(
     `SELECT p.id, p.code, p.name, p.price_minor, p.options, (lpp.product_id IS NOT NULL) AS on_page
