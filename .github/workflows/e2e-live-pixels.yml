@@ -1,4 +1,4 @@
-# Checks Larose's Meta pixels (main + "Pixel New") on the live page. Places NO order and sends
+# Checks Larose's Meta pixels (the known ones plus any added in the dashboard) on the live page. Places NO order and sends
 # nothing to Meta (pixel hits are intercepted and counted). Manual only.
 name: Live pixel check (Larose)
 on:
@@ -9,6 +9,9 @@ on:
         required: true
       landing_url:
         description: Page to test (default the GitHub Pages Larose page)
+        default: ''
+      expect_pixel:
+        description: Optional Meta pixel ID that must be on the page (e.g. one just added in the dashboard)
         default: ''
 permissions:
   contents: read
@@ -27,6 +30,7 @@ jobs:
         env:
           SKYFLY_URL: ${{ inputs.url }}
           LANDING_URL: ${{ inputs.landing_url }}
+          EXPECT_PIXEL: ${{ inputs.expect_pixel }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

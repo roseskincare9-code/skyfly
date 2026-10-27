@@ -19,6 +19,9 @@ const PIXELS = {
   ...(HOSTED ? {} : { '1395209215400304': 'skincare' }),
 };
 const IDS = Object.keys(PIXELS);
+// Optional: a pixel that must be on the page (e.g. one just added in the dashboard).
+const EXPECT = (process.env.EXPECT_PIXEL || '').trim();
+if (EXPECT && !/^\d{10,20}$/.test(EXPECT)) throw new Error('EXPECT_PIXEL should be a Meta pixel ID (10–20 digits)');
 if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) {
   throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
 }
@@ -34,6 +37,12 @@ await step('Skyfly lists every Larose pixel for this page once, by ID, with no t
   const res = await fetch(`${SKYFLY}/api/public/pages/${PAGE_KEY}/tracking`);
   const raw = await res.text();
   const cfg = JSON.parse(raw);
+  // Every other Meta pixel set up for this page in the dashboard (e.g. one the owner added under
+  // Tracking & Pixels) gets the same checks.
+  for (const p of cfg.pixels) {
+    if (p.provider === 'meta' && !PIXELS[p.id]) { PIXELS[p.id] = `dashboard pixel ${p.id}`; IDS.push(p.id); }
+  }
+  if (EXPECT && !PIXELS[EXPECT]) throw new Error(`pixel ${EXPECT} is not set up for this page: add it under Tracking & Pixels → Meta → Connect Meta Pixel (tick this page)`);
   for (const id of IDS) {
     const p = cfg.pixels.find((x) => x.provider === 'meta' && x.id === id);
     assert(p && p.events.includes('PageView') && p.events.includes('InitiateCheckout') && p.events.includes('Purchase'), `${PIXELS[id]} ${id}: ${JSON.stringify(cfg.pixels)}`);
