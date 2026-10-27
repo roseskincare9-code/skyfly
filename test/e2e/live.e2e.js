@@ -16,7 +16,8 @@ const PAGE = process.env.LANDING_URL || 'https://roseskincare9-code.github.io/La
 const HOSTED = PAGE.startsWith(SKYFLY);
 const PAGE_KEY = process.env.PAGE_KEY || (HOSTED ? 'larose-skincare' : 'larosenigeria');
 // Larose's Meta pixels: the main one (in the page's own code) and "Pixel New" (added in Skyfly).
-const LAROSE_PIXELS = ['1357015185691765', '1087347357386553', '1105657388903531', '1653102723149813', '1130654146607839', '4389240701387003'];
+// "skincare" (1395209215400304, migration 034) is assigned to the GitHub Pages Larose page only.
+const LAROSE_PIXELS = ['1357015185691765', '1087347357386553', '1105657388903531', '1653102723149813', '1130654146607839', '4389240701387003', ...(HOSTED ? [] : ['1395209215400304'])];
 const PAGE_ORIGIN = HOSTED ? 'null' : 'https://roseskincare9-code.github.io';
 const SHEET = 'https://sheetdb.io/api/v1/m111fq96ve953';
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());

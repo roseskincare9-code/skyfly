@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { setup, resetDatabase, csrfToken, signUp, ORIGIN, openClientSignup, addTrackingPixel } from './helpers.js';
-import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS } from '../src/scripts/seed-larose.js';
+import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS, LAROSE_SKINCARE_PIXEL } from '../src/scripts/seed-larose.js';
 import { parsePixelCode } from '../src/services/pixelCode.js';
 import { decrypt } from '../src/lib/secrets.js';
 import { clearOriginCache } from '../src/lib/origins.js';
@@ -99,7 +99,9 @@ const encryptionKey = randomBytes(32);
 const { pool, app } = setup({
   encryptionKey, allowSignup: true, signupFirstOnly: false, metaGraphBase: `${mockBase}/meta/v26.0`, tiktokApiBase: `${mockBase}/tiktok/v1.3`,
 });
+// Larose's pixels on every page, and "skincare", on the Larose landing page only.
 const LAROSE_IDS = [LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, ...LAROSE_AD_ACCOUNT_PIXELS.map((p) => p.id)];
+const SKINCARE = LAROSE_SKINCARE_PIXEL.id;
 const SECOND_ORIGIN = 'https://second.larose.test';
 const settle = () => new Promise((r) => setTimeout(r, 200));
 let owner; let larose; let page1; let page2; let n = 0;
@@ -137,15 +139,16 @@ before(async () => {
 after(async () => { await pool.end(); mock.close(); });
 
 describe('existing Larose tracking', () => {
-  test('all six Larose Meta pixels are kept, on every page, each loaded once with no token', async () => {
+  test('six Larose Meta pixels run on every page; "skincare" runs next to them on the Larose page only; each once, no token', async () => {
     const { rows } = await pool.query('SELECT name, platform, pixel_id, enabled, all_pages FROM tracking_pixels WHERE business_id = $1 ORDER BY id', [larose]);
-    assert.deepEqual(rows.map((r) => r.pixel_id), LAROSE_IDS);
-    assert.ok(rows.every((r) => r.platform === 'meta' && r.enabled && r.all_pages));
-    for (const slug of ['larosenigeria', 'larose-second']) {
-      const list = await tracking(slug);
-      assert.deepEqual(ids(list), LAROSE_IDS);
-      assert.ok(!/token|secret/i.test(JSON.stringify(list)));
-    }
+    assert.deepEqual(rows.map((r) => r.pixel_id), [...LAROSE_IDS, SKINCARE]);
+    assert.ok(rows.every((r) => r.platform === 'meta' && r.enabled));
+    assert.deepEqual(rows.filter((r) => !r.all_pages).map((r) => [r.name, r.pixel_id]), [['skincare', SKINCARE]]);
+    const main = await tracking('larosenigeria');
+    assert.deepEqual(ids(main), [...LAROSE_IDS, SKINCARE]);
+    assert.deepEqual(main.find((p) => p.id === SKINCARE).events, ['PageView', 'ViewContent', 'InitiateCheckout', 'Lead', 'Purchase']);
+    assert.deepEqual(ids(await tracking('larose-second')), LAROSE_IDS, 'not assigned to the other page');
+    for (const slug of ['larosenigeria', 'larose-second']) assert.ok(!/token|secret/i.test(JSON.stringify(await tracking(slug))));
   });
 
   test('the dashboard has a Tracking & Pixels section with Meta, TikTok and X tabs', async () => {
@@ -153,8 +156,8 @@ describe('existing Larose tracking', () => {
     assert.match(home.text, /Tracking &amp; Pixels/);
     const page = await owner.get(url()).expect(200);
     assert.deepEqual([...page.text.matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]), ['meta', 'tiktok', 'x']);
-    assert.match(page.text, /Meta \(Facebook &amp; Instagram\)[\s\S]*?6 on \/ 6/);
-    for (const id of LAROSE_IDS) assert.ok(page.text.includes(`data-pixel="${id}"`));
+    assert.match(page.text, /Meta \(Facebook &amp; Instagram\)[\s\S]*?7 on \/ 7/);
+    for (const id of [...LAROSE_IDS, SKINCARE]) assert.ok(page.text.includes(`data-pixel="${id}"`));
     assert.match(page.text, /data-add href="[^"]*\/pixels\/new\?platform=meta"/);
     assert.match((await owner.get(url('?platform=x')).expect(200)).text, /No X tracking IDs yet/);
   });
@@ -176,10 +179,10 @@ describe('adding many tracking IDs on each platform', () => {
     }
     const counts = Object.fromEntries((await pool.query(
       'SELECT platform, count(*)::int AS n FROM tracking_pixels WHERE business_id = $1 AND enabled GROUP BY platform', [larose])).rows.map((r) => [r.platform, r.n]));
-    assert.deepEqual(counts, { meta: 30, tiktok: 15, x: 10 });
+    assert.deepEqual(counts, { meta: 31, tiktok: 15, x: 10 }, '24 added + 6 Larose + skincare');
 
     const first = await tracking('larosenigeria');
-    assert.equal(ids(first, 'meta').length, 30);
+    assert.equal(ids(first, 'meta').length, 31);
     assert.deepEqual(ids(first, 'tiktok'), Array.from({ length: 10 }, (_, i) => tiktokId(i + 1)), 'TikTok IDs upper-cased; 11–15 are on the second page only');
     assert.deepEqual(ids(first, 'x'), Array.from({ length: 10 }, (_, i) => xId(i + 1)));
     assert.equal(new Set(first.map((p) => `${p.provider}:${p.id}`)).size, first.length, 'every ID once');
@@ -257,7 +260,7 @@ describe('managing one tracking ID never changes the others', () => {
     assert.equal(res.status, 302);
     const list = await tracking();
     assert.ok(!ids(list).includes(metaId(5)));
-    assert.equal(ids(list, 'meta').length, 30, '29 others + the server pixel');
+    assert.equal(ids(list, 'meta').length, 31, '30 others + the server pixel');
     assert.equal(ids(list, 'tiktok').length, 10);
     assert.equal(ids(list, 'x').length, 10);
     assert.match((await owner.get(url()).expect(200)).text, new RegExp(`data-pixel="${metaId(5)}" data-enabled="false"`));

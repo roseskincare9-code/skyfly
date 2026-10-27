@@ -23,6 +23,8 @@ export const LAROSE_AD_ACCOUNT_PIXELS = [
   { name: 'Skindrip', id: '1130654146607839' },
   { name: 'Moon fly', id: '4389240701387003' },
 ];
+// "skincare" (migration 034): assigned to the Larose landing page only, not to every page.
+export const LAROSE_SKINCARE_PIXEL = { name: 'skincare', id: '1395209215400304' };
 
 export async function seedLarose(pool, ownerEmail) {
   const owner = await pool.query('SELECT id FROM users WHERE email = $1', [ownerEmail.trim().toLowerCase()]);
@@ -72,6 +74,18 @@ export async function seedLarose(pool, ownerEmail) {
         `INSERT INTO tracking_pixels (business_id, platform, name, pixel_id, enabled, all_pages)
          VALUES ($1, 'meta', $2, $3, true, true) ON CONFLICT (business_id, platform, pixel_id) DO NOTHING`,
         [businessId, p.name, p.id],
+      );
+    }
+    const { rows: [skincare] } = await client.query(
+      `INSERT INTO tracking_pixels (business_id, platform, name, pixel_id, enabled, all_pages)
+       VALUES ($1, 'meta', $2, $3, true, false) ON CONFLICT (business_id, platform, pixel_id) DO NOTHING RETURNING id`,
+      [businessId, LAROSE_SKINCARE_PIXEL.name, LAROSE_SKINCARE_PIXEL.id],
+    );
+    if (skincare) {
+      await client.query(
+        `INSERT INTO tracking_pixel_pages (tracking_pixel_id, landing_page_id)
+         SELECT $1, id FROM landing_pages WHERE business_id = $2 AND slug = 'larosenigeria' ON CONFLICT DO NOTHING`,
+        [skincare.id, businessId],
       );
     }
     await client.query('COMMIT');

@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
-import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS } from '../../src/scripts/seed-larose.js';
+import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS, LAROSE_SKINCARE_PIXEL } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
 
-const LAROSE_PIXELS = [LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, ...LAROSE_AD_ACCOUNT_PIXELS.map((x) => x.id)];
+const LAROSE_PIXELS = [LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, ...LAROSE_AD_ACCOUNT_PIXELS.map((x) => x.id), LAROSE_SKINCARE_PIXEL.id];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots');

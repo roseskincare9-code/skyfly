@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
-import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS } from '../../src/scripts/seed-larose.js';
+import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS, LAROSE_SKINCARE_PIXEL } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl, addTrackingPixel } from '../helpers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -143,7 +143,7 @@ try {
     await addId('x', { name: 'X main', id: X[0].id, pages: [pageId], xEvents: { Purchase: `tw-${X[0].id}-${X[0].buy}`, InitiateCheckout: X[0].start } });
     await addId('x', { name: 'X second', id: X[1].id, pages: [pageId], xEvents: { Purchase: X[1].buy } });
     const tab = await dash.textContent('nav[role=tablist]');
-    assert.match(tab, /Meta[\s\S]*8 on \/ 8[\s\S]*TikTok[\s\S]*3 on \/ 3[\s\S]*X[\s\S]*2 on \/ 2/);
+    assert.match(tab, /Meta[\s\S]*9 on \/ 9[\s\S]*TikTok[\s\S]*3 on \/ 3[\s\S]*X[\s\S]*2 on \/ 2/);
     assert.equal(await dash.locator('tr[data-pixel]').count(), 2);
     await noSideScroll(dash, 'X tab');
     await dash.screenshot({ path: path.join(shots, 't1-x-tab-mobile.png'), fullPage: true });
@@ -277,7 +277,7 @@ try {
     await loadPage();
     assert.deepEqual(tw.filter((c) => c[0] === 'config').map((c) => c[1]), [X[0].id]);
     const cfg = await (await fetch(`${DASH}/api/public/pages/larosenigeria/tracking`)).json();
-    assert.deepEqual(cfg.pixels.map((p) => p.id), [...LAROSE_IDS, META_OTHER_PAGE, TT[1]]);
+    assert.deepEqual(cfg.pixels.map((p) => p.id), [...LAROSE_IDS, LAROSE_SKINCARE_PIXEL.id, META_OTHER_PAGE, TT[1]], '"skincare" stays on the Larose page only');
   });
 
   console.log(`\nTracking E2E passed: ${passed} steps. Screenshots: ${shots}`);
