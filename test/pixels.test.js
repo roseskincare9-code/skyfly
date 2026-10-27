@@ -10,6 +10,7 @@ import { decrypt } from '../src/lib/secrets.js';
 // Fake Meta Graph API and TikTok Events API that record what Skyfly sends.
 const calls = [];
 let failNext = 0;
+let echoUrl = false; // the failed reply quotes the request address (with its access token)
 const mock = createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
@@ -18,7 +19,8 @@ const mock = createServer((req, res) => {
     if (failNext > 0) {
       failNext -= 1;
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: { message: 'Invalid OAuth access token' }, code: 40001, message: 'Invalid token' }));
+      const message = echoUrl ? `Invalid OAuth access token for ${req.url} (${req.headers['access-token'] ?? ''})` : 'Invalid OAuth access token';
+      return res.end(JSON.stringify({ error: { message }, code: 40001, message: echoUrl ? message : 'Invalid token' }));
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(req.url.startsWith('/meta') ? JSON.stringify({ events_received: 1, fbtrace_id: 'x' }) : JSON.stringify({ code: 0, message: 'OK' }));
@@ -219,6 +221,22 @@ describe('Purchase events', () => {
     await owner.post(`/businesses/${businessId}/orders/${order.id}/conversions/${failed.id}/retry`).type('form').send({ _csrf }).expect(302);
     const { rows: [after] } = await pool.query('SELECT status, attempts, event_id FROM conversion_events WHERE id = $1', [failed.id]);
     assert.deepEqual(after, { status: 'sent', attempts: 2, event_id: `purchase_${order.reference}` });
+  });
+
+  test('an error that quotes the access token is stored and shown without it', async () => {
+    failNext = 2; echoUrl = true;
+    const order = await placeOrder();
+    await setPayment(order.id, 'paid');
+    failNext = 0; echoUrl = false;
+    const { rows } = await pool.query("SELECT last_error FROM conversion_events WHERE order_id = $1 AND status = 'failed'", [order.id]);
+    assert.equal(rows.length, 2, 'Meta and TikTok both failed');
+    for (const { last_error: e } of rows) {
+      assert.match(e, /Invalid OAuth access token/);
+      assert.ok(!e.includes(META_TOKEN) && !e.includes(TIKTOK_TOKEN) && !e.includes(encodeURIComponent(META_TOKEN)), e);
+    }
+    assert.ok(rows.every((r) => r.last_error.includes('[access token]')));
+    const detail = await owner.get(`/businesses/${businessId}/orders/${order.id}`).expect(200);
+    assert.ok(!detail.text.includes(META_TOKEN) && !detail.text.includes(TIKTOK_TOKEN));
   });
 
   test('a second Meta ID assigned to one page also gets the Purchase; switching it off stops only it', async () => {

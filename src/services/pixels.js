@@ -167,9 +167,22 @@ async function post(url, headers, body) {
   return { status: res.status, json, text: text.slice(0, 500) };
 }
 
+// An error text from the platform (or the network) never keeps the access token: it is stored on
+// the order and shown in the dashboard.
+export function scrubToken(text, token) {
+  let out = String(text ?? '');
+  if (token) for (const t of new Set([token, encodeURIComponent(token)])) out = out.split(t).join('[access token]');
+  return out.slice(0, 500);
+}
+
 // Sends one Purchase to one provider. Returns { ok, status, error }.
 async function deliver(config, provider, settings, order, items, eventId, { test = false } = {}) {
   const token = decrypt(config.encryptionKey, settings.access_token_enc);
+  const result = await send(config, provider, settings, token, order, items, eventId, test);
+  return result.error ? { ...result, error: scrubToken(result.error, token) } : result;
+}
+
+async function send(config, provider, settings, token, order, items, eventId, test) {
   const testCode = test ? settings.test_event_code : null;
   try {
     if (provider === 'meta') {
