@@ -1,9 +1,13 @@
-<%- include('partials/head', { title: p ? 'Edit tracking ID' : 'Add tracking ID' }) %>
+<%- include('partials/head', { title: p ? 'Edit tracking ID' : 'Connect a Pixel' }) %>
 <%- include('partials/nav') %>
 <main style="max-width:820px">
   <p><a href="<%= base %>/pixels?platform=<%= platform %>">← Tracking &amp; Pixels</a></p>
-  <h1><%= p ? 'Edit ' + p.name : 'Add a tracking ID' %></h1>
+  <h1><%= p ? 'Edit ' + p.name : 'Connect ' + (platform === 'x' ? 'an ' : 'a ') + SHORT_LABELS[platform] + ' Pixel' %></h1>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="notice" data-how-it-works style="margin-bottom:12px">
+    <strong>Browser tracking:</strong> the Pixel ID and your pages are all you need. When you save, Skyfly loads the official <%= SHORT_LABELS[platform] %> script on those pages straight away: no website code, no redeploy.
+    <% if (PROVIDERS.includes(platform)) { %><br><strong>Server-side tracking (optional):</strong> also needs an access token from <%= SHORT_LABELS[platform] %>, then a test under Verify. It is only shown as working once <%= SHORT_LABELS[platform] %> accepts an event.<% } %>
+  </div>
   <form method="post" action="<%= base %>/pixels<%= p ? '/' + p.id : '' %>" class="card" data-tracking-form>
     <%- include('partials/csrf') %>
     <label>Business</label>
@@ -85,7 +89,7 @@
       <p class="muted" style="font-size:13px">X tracking runs in the browser; Skyfly does not send X events from its server.</p>
     <% } %>
 
-    <p><button type="submit"><%= p ? 'Save changes' : 'Add tracking ID' %></button> <a href="<%= base %>/pixels?platform=<%= platform %>">Cancel</a></p>
+    <p><button type="submit"><%= p ? 'Save changes' : 'Save and start tracking' %></button> <a href="<%= base %>/pixels?platform=<%= platform %>">Cancel</a></p>
   </form>
 </main>
 </body></html>

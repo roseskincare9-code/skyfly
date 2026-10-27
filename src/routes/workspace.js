@@ -107,7 +107,12 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
     ]);
     const { rows: [sheet] } = await pool.query(
       "SELECT count(*) FILTER (WHERE sheet_sync_status = 'failed')::int AS failed FROM orders WHERE business_id = $1", [businessId]);
+    // Onboarding step "Connect your Meta Pixel": shown to those who manage integrations until the
+    // business has a tracking ID or the step is skipped.
+    const { rows: [tracking] } = await pool.query('SELECT count(*)::int AS n FROM tracking_pixels WHERE business_id = $1', [businessId]);
+    const pixelStep = can(req.role, 'integrations') && tracking.n === 0 && !req.business.tracking_setup_skipped_at;
     res.render('overview', {
+      pixelStep,
       days, summary, series, statusCounts, top, PERIODS,
       sheetFailed: sheet.failed,
       counts,
