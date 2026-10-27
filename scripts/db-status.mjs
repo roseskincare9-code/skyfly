@@ -81,6 +81,18 @@ try {
     const where = r.status === 'active' && r.hosted ? `PUBLISHED at /p/${r.slug}/` : r.hosted ? 'hosted, not published' : r.external ? 'external page (not hosted by Skyfly)' : 'not hosted';
     line(`page: ${r.slug}`, `business ${r.business}; status ${r.status}; ${where}${r.test_mode ? '; test mode' : ''}`);
   }
+  // Public tracking IDs only: whether a server token is stored is shown, never the token.
+  console.log('\n== Tracking IDs (where each runs)');
+  for (const r of await one(`SELECT b.slug AS business, tp.platform, tp.name, tp.pixel_id, tp.enabled, tp.all_pages, tp.access_token_enc IS NOT NULL AS token, tp.created_at,
+                                    (SELECT string_agg(lp.slug, ', ' ORDER BY lp.id) FROM tracking_pixel_pages pp JOIN landing_pages lp ON lp.id = pp.landing_page_id
+                                      WHERE pp.tracking_pixel_id = tp.id) AS pages
+                               FROM tracking_pixels tp JOIN businesses b ON b.id = tp.business_id ORDER BY tp.id`)) {
+    line(`${r.platform} ${r.pixel_id}`, `business ${r.business}; "${r.name}"; ${r.enabled ? 'on' : 'OFF'}; ${r.all_pages ? 'all pages' : `pages: ${r.pages ?? 'none'}`}${r.token ? '; server token stored' : ''}; added ${r.created_at.toISOString()}`);
+  }
+  for (const r of await one(`SELECT a.action, b.slug AS business, a.entity_id, a.created_at FROM audit_log a LEFT JOIN businesses b ON b.id = a.business_id
+                              WHERE a.action LIKE 'tracking.%' OR a.action LIKE 'pixel%' ORDER BY a.id DESC LIMIT 10`)) {
+    line(`log: ${r.action}`, `business ${r.business ?? '-'}; entry ${r.entity_id ?? '-'}; ${r.created_at.toISOString()}`);
+  }
   // Labelled TEST ORDERs only (never real customers): what the business's Orders page lists for them.
   console.log('\n== Latest TEST ORDERs (as listed in each business\'s Orders page)');
   for (const r of await one(`SELECT o.reference, b.slug AS business, lp.slug AS page, o.status, o.total_minor, o.currency, o.sheet_sync_status, o.created_at,
