@@ -35,6 +35,17 @@
     </svg>
   </section>
 
+  <% if (pixelStep) { %>
+  <div class="card" data-pixel-step>
+    <h2 style="margin-top:0">Connect your Meta Pixel <span class="pill pending" style="font-size:12px">optional</span></h2>
+    <p class="muted" style="margin-top:0">Paste your Pixel ID from Meta Events Manager and choose your landing pages. Facebook and Instagram tracking then starts on those pages straight away: no website code, no developer. You can add more Pixels (and TikTok or X) at any time.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <a class="btn" href="<%= base %>/pixels/new?platform=meta">Connect Meta Pixel</a>
+      <form method="post" action="<%= base %>/pixels/skip-setup"><%- include('partials/csrf') %><button class="secondary" type="submit">Skip for now</button></form>
+    </div>
+  </div>
+  <% } %>
+
   <% if (sheetFailed) { %><div class="warn-box" role="status"><strong><%= sheetFailed %> order<%= sheetFailed === 1 ? '' : 's' %> not yet copied to the Google Sheet.</strong> They are safe in Skyfly and retried automatically. <a href="<%= base %>/google-sheets">See Google Sheets</a></div><% } %>
 
   <% if (totalOrders === 0) { %>

@@ -43,6 +43,13 @@ export function pixelRoutes({ pool, config }) {
     return p;
   }
 
+  // Onboarding: "Skip for now" on the Overview's "Connect your Meta Pixel" step (it stays possible here).
+  router.post('/skip-setup', asyncHandler(async (req, res) => {
+    await pool.query('UPDATE businesses SET tracking_setup_skipped_at = now() WHERE id = $1 AND tracking_setup_skipped_at IS NULL', [req.business.id]);
+    await audit(pool, req, { action: 'tracking.setup_skipped', businessId: req.business.id, entityType: 'business', entityId: req.business.id });
+    res.redirect(res.locals.base);
+  }));
+
   // ---------- list (one tab per platform) ----------
   router.get('/', asyncHandler(async (req, res) => {
     const platform = PLATFORMS.includes(req.query.platform) ? req.query.platform : 'meta';
@@ -120,6 +127,8 @@ export function pixelRoutes({ pool, config }) {
     if (enabled && !events.length) errors.push('Choose at least one event, or switch the tracking ID off.');
     const allPages = b.all_pages === 'on';
     const pageIds = [...new Set([].concat(b.pages ?? []).map(String).filter((x) => /^\d+$/.test(x)))];
+    // An enabled ID with no page would track nothing: the owner chooses where it runs.
+    if (enabled && !allPages && !pageIds.length) errors.push('Choose where this tracking ID runs: tick "All pages" or at least one landing page.');
     if (pageIds.length) {
       const { rows } = await pool.query("SELECT id FROM landing_pages WHERE business_id = $1 AND id = ANY($2::bigint[]) AND status <> 'archived'", [req.business.id, pageIds]);
       if (rows.length !== pageIds.length) errors.push('Choose landing pages of this business only.');

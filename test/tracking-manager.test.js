@@ -227,9 +227,10 @@ describe('adding many tracking IDs on each platform', () => {
       [{ platform: 'meta', pixel_id: '3000000000000002', server_purchase: 'on' }, /needs an access token/],
       [{ platform: 'meta', install_method: 'code', pixel_code: META_CODE('3000000000000002') + '<script src="https://evil.example/x.js"></script>' }, /was not saved|never has/],
       [{ platform: 'facebook', pixel_id: '3000000000000002' }, /Choose a platform/],
+      [{ platform: 'meta', pixel_id: '3000000000000002', all_pages: '' }, /Choose where this tracking ID runs/],
     ];
     for (const [fields, error] of cases) {
-      const res = await add(fields);
+      const res = await add({ all_pages: 'on', ...fields }); // a page is chosen, so each case meets its own error
       assert.equal(res.status, 400, JSON.stringify(fields));
       assert.match(res.text, error);
     }

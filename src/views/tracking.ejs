@@ -3,7 +3,7 @@
 <main>
   <div class="row" style="justify-content:space-between">
     <h1>Tracking &amp; Pixels</h1>
-    <a class="btn" data-add href="<%= base %>/pixels/new?platform=<%= platform %>">+ Add <%= SHORT_LABELS[platform] %> tracking ID</a>
+    <a class="btn" data-add href="<%= base %>/pixels/new?platform=<%= platform %>">+ Connect <%= SHORT_LABELS[platform] %> Pixel</a>
   </div>
   <p class="muted" style="margin-top:0">Add as many tracking IDs as you need for each platform, and choose which landing pages each one tracks. Each ID is saved on its own: adding, editing or switching one off never changes the others. New IDs are used on their pages straight away.</p>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
@@ -18,7 +18,7 @@
 
   <div class="card">
   <% if (!list.length) { %>
-    <p class="muted" data-empty>No <%= SHORT_LABELS[platform] %> tracking IDs yet. <a href="<%= base %>/pixels/new?platform=<%= platform %>">Add the first one</a>.</p>
+    <p class="muted" data-empty>No <%= SHORT_LABELS[platform] %> tracking IDs yet. <a href="<%= base %>/pixels/new?platform=<%= platform %>">Connect your first <%= SHORT_LABELS[platform] %> Pixel</a>: paste its ID, choose your pages, save. Tracking starts on those pages straight away.</p>
   <% } else { %>
     <div class="table-wrap"><table class="stack">
       <thead><tr><th>Tracking ID</th><th>Pages</th><th>Events</th><th>Status</th><th></th></tr></thead>
