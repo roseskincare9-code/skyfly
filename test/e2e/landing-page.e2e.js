@@ -130,6 +130,16 @@ try {
     assert.match(summary, /Total: ₦116,000 · pay on delivery/);
   };
 
+  // The page has its own Meta Pixel code (the main pixel), so Skyfly adds no second copy of Meta's
+  // script; the dashboard still learns that every pixel loaded here ("Tag loaded").
+  await step('"Tag loaded": the page reports every Larose pixel, its own main pixel included, as loaded', async () => {
+    await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);
+    const seen = async () => (await pool.query("SELECT pixel_id, browser_seen_page FROM tracking_pixels WHERE platform = 'meta' AND browser_seen_at IS NOT NULL")).rows;
+    for (let i = 0; i < 60 && (await seen()).length < LAROSE_PIXELS.length; i += 1) await shop.waitForTimeout(250);
+    assert.deepEqual((await seen()).map((r) => r.pixel_id).sort(), [...LAROSE_PIXELS].sort());
+    assert.ok((await seen()).every((r) => r.browser_seen_page === 'larosenigeria'));
+  });
+
   await step('empty form shows a helpful error without calling the API', async () => {
     await shop.goto(`${LANDING_ORIGIN}/Larosenigeria/`);
     await shop.click('#sb');
