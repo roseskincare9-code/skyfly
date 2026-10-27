@@ -43,6 +43,16 @@ for (const [label, path] of [['point-in-time recovery', `/postgres/${db.id}/reco
   line(label, `HTTP ${r.status} ${r.json ? JSON.stringify(r.json).slice(0, 400) : r.text}`);
 }
 
+// Public tracking list per page (what visitors' browsers load): public IDs only.
+console.log('\n== Public tracking list per page (live)');
+for (const slug of ['larosenigeria', 'larose-skincare', 'larose-nigeria', 'larose']) {
+  try {
+    const r = await fetch(`https://skyfly-gybf.onrender.com/api/public/pages/${slug}/tracking`);
+    const body = r.ok ? await r.json() : null;
+    line(`page: ${slug}`, r.ok ? `HTTP 200; ${(body.pixels || []).map((p) => `${p.provider || p.platform} ${p.id}`).join(', ') || 'no tracking IDs'}` : `HTTP ${r.status}`);
+  } catch (err) { line(`page: ${slug}`, `error ${err.message.slice(0, 80)}`); }
+}
+
 console.log('\n== Data (read-only transaction; counts only)');
 const info = await api(`/postgres/${db.id}/connection-info`);
 const conn = info.json?.externalConnectionString;
@@ -107,3 +117,4 @@ try {
 } finally {
   await client.end();
 }
+
