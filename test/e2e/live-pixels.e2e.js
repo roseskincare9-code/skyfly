@@ -75,11 +75,18 @@ await ctx.route(/https:\/\/([a-z0-9-]+\.)*facebook\.com\//, (route) => {
 // Meta serves it for any well-formed ID, so it shows the pixel was initialised, not that the account works.
 const configs = {};
 ctx.on('response', (r) => { const m = r.url().match(/connect\.facebook\.net\/signals\/config\/(\d+)/); if (m) configs[m[1]] = r.status(); });
+// "Tag loaded": the page tells Skyfly which pixels' scripts loaded (the dashboard status). Watched,
+// not changed: it only updates that status, as any visitor's browser does.
+const seenReports = [];
+ctx.on('request', (r) => { if (r.url() === `${SKYFLY}/api/public/pixels-seen`) seenReports.push({ body: r.postData() || '', status: null, req: r }); });
+ctx.on('response', (r) => { const s = seenReports.find((x) => x.req === r.request()); if (s) s.status = r.status(); });
+const pageErrors = [];
 const count = (from, id, ev) => hits.slice(from).filter((h) => h.id === id && h.ev === ev).length;
 const summary = (from) => IDS.map((id) => `${PIXELS[id]}: ${[...new Set(hits.slice(from).filter((h) => h.id === id).map((h) => h.ev))].map((ev) => `${ev}×${count(from, id, ev)}`).join(', ') || 'none'}`).join(' | ');
 const waitFor = async (fn, ms = 15000) => { for (let i = 0; i < ms / 250 && !fn(); i += 1) await sleep(250); };
 
 const page = await ctx.newPage();
+page.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
 let mode = 'fail';
 let orderCalls = 0;
 const ref = `LR-SIM${String(process.env.GITHUB_RUN_ID || Date.now()).replace(/\D/g, '').slice(-5).padStart(5, '0')}`;
@@ -102,6 +109,17 @@ await step('Page load: PageView once for each pixel; no InitiateCheckout, Lead o
   }
   for (const id of IDS) assert(configs[id], `${PIXELS[id]} ${id}: the pixel script never initialised it (no configuration request)`);
   return `${summary(0)}\n      Meta pixel configuration: ${IDS.map((id) => `${PIXELS[id]} ${id} HTTP ${configs[id]}`).join(', ')}`;
+});
+
+await step('Tag loaded: the page tells Skyfly that every pixel loaded here (dashboard "Tag loaded")', async () => {
+  await waitFor(() => IDS.every((id) => seenReports.some((r) => r.body.includes(`"${id}"`))), 10000);
+  const reported = [...new Set(seenReports.flatMap((r) => { try { return JSON.parse(r.body).pixels.map((p) => p.id); } catch { return []; } }))];
+  const state = await page.evaluate(() => ({ fbq: typeof window.fbq, callMethod: typeof window.fbq?.callMethod,
+    fbevents: [...document.scripts].filter((s) => /fbevents\.js/.test(s.src)).length, skyfly: [...document.scripts].some((s) => /skyfly/.test(s.src)) }));
+  const detail = `reports sent: ${seenReports.length} (HTTP ${seenReports.map((r) => r.status).join(', ') || '-'}); IDs reported: ${reported.join(', ') || 'none'}; page: fbq ${state.fbq}, fbevents.js loaded (callMethod ${state.callMethod}), fbevents.js script tags ${state.fbevents}, Skyfly script ${state.skyfly}; page errors: ${pageErrors.join(' | ') || 'none'}`;
+  for (const id of IDS) assert(reported.includes(id), `${PIXELS[id]} ${id} not reported. ${detail}`);
+  assert(seenReports.every((r) => r.status === 200), `report refused. ${detail}`);
+  return detail;
 });
 
 await step('Starting the order form: InitiateCheckout once for each pixel', async () => {
