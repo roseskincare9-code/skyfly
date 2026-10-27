@@ -15,6 +15,8 @@ const PAGE_KEY = HOSTED ? 'larose-skincare' : 'larosenigeria';
 const PIXELS = {
   '1357015185691765': 'main pixel', '1087347357386553': 'Pixel New',
   '1105657388903531': 'Skyfly', '1653102723149813': 'Skindrips', '1130654146607839': 'Skindrip', '4389240701387003': 'Moon fly',
+  // "skincare" (migration 034) is assigned to the GitHub Pages Larose page only.
+  ...(HOSTED ? {} : { '1395209215400304': 'skincare' }),
 };
 const IDS = Object.keys(PIXELS);
 if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) {
