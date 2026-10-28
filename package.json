@@ -21,7 +21,8 @@
     "test:e2e:checkout": "node --env-file-if-exists=.env.test test/e2e/checkout.e2e.js",
     "test:e2e:compat": "node --env-file-if-exists=.env.test test/e2e/sandbox-compat.e2e.js",
     "test:e2e:abandoned": "node --env-file-if-exists=.env.test test/e2e/abandoned.e2e.js",
-    "test:e2e:tracking": "node --env-file-if-exists=.env.test test/e2e/tracking.e2e.js"
+    "test:e2e:tracking": "node --env-file-if-exists=.env.test test/e2e/tracking.e2e.js",
+    "test:e2e:onboarding": "node --env-file-if-exists=.env.test test/e2e/onboarding.e2e.js"
   },
   "dependencies": {
     "compression": "^1.8.2",

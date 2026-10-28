@@ -93,6 +93,18 @@ export async function validateVersion(pool, config, page, versionId) {
   const sub = subscriptionState(b);
   if (!sub.open) add('business', 'Business account', 'BLOCKED', `This business's account is ${sub.reason}: its pages can't take orders.`, 'Renew the subscription (platform admin).');
   else add('business', 'Business account', 'PASS', `Orders are saved under this business only (${b.slug}).`);
+  // A "WhatsApp direct" page sends every customer to this business's own WhatsApp number: without one,
+  // the page could take no orders at all (never another business's number).
+  const ownNumber = b.whatsapp_number || (b.slug === 'larose-nigeria' ? '+2349049206695' : null);
+  if (page.order_destination === 'whatsapp' && !ownNumber) {
+    add('destination', 'Order destination', 'BLOCKED', 'This page is set to "WhatsApp direct", but the business has no WhatsApp number, so customers could not order.', 'Settings → WhatsApp number, or set the page to "Skyfly checkout" in Page settings.');
+  } else if (page.order_destination) {
+    add('destination', 'Order destination', 'PASS', {
+      whatsapp: `WhatsApp direct to this business's number (${ownNumber}); no order is saved in Skyfly.`,
+      checkout: 'Skyfly checkout: orders are saved in this business\'s dashboard.',
+      checkout_whatsapp: `Skyfly checkout: the order is saved first${ownNumber ? `, then the customer may continue on WhatsApp (${ownNumber})` : ''}.`,
+    }[page.order_destination] ?? 'Skyfly checkout.');
+  }
 
   // 3. The public address.
   const base = config.pagesBaseUrl ? `${config.pagesBaseUrl}/${page.slug}/` : config.publicBaseUrl ? `${config.publicBaseUrl}/p/${page.slug}/` : null;

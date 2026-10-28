@@ -7,6 +7,17 @@
   </div>
   <% if (error) { %><p class="error"><%= error %></p><% } %>
   <% if (typeof allowance !== 'undefined' && allowance) { %><p class="muted" data-page-allowance><%= allowance.used %> of <%= allowance.limit %> landing pages used<%= allowance.used >= allowance.limit ? ' (limit reached: archive a page, or ask the Skyfly team for more)' : '' %>. Archived pages don't count.</p><% } %>
+  <details class="card" data-import-methods>
+    <summary><strong>Ways to add a landing page</strong></summary>
+    <ul style="margin:8px 0 0">
+      <li><strong>Create a page</strong> from Skyfly's template, then edit it in the builder.</li>
+      <li><strong>Import a file</strong>: a <code>.zip</code> (index.html with its CSS, JavaScript, images and fonts) or a single <code>.html</code>, up to 25 MB. Everything is hosted by Skyfly.</li>
+      <li><strong>Import from a web address</strong>: any public <code>https://</code> page. Its images and styles keep loading from the original site.</li>
+      <li><strong>Connect a page hosted elsewhere</strong> ("Connect landing page"): it keeps its own address and sends orders to Skyfly.</li>
+    </ul>
+    <p class="muted" style="margin:8px 0 0">Not supported directly: pages behind a sign-in, and shop builders' checkout pages (Shopify, Wix, Webflow…). Export or save the page as HTML and import the file, or import its public address. If an import fails, Skyfly shows the reason and what to do instead. Every page gets its own permanent address when published, and uses this business's products, checkout, tracking and order destination.</p>
+  </details>
+
   <form class="card" method="post" action="<%= base %>/landing-pages/template">
     <%- include('partials/csrf') %>
     <h2>Create a page</h2>
