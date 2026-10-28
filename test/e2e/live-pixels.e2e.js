@@ -78,8 +78,19 @@ ctx.on('response', (r) => { const m = r.url().match(/connect\.facebook\.net\/sig
 // "Tag loaded": the page tells Skyfly which pixels' scripts loaded (the dashboard status). Watched,
 // not changed: it only updates that status, as any visitor's browser does.
 const seenReports = [];
-ctx.on('request', (r) => { if (r.url() === `${SKYFLY}/api/public/pixels-seen`) seenReports.push({ body: r.postData() || '', status: null, req: r }); });
-ctx.on('response', (r) => { const s = seenReports.find((x) => x.req === r.request()); if (s) s.status = r.status(); });
+// The beacon is passed on unchanged (same body and headers) so the test can read Skyfly's answer,
+// which the browser does not expose for navigator.sendBeacon.
+await ctx.route(`${SKYFLY}/api/public/pixels-seen`, async (route) => {
+  const r = route.request();
+  if (r.method() !== 'POST') return route.continue();
+  const s = { body: r.postData() || '', origin: r.headers().origin || '-', status: null };
+  seenReports.push(s);
+  try {
+    const res = await route.fetch();
+    s.status = res.status();
+    return route.fulfill({ response: res });
+  } catch (err) { s.status = `failed: ${err.message.slice(0, 80)}`; return route.abort(); }
+});
 const pageErrors = [];
 const count = (from, id, ev) => hits.slice(from).filter((h) => h.id === id && h.ev === ev).length;
 const summary = (from) => IDS.map((id) => `${PIXELS[id]}: ${[...new Set(hits.slice(from).filter((h) => h.id === id).map((h) => h.ev))].map((ev) => `${ev}×${count(from, id, ev)}`).join(', ') || 'none'}`).join(' | ');
@@ -113,12 +124,13 @@ await step('Page load: PageView once for each pixel; no InitiateCheckout, Lead o
 
 await step('Tag loaded: the page tells Skyfly that every pixel loaded here (dashboard "Tag loaded")', async () => {
   await waitFor(() => IDS.every((id) => seenReports.some((r) => r.body.includes(`"${id}"`))), 10000);
+  await waitFor(() => seenReports.every((r) => r.status !== null), 15000);
   const reported = [...new Set(seenReports.flatMap((r) => { try { return JSON.parse(r.body).pixels.map((p) => p.id); } catch { return []; } }))];
   const state = await page.evaluate(() => ({ fbq: typeof window.fbq, callMethod: typeof window.fbq?.callMethod,
     fbevents: [...document.scripts].filter((s) => /fbevents\.js/.test(s.src)).length, skyfly: [...document.scripts].some((s) => /skyfly/.test(s.src)) }));
-  const detail = `reports sent: ${seenReports.length} (HTTP ${seenReports.map((r) => r.status).join(', ') || '-'}); IDs reported: ${reported.join(', ') || 'none'}; page: fbq ${state.fbq}, fbevents.js loaded (callMethod ${state.callMethod}), fbevents.js script tags ${state.fbevents}, Skyfly script ${state.skyfly}; page errors: ${pageErrors.join(' | ') || 'none'}`;
+  const detail = `reports sent: ${seenReports.length} (from ${[...new Set(seenReports.map((r) => r.origin))].join(', ') || '-'}; Skyfly answered HTTP ${seenReports.map((r) => r.status).join(', ') || '-'}); IDs reported: ${reported.join(', ') || 'none'}; page: fbq ${state.fbq}, fbevents.js loaded (callMethod ${state.callMethod}), fbevents.js script tags ${state.fbevents}, Skyfly script ${state.skyfly}; page errors: ${pageErrors.join(' | ') || 'none'}`;
   for (const id of IDS) assert(reported.includes(id), `${PIXELS[id]} ${id} not reported. ${detail}`);
-  assert(seenReports.every((r) => r.status === 200), `report refused. ${detail}`);
+  assert(seenReports.every((r) => r.status === 200), `Skyfly did not accept the report. ${detail}`);
   return detail;
 });
 
