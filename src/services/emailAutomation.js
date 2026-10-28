@@ -170,8 +170,13 @@ export async function sendDue(pool, config, { limit = 20 } = {}) {
       WHERE status = 'sending' AND updated_at < now() - make_interval(mins => $1)`, [STUCK_MINUTES]);
   const { rows: claimed } = await pool.query(
     `UPDATE email_messages SET status = 'sending', attempts = attempts + 1, updated_at = now()
-      WHERE id IN (SELECT id FROM email_messages WHERE status = 'queued' AND kind = 'automation' AND scheduled_for <= now()
-                     AND (next_attempt_at IS NULL OR next_attempt_at <= now()) ORDER BY scheduled_for LIMIT $1 FOR UPDATE SKIP LOCKED)
+      WHERE status = 'queued'
+        -- Businesses take turns, so one business's large send can't delay everyone else's emails.
+        AND id IN (SELECT id FROM (
+              SELECT id, scheduled_for, row_number() OVER (PARTITION BY business_id ORDER BY scheduled_for, id) AS turn FROM email_messages
+               WHERE status = 'queued' AND kind = 'automation' AND scheduled_for <= now()
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= now())) due
+             ORDER BY turn, scheduled_for, id LIMIT $1)
       RETURNING *`, [limit]);
   let sent = 0;
   for (const m of claimed) {

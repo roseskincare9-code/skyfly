@@ -404,12 +404,17 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
   }
 }
 
-// Orders due for a (re)try, oldest first. Returns how many were processed.
+// Orders due for a (re)try, oldest first, with businesses taking turns: a business with a long
+// backlog (e.g. its sheet was offline during a sale) can't delay other businesses' copies.
+// Returns how many were processed.
 export async function syncDue(pool, { limit = 10, key = null } = {}) {
   await adoptLegacyUrls(pool, key);
   const { rows } = await pool.query(
-    `SELECT id FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
-        AND sheet_sync_attempts < $1 AND NOT is_test ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
+    `SELECT id FROM (
+       SELECT id, row_number() OVER (PARTITION BY business_id ORDER BY id) AS turn FROM orders
+        WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
+          AND sheet_sync_attempts < $1 AND NOT is_test) due
+      ORDER BY turn, id LIMIT $2`, [MAX_ATTEMPTS, limit]);
   for (const r of rows) await syncOrder(pool, r.id, { key });
   return rows.length;
 }

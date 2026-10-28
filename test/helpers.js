@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createPool } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
+import { createLoadControl } from '../src/services/load.js';
 import { createApp } from '../src/app.js';
 
 // Tests run against a disposable local database named in .env.test (never production).
@@ -38,7 +39,8 @@ export async function resetDatabase(pool) {
 export function setup(overrides) {
   const pool = createPool(testDatabaseUrl(), false);
   const config = makeConfig(overrides);
-  return { pool, config, app: createApp({ pool, config }) };
+  const load = createLoadControl({ pool, config });
+  return { pool, config, load, app: createApp({ pool, config, load }) };
 }
 
 // Lets accounts other than the platform owner create their own business (platform setting).

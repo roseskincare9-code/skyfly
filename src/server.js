@@ -11,7 +11,7 @@ import { googleStatus, useServiceAccount, googleSelfCheck } from './services/goo
 import { storedGoogleKey } from './services/googleKey.js';
 
 const config = loadConfig();
-const pool = createPool(config.databaseUrl, config.databaseSsl);
+const pool = createPool(config.databaseUrl, config.databaseSsl, { max: config.dbPoolMax, statementTimeoutMs: config.dbStatementTimeoutMs });
 // Copies orders to each business's Google Sheet. Only in production (or SHEET_SYNC=on), so local
 // test servers never write to a real sheet.
 const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startSheetWorker(pool, { key: config.encryptionKey }) : { kick() {}, stop() {} };

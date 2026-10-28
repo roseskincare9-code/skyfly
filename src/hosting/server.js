@@ -46,10 +46,28 @@ export function sandboxPreview({ pool, config, transformHtml = null }) {
   return router;
 }
 
-function makeSender(pool, transformHtml) {
+// A version's files never change once saved, so where its entry page is can be remembered.
+const entryPaths = new Map();
+async function entryPath(pool, versionId) {
+  if (entryPaths.has(versionId)) return entryPaths.get(versionId);
+  const { rows: [version] } = await pool.query('SELECT entry_path FROM page_versions WHERE id = $1', [versionId]);
+  if (version) {
+    if (entryPaths.size > 5000) entryPaths.clear();
+    entryPaths.set(versionId, version.entry_path);
+  }
+  return version?.entry_path ?? null;
+}
+
+// Published pages (not previews) take a fair share of the database for their business: one busy
+// page can't slow down the others (see services/load.js). Returns false when it answered "busy".
+const enterLane = (load, page, kind, res) => (load ? load.enter('read', page.business_id, kind, res) : true);
+
+function makeSender(pool, transformHtml, load = null) {
   return async function send(req, res, { page, versionId, rest, preview }) {
-    const { rows: [version] } = await pool.query('SELECT entry_path FROM page_versions WHERE id = $1', [versionId]);
-    if (!version) return notFound(res);
+    if (!preview && !(await enterLane(load, page, /\.html?$|\/$/.test(rest) ? 'page' : 'asset', res))) return;
+    const entry = await entryPath(pool, versionId);
+    if (!entry) return notFound(res);
+    const version = { entry_path: entry };
     let filePath = decodePath(rest);
     if (filePath === null) return notFound(res);
     if (filePath === '' || filePath === '/') filePath = version.entry_path;
@@ -91,17 +109,23 @@ function makeSender(pool, transformHtml) {
 // Used when there is no separate pages address. The page runs in a browser sandbox (an
 // opaque origin), so its scripts cannot read the dashboard, its cookies or other pages'
 // storage, even though it shares the address. Orders reach Skyfly with "Origin: null".
-export function pathPages({ pool, transformHtml = null }) {
+export function pathPages({ pool, transformHtml = null, load = null }) {
   const router = Router();
-  const send = makeSender(pool, transformHtml);
+  const send = makeSender(pool, transformHtml, load);
+  // Which page a slug is: looked up once per cache period (cleared whenever the owner saves a change).
+  const pageBySlug = (slug) => (load ? load.caches.page.get(`slug:${slug}`, () => lookup(slug)) : lookup(slug));
+  async function lookup(slug) {
+    const { rows: [page] } = await pool.query(
+      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE slug = $1', [slug]);
+    return page ?? null;
+  }
   router.get(/^\/p\/([^/]+)(\/.*)?$/, asyncHandler(async (req, res) => {
     const slug = req.params[0];
     // Addresses typed or pasted with capitals (e.g. /p/Larose-Skincare/) open the page.
     if (slug !== slug.toLowerCase() && SLUG_RE.test(slug.toLowerCase())) return res.redirect(301, `/p/${slug.toLowerCase()}${req.params[1] ?? '/'}`);
     if (!SLUG_RE.test(slug)) return notFound(res);
     if (req.params[1] === undefined) return res.redirect(301, `/p/${slug}/`);
-    const { rows: [page] } = await pool.query(
-      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE slug = $1', [slug]);
+    const page = await pageBySlug(slug);
     if (!page) return notFound(res);
     if (page.status !== 'active' || !page.published_version_id) return notFound(res, 'This page is not published on Skyfly.');
     res.set('Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
@@ -113,15 +137,19 @@ export function pathPages({ pool, transformHtml = null }) {
   return router;
 }
 
-export function pageServer({ pool, config, transformHtml = null }) {
+export function pageServer({ pool, config, transformHtml = null, load = null }) {
   const router = Router();
-  const send = makeSender(pool, transformHtml);
-  // Looked up on every request (one indexed query) so unpublishing takes effect immediately.
+  const send = makeSender(pool, transformHtml, load);
+  // Looked up once per cache period (cleared whenever the owner saves a change, so unpublishing
+  // still takes effect at once).
   async function pageByDomain(host) {
-    const { rows: [page] } = await pool.query(
-      'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE custom_domain = $1', [host],
-    );
-    return page ?? null;
+    const find = async () => {
+      const { rows: [page] } = await pool.query(
+        'SELECT id, slug, business_id, status, published_version_id FROM landing_pages WHERE custom_domain = $1', [host],
+      );
+      return page ?? null;
+    };
+    return load ? load.caches.page.get(`host:${host}`, find) : find();
   }
 
 

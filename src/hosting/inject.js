@@ -8,9 +8,9 @@ function safeJson(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 }
 
-export async function injectSkyfly(pool, config, html, { page, preview, filePath }) {
+export async function injectSkyfly(pool, config, html, { page, preview, filePath, load = null }) {
   if (preview || !config.publicBaseUrl) return html;
-  const tracking = await browserConfig(pool, page, config);
+  const tracking = load ? await load.caches.tracking.get(page.id, () => browserConfig(pool, page, config)) : await browserConfig(pool, page, config);
   const snippet = `<script data-skyfly-config>window.__SKYFLY__=${safeJson({ ...tracking, api: config.publicBaseUrl, file: filePath })};</script>`
     + `<script src="${config.publicBaseUrl}/sdk/skyfly.js" defer></script>`;
   const head = html.match(/<\/head\s*>/i);

@@ -52,8 +52,19 @@ function baseUrl(req, config) {
   return config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
 }
 
-export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
+// The page a public request is for (body.landingPage, or body.page for "Tag loaded" reports), also
+// from the text/plain body navigator.sendBeacon sends.
+function bodySlug(req, field = 'landingPage') {
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return ''; } }
+  return typeof body?.[field] === 'string' ? body[field] : '';
+}
+
+export function publicRoutes({ pool, config, onOrderSaved = () => {}, load = null }) {
   const router = Router();
+  // Each business's public requests take a fair share of the database (services/load.js).
+  const fair = (lane, kind, slugOf) => (load ? load.guard(lane, kind, slugOf) : (req, res, next) => next());
+  const cached = (cache, key, fn) => (load ? load.caches[cache].get(key, fn) : fn());
 
   // Checkout progress (abandoned checkouts): saved often while a customer fills in an order form, so
   // it has its own, higher rate limit and never uses up the customer's order attempts. Accepts JSON
@@ -67,7 +78,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     handler: (req, res) => res.status(429).json({ ok: false, error: 'RATE_LIMITED' }),
   }));
   checkouts.use(express.json({ limit: '20kb' }), express.text({ limit: '20kb', type: 'text/plain' }));
-  checkouts.post('/', asyncHandler(async (req, res) => {
+  checkouts.post('/', fair('read', 'checkout', (req) => bodySlug(req)), asyncHandler(async (req, res) => {
     if (!req.headers.origin) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
     let body = req.body;
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ ok: false, error: 'BAD_REQUEST' }); } }
@@ -102,14 +113,17 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
   seen.use(cors(pool, config));
   seen.use(rateLimit({ windowMs: 10 * 60 * 1000, limit: config.orderRateLimit * 15, keyGenerator: (req) => ipKeyGenerator(req.ip), standardHeaders: 'draft-7', legacyHeaders: false, skip: (req) => req.method === 'OPTIONS', handler: (req, res) => res.status(429).json({ ok: false }) }));
   seen.use(express.text({ limit: '10kb', type: 'text/plain' }), express.json({ limit: '10kb' }));
-  seen.post('/', asyncHandler(async (req, res) => {
+  seen.post('/', fair('read', 'beacon', (req) => bodySlug(req, 'page')), asyncHandler(async (req, res) => {
     let body = req.body;
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ ok: false }); } }
-    const { rows: [page] } = await pool.query(
+    const slug = String(body?.page ?? '').toLowerCase();
+    const page = await cached('page', `seen:${slug}`, async () => (await pool.query(
       `SELECT lp.id, lp.slug, lp.business_id, lp.url, lp.custom_domain, (lp.published_version_id IS NOT NULL) AS hosted, b.subdomain AS business_subdomain
-         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND lp.status = 'active'`, [String(body?.page ?? '').toLowerCase()]);
+         FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id WHERE lp.slug = $1 AND lp.status = 'active'`, [slug])).rows[0] ?? null);
     if (!page || !originsForPage(page, config).has(req.headers.origin)) return res.status(403).json({ ok: false });
-    await markBrowserSeen(pool, page, body?.pixels);
+    // The same report from the same page within 10 minutes changes nothing (Skyfly records a
+    // pixel at most every 10 minutes): answered without touching the database.
+    if (!load?.alreadySeen(page.slug, body?.pixels)) await markBrowserSeen(pool, page, body?.pixels);
     res.json({ ok: true });
   }));
   router.use('/api/public/pixels-seen', seen);
@@ -132,8 +146,17 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
     }),
   }));
   api.use(express.json({ limit: '20kb' }));
+  // Per business as well: a flood of orders on one page (e.g. a bot) can't fill the database for
+  // everyone. The limit is far above real demand (config.orderBusinessLimit per 10 minutes).
+  const perBusiness = load ? rateLimit({
+    windowMs: 10 * 60 * 1000,
+    limit: config.orderBusinessLimit ?? 1000,
+    keyGenerator: async (req) => `business:${await load.businessOfSlug(bodySlug(req))}`,
+    standardHeaders: 'draft-7', legacyHeaders: false,
+    handler: (req, res) => res.status(429).json({ ok: false, error: 'RATE_LIMITED', message: 'This shop is receiving too many orders right now. Please try again in a few minutes.' }),
+  }) : (req, res, next) => next();
 
-  api.post('/orders', asyncHandler(async (req, res) => {
+  api.post('/orders', perBusiness, fair('order', 'order', (req) => bodySlug(req)), asyncHandler(async (req, res) => {
     // Honeypot field: real customers never see or fill it.
     if (typeof req.body?.website === 'string' && req.body.website.trim() !== '') {
       return res.status(400).json({ ok: false, error: 'VALIDATION', message: 'Your order could not be submitted.' });
@@ -211,36 +234,44 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
   });
 
   // Public, read-only tracking settings for a page (pixel IDs are public anyway; no secrets).
-  router.get('/api/public/pages/:slug/tracking', asyncHandler(async (req, res) => {
+  router.get('/api/public/pages/:slug/tracking', fair('read', 'tracking', (req) => req.params.slug), asyncHandler(async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.set('Cache-Control', 'public, max-age=60');
-    const { rows: [page] } = await pool.query(
-      "SELECT id, slug, business_id FROM landing_pages WHERE slug = $1 AND status = 'active'", [String(req.params.slug)],
-    );
+    const slug = String(req.params.slug);
+    const page = await cached('page', `tracking:${slug}`, async () => (await pool.query(
+      "SELECT id, slug, business_id FROM landing_pages WHERE slug = $1 AND status = 'active'", [slug],
+    )).rows[0] ?? null);
     if (!page) return res.status(404).json({ page: req.params.slug, pixels: [] });
-    res.json(await browserConfig(pool, page, config));
+    res.json(await cached('tracking', page.id, () => browserConfig(pool, page, config)));
   }));
 
   // Public catalog for the drop-in checkout: the page's active products and Skyfly's prices
   // (shown to the customer; the order is priced again by Skyfly when it is saved).
-  router.get('/api/public/pages/:slug/catalog', asyncHandler(async (req, res) => {
+  router.get('/api/public/pages/:slug/catalog', fair('read', 'catalog', (req) => req.params.slug), asyncHandler(async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.set('Cache-Control', 'public, max-age=60');
+    const body = await cached('catalog', String(req.params.slug), () => catalog(String(req.params.slug)));
+    if (!body) return res.status(404).json({ page: req.params.slug, products: [] });
+    res.json(body);
+  }));
+
+  // The page's catalog, or null when there is no such active page.
+  async function catalog(slug) {
     const { rows: [page] } = await pool.query(
       `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, lp.order_destination, b.currency, b.whatsapp_number, b.slug AS business_slug,
               b.delivery_fee_minor, b.free_delivery_from_minor,
               u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price, u.compare_at_price_minor AS upsell_compare_at
          FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
          LEFT JOIN products u ON u.id = lp.upsell_product_id AND u.active AND u.business_id = lp.business_id
-        WHERE lp.slug = $1 AND lp.status = 'active'`, [String(req.params.slug)]);
-    if (!page) return res.status(404).json({ page: req.params.slug, products: [] });
+        WHERE lp.slug = $1 AND lp.status = 'active'`, [slug]);
+    if (!page) return null;
     const { rows } = await pool.query(
       `SELECT p.code, p.name, p.price_minor, p.description, p.compare_at_price_minor, p.options FROM products p JOIN landing_page_products lpp ON lpp.product_id = p.id
         WHERE lpp.landing_page_id = $1 AND p.active ORDER BY p.sort_order, p.id`, [page.id]);
     const number = page.whatsapp_number || (page.business_slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
-    res.json({
+    return {
       page: page.slug, currency: page.currency, whatsapp: number ? whatsappDigits(number) : null,
       // whatsapp = the button opens a WhatsApp conversation (no order in Skyfly); checkout /
       // checkout_whatsapp = Skyfly's checkout (with an optional WhatsApp button after the save).
@@ -260,8 +291,8 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {} }) {
         ...(page.upsell_compare_at && Number(page.upsell_compare_at) > Number(page.upsell_price) ? { compareAt: Number(page.upsell_compare_at) / 100 } : {}),
         headline: page.upsell_headline || `Add ${page.upsell_name}`, text: page.upsell_text || '',
       } : null,
-    });
-  }));
+    };
+  }
 
   router.use('/api/public', api);
 

@@ -21,6 +21,19 @@ for (const o of owners) {
 }
 if (!db) { console.log('skyfly-db not found'); process.exit(1); }
 
+// The web service's plan (instance size) and instance count: what the capacity numbers apply to.
+for (const o of owners) {
+  const services = ((await api(`/services?ownerId=${encodeURIComponent(o.id)}&limit=100`)).json || []).map((x) => x.service ?? x);
+  for (const svc of services.filter((x) => x.name === 'skyfly')) {
+    const d = svc.serviceDetails ?? {};
+    console.log('== Render web service (skyfly)');
+    line('plan', JSON.stringify(d.plan ?? svc.plan ?? 'unknown'));
+    line('instances', JSON.stringify(d.numInstances ?? 'unknown'));
+    line('region', JSON.stringify(d.region ?? 'unknown'));
+    line('suspended', JSON.stringify(svc.suspended ?? 'unknown'));
+  }
+}
+
 const detail = (await api(`/postgres/${db.id}`)).json ?? db;
 console.log('== Render database (skyfly-db)');
 for (const k of ['name', 'plan', 'status', 'region', 'version', 'createdAt', 'updatedAt', 'expiresAt', 'diskSizeGB', 'highAvailabilityEnabled', 'databaseName', 'suspended', 'role']) {

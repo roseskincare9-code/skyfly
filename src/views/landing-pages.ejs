@@ -6,6 +6,7 @@
     <a class="btn secondary" href="<%= base %>/landing-pages/new">Connect landing page</a>
   </div>
   <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <% if (typeof allowance !== 'undefined' && allowance) { %><p class="muted" data-page-allowance><%= allowance.used %> of <%= allowance.limit %> landing pages used<%= allowance.used >= allowance.limit ? ' (limit reached: archive a page, or ask the Skyfly team for more)' : '' %>. Archived pages don't count.</p><% } %>
   <form class="card" method="post" action="<%= base %>/landing-pages/template">
     <%- include('partials/csrf') %>
     <h2>Create a page</h2>

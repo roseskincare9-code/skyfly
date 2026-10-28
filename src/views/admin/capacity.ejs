@@ -1,0 +1,52 @@
+<%- include('../partials/head', { title: 'Capacity' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main style="max-width:1100px">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Capacity</h1>
+  <p class="muted" style="margin-top:0">How close the shared platform is to its limits, measured on this server over the last
+    <% [5, 15, 60].forEach((m, i) => { %><%= i ? ' · ' : '' %><% if (m === c.window) { %><strong><%= m %> minutes</strong><% } else { %><a href="/admin/capacity?minutes=<%= m %>"><%= m %> minutes</a><% } %><% }) %>.
+    Measurements restart when the server restarts. <a href="/admin/capacity.json?minutes=<%= c.window %>">As JSON</a> for monitoring.</p>
+
+  <div class="card" data-capacity-advice>
+    <h2>Does the platform need more resources?</h2>
+    <% c.advice.forEach((a) => { %><p class="<%= a.level === 'act' ? 'error' : a.level === 'watch' ? 'warn-box' : 'muted' %>" style="margin:6px 0"><strong><%= { act: 'Act', watch: 'Watch', ok: 'OK' }[a.level] %>:</strong> <%= a.text %></p><% }) %>
+  </div>
+
+  <% if (c.report) { const r = c.report; %>
+  <div class="card">
+    <h2>Server and database</h2>
+    <dl class="kv">
+      <dt>Server CPU</dt><dd><%= r.cpuPercent %>% of one core (average)</dd>
+      <dt>Longest CPU wait</dt><dd><%= r.eventLoopP99Ms %> ms (99th percentile; above 250 ms means the server is overloaded)</dd>
+      <dt>Memory</dt><dd><%= r.memoryMb %> MB</dd>
+      <dt>Database connections (this server)</dt><dd>up to <%= r.pool.busyMax %> of <%= c.status.pool.max %> in use (average <%= r.pool.busyAvg %>); requests waiting for one: up to <%= r.pool.waitingMax %> (average <%= r.pool.waitingAvg %>)</dd>
+      <dt>Database connections (all)</dt><dd><%= c.db.connections %> of <%= c.db.max_connections %> open</dd>
+      <dt>Database size</dt><dd><%= c.db.sizeMb %> MB</dd>
+      <dt>Public data kept in memory</dt><dd><%= c.status.cacheSeconds ? c.status.cacheSeconds + ' seconds (cleared whenever a change is saved)' : 'off' %></dd>
+      <dt>Fair share per business</dt><dd>pages and tracking: <%= c.status.lanes.read.perKey %> at a time (all businesses: <%= c.status.lanes.read.total %>); orders: <%= c.status.lanes.order.perKey %> at a time (all: <%= c.status.lanes.order.total %>). Running now: <%= c.status.lanes.read.running %> + <%= c.status.lanes.order.running %>, waiting: <%= c.status.lanes.read.waiting %> + <%= c.status.lanes.order.waiting %>.</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Public traffic by business</h2>
+    <p class="muted" style="margin-top:0">Time is Skyfly's own answer time (including any wait for its fair share), not the visitor's network. "Busy" = asked to try again because the business reached its fair share.</p>
+    <div class="table-wrap"><table class="stack" data-capacity-traffic><thead><tr><th>Business</th><th>Request</th><th>Count</th><th>Per minute</th><th>Typical</th><th>95%</th><th>99%</th><th>Errors</th><th>Busy</th></tr></thead><tbody>
+      <% if (!r.rows.length) { %><tr><td colspan="9" class="muted">No public traffic in this period.</td></tr><% } %>
+      <% r.rows.forEach((row) => { %><tr><td><%= row.name %></td><td><%= row.kind %></td><td><%= row.requests %></td><td><%= row.perMinute %></td><td><%= row.p50 %> ms</td><td><%= row.p95 %> ms</td><td><%= row.p99 %> ms</td><td><%= row.errors %></td><td><%= row.busy %></td></tr><% }) %>
+    </tbody></table></div>
+  </div>
+  <% } %>
+
+  <div class="card">
+    <h2>Background work</h2>
+    <dl class="kv"><% c.queues.forEach((q) => { %><dt><%= q.label %></dt><dd><%= q.n %><%= q.n && q.oldest ? ', oldest from ' + formatDate(q.oldest) : '' %></dd><% }) %></dl>
+  </div>
+
+  <div class="card">
+    <h2>Businesses</h2>
+    <div class="table-wrap"><table class="stack"><thead><tr><th>Business</th><th>Landing pages</th><th>Products</th><th>Orders (24 h)</th></tr></thead><tbody>
+      <% c.usage.forEach((b) => { %><tr><td><a href="/admin/businesses/<%= b.id %>"><%= b.name %></a></td><td><%= b.pages %> of <%= b.max_landing_pages %></td><td><%= b.products %></td><td><%= b.orders_24h %></td></tr><% }) %>
+    </tbody></table></div>
+  </div>
+</main>
+</body></html>

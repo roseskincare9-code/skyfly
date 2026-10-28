@@ -49,12 +49,20 @@ export async function saveVersion(pool, { pageId, userId, upload }) {
   }
 }
 
+// A saved version's files never change, so which file a path is can be remembered (up to 20,000).
+const fileMeta = new Map();
 export async function readFile(pool, versionId, filePath) {
-  const { rows: [file] } = await pool.query(
-    'SELECT content_type, sha256, size FROM page_files WHERE version_id = $1 AND path = $2',
-    [versionId, filePath],
-  );
-  if (!file) return null;
+  const metaKey = `${versionId}\u0000${filePath}`;
+  let file = fileMeta.get(metaKey);
+  if (!file) {
+    ({ rows: [file] } = await pool.query(
+      'SELECT content_type, sha256, size FROM page_files WHERE version_id = $1 AND path = $2',
+      [versionId, filePath],
+    ));
+    if (!file) return null;
+    if (fileMeta.size >= 20000) fileMeta.delete(fileMeta.keys().next().value);
+    fileMeta.set(metaKey, file);
+  }
   let data = cache.get(file.sha256);
   if (data) {
     cache.delete(file.sha256);

@@ -57,6 +57,14 @@
     <form method="post" action="/admin/businesses/<%= b.id %>/unlock"><%- include('../partials/csrf') %><button class="secondary" type="submit">Unlock</button></form><% } %>
   </div>
 
+  <form class="card" method="post" action="/admin/businesses/<%= b.id %>/page-limit" data-page-limit>
+    <%- include('../partials/csrf') %>
+    <h2>Landing page limit</h2>
+    <p class="muted" style="margin-top:0">How many landing pages this business may have (archived pages don't count). Product categories are not businesses: one business can sell several kinds of product on its pages.</p>
+    <div class="row"><label style="margin:0">Pages <input type="number" name="max_landing_pages" min="1" max="1000" value="<%= b.max_landing_pages %>" style="width:90px"></label>
+      <span class="muted"><%= pagesUsed %> in use</span><button class="secondary" type="submit">Save</button></div>
+  </form>
+
   <form class="card" method="post" action="/admin/businesses/<%= b.id %>/subdomain">
     <%- include('../partials/csrf') %>
     <h2>Business subdomain</h2>
