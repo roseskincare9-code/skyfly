@@ -4,6 +4,7 @@
 // Orders are saved in Skyfly first; the server then copies each one to its sheet, with a
 // visible status, retries with back-off, and a search before every write so a row is
 // never added twice.
+import { singleRunner, JOB_LOCKS } from '../lib/singleRunner.js';
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
@@ -470,8 +471,11 @@ export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = c
     running = true;
     status.lastRunAt = new Date().toISOString();
     try {
-      await recheckConnections(pool, key);
-      do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
+      // One instance at a time (see lib/singleRunner.js).
+      await singleRunner(pool, JOB_LOCKS.sheets, async () => {
+        await recheckConnections(pool, key);
+        do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
+      });
       status.lastOkAt = status.lastRunAt;
       status.lastError = null;
     } catch (err) {

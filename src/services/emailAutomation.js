@@ -8,6 +8,7 @@
 //     "sent" only when the provider confirms it.
 // Emails stuck in "sending" (the server stopped mid-send) are marked failed with
 // "outcome unknown" and are never retried automatically, so nobody gets two copies.
+import { singleRunner, JOB_LOCKS } from '../lib/singleRunner.js';
 import { decrypt } from '../lib/secrets.js';
 import { formatMoney } from '../lib/money.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../lib/statuses.js';
@@ -290,7 +291,8 @@ export function startEmailWorker(pool, config, { intervalMs = 60000, log = conso
     running = true;
     status.lastRunAt = new Date().toISOString();
     try {
-      status.last = await runEmailJobs(pool, config);
+      // One instance at a time (see lib/singleRunner.js); null when another instance is running it.
+      status.last = await singleRunner(pool, JOB_LOCKS.email, () => runEmailJobs(pool, config)) ?? status.last;
       status.lastOkAt = status.lastRunAt;
       status.lastError = null;
     } catch (err) { status.lastError = String(err.message).slice(0, 200); log.error('Email automation error:', err.message); } finally { running = false; }

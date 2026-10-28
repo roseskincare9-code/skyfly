@@ -10,6 +10,7 @@ import request from 'supertest';
 import { setup, resetDatabase, csrfToken, signUp, openClientSignup, addTrackingPixel } from './helpers.js';
 import { createLane, BusyError } from '../src/lib/fairness.js';
 import { syncDue } from '../src/services/sheets.js';
+import { singleRunner } from '../src/lib/singleRunner.js';
 import { clearOriginCache } from '../src/lib/origins.js';
 
 const SITE = (i) => `https://shop${i}.example`;
@@ -136,6 +137,18 @@ describe('background work takes businesses in turn', () => {
     await syncDue(pool, { limit: 3 });
     const { rows: [b] } = await pool.query('SELECT sheet_sync_status FROM orders WHERE reference = $1', [late.body.reference]);
     assert.equal(b.sheet_sync_status, 'skipped', 'shop 2\'s newest order was handled in the first batch of 3');
+  });
+});
+
+describe('several server instances', () => {
+  test('a background job runs on one instance at a time; the other skips that turn', async () => {
+    let release;
+    const first = singleRunner(pool, 99001, () => new Promise((r) => { release = () => r('first'); }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(await singleRunner(pool, 99001, async () => 'second'), null, 'skipped while the first runs');
+    release();
+    assert.equal(await first, 'first');
+    assert.equal(await singleRunner(pool, 99001, async () => 'again'), 'again', 'runs once the first has finished');
   });
 });
 
