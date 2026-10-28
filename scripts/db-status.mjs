@@ -22,6 +22,7 @@ for (const o of owners) {
 if (!db) { console.log('skyfly-db not found'); process.exit(1); }
 
 // The web service's plan (instance size) and instance count: what the capacity numbers apply to.
+let webService = null;
 for (const o of owners) {
   const services = ((await api(`/services?ownerId=${encodeURIComponent(o.id)}&limit=100`)).json || []).map((x) => x.service ?? x);
   for (const svc of services.filter((x) => x.name === 'skyfly')) {
@@ -31,8 +32,20 @@ for (const o of owners) {
     line('instances', JSON.stringify(d.numInstances ?? 'unknown'));
     line('region', JSON.stringify(d.region ?? 'unknown'));
     line('suspended', JSON.stringify(svc.suspended ?? 'unknown'));
+    webService = svc;
   }
 }
+
+// Render's own measurements (read-only): what the plan decision is based on.
+const metric = async (name, resource, extra = '', hours = 168, step = 3600) => {
+  const end = new Date(); const start = new Date(end - hours * 3600e3);
+  const r = await api(`/metrics/${name}?resource=${encodeURIComponent(resource)}&startTime=${start.toISOString()}&endTime=${end.toISOString()}&resolutionSeconds=${step}${extra}`);
+  if (r.status !== 200 || !Array.isArray(r.json)) return { status: r.status, text: r.text?.slice(0, 120) };
+  const values = r.json.flatMap((series) => (series.values || []).map((v) => Number(v.value))).filter((v) => Number.isFinite(v));
+  if (!values.length) return { status: 200, empty: true };
+  return { status: 200, n: values.length, max: Math.max(...values), avg: values.reduce((a, b) => a + b, 0) / values.length };
+};
+const show = (label, m, fmt = (v) => v.toFixed(3)) => line(label, m.n ? `max ${fmt(m.max)}, average ${fmt(m.avg)} (${m.n} hourly points, last 7 days)` : m.empty ? 'no data' : `HTTP ${m.status} ${m.text ?? ''}`);
 
 const detail = (await api(`/postgres/${db.id}`)).json ?? db;
 console.log('== Render database (skyfly-db)');
@@ -49,6 +62,18 @@ if (detail.createdAt) {
   line('age', `${days} days`);
   if (detail.plan === 'free' && !detail.expiresAt) line('expiry (free plan rule, computed)', `${new Date(created.getTime() + 30 * 864e5).toISOString()} (30 days after creation)`);
 }
+
+if (webService) {
+  console.log('\n== Measured use (Render metrics, last 7 days)');
+  show('web CPU (cores used)', await metric('cpu', webService.id));
+  show('web memory (MB)', await metric('memory', webService.id), (v) => (v / 1048576).toFixed(0));
+  show('web requests (per hour)', await metric('http-requests', webService.id, '&aggregateHttpRequestsBy=statusCode'), (v) => v.toFixed(0));
+  show('web latency p95 (ms)', await metric('http-latency', webService.id, '&quantile=0.95'), (v) => v.toFixed(0));
+  show('web instances', await metric('instance-count', webService.id), (v) => v.toFixed(0));
+}
+show('database connections', await metric('active-connections', db.id), (v) => v.toFixed(0));
+show('database CPU (cores used)', await metric('cpu', db.id));
+show('database memory (MB)', await metric('memory', db.id), (v) => (v / 1048576).toFixed(0));
 
 console.log('\n== Backups and recovery (Render API)');
 for (const [label, path] of [['point-in-time recovery', `/postgres/${db.id}/recovery`], ['exports (logical backups)', `/postgres/${db.id}/export`]]) {
