@@ -196,10 +196,25 @@ await step('K. Owner: import a labelled test page, add the checkout, publish, op
   assert(href, 'demo business not in the dashboard');
   const name = `TEST page ${RUN}`;
   const html = (v) => `<!doctype html><html><head><meta charset="utf-8"><title>${name}</title></head><body><h1>${name} v${v}</h1></body></html>`;
+  // A business has a landing page limit (4 by default): test pages left by earlier runs are archived
+  // first (archived pages don't count), so this run's import always has room.
+  const archive = async (manageUrl) => {
+    await d.goto(manageUrl);
+    await d.selectOption('#status', 'archived');
+    await Promise.all([d.waitForLoadState('load'), d.click('form.card >> button:text-is("Save")')]);
+  };
+  await d.goto(`${SKYFLY}${href}/landing-pages`);
+  const leftovers = [];
+  for (const card of await d.locator('.card:has(h2:has-text("TEST page "))').all()) {
+    if (await card.locator('.pill.archived').count()) continue;
+    leftovers.push(new URL(await card.locator('a:text-is("Manage")').getAttribute('href'), SKYFLY).href);
+  }
+  for (const u of leftovers) await archive(u);
   await d.goto(`${SKYFLY}${href}/landing-pages`);
   await d.fill('#imp-name', name);
   await d.setInputFiles('#imp-file', { name: 'index.html', mimeType: 'text/html', buffer: Buffer.from(html(1)) });
-  await Promise.all([d.waitForURL(/done=uploaded/), d.click('form[enctype] button[type=submit]')]);
+  await Promise.all([d.waitForURL(/done=uploaded|error=/), d.click('form[enctype] button[type=submit]')]);
+  assert(/done=uploaded/.test(d.url()), `import refused: ${decodeURIComponent(d.url().split('error=')[1] ?? '')}`);
   const pageUrl = d.url().split('?')[0];
   await Promise.all([d.waitForURL(/done=checkout/), d.click('button:text-is("Add Skyfly checkout")')]);
   // Test mode on and the demo products connected, in Page settings.
@@ -221,7 +236,8 @@ await step('K. Owner: import a labelled test page, add the checkout, publish, op
   await Promise.all([d.waitForURL(/done=unpublished/), d.click('button:text-is("Unpublish")')]);
   const gone = await fetch(live);
   assert(gone.status === 404, `after unpublishing HTTP ${gone.status}`);
-  return `${live}: v1 published, v2 republished at the same address, unpublished (404)`;
+  await archive(pageUrl); // leaves the business's page allowance as it was
+  return `${live}: v1 published, v2 republished at the same address, unpublished (404), archived${leftovers.length ? ` (${leftovers.length} earlier test page(s) archived first)` : ''}`;
 });
 
 await browser.close();
