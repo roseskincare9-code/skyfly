@@ -67,9 +67,16 @@ if (webService) {
   console.log('\n== Measured use (Render metrics, last 7 days)');
   show('web CPU (cores used)', await metric('cpu', webService.id));
   show('web memory (MB)', await metric('memory', webService.id), (v) => (v / 1048576).toFixed(0));
-  show('web requests (per hour)', await metric('http-requests', webService.id, '&aggregateHttpRequestsBy=statusCode'), (v) => v.toFixed(0));
-  show('web latency p95 (ms)', await metric('http-latency', webService.id, '&quantile=0.95'), (v) => v.toFixed(0));
-  show('web instances', await metric('instance-count', webService.id), (v) => v.toFixed(0));
+  show('web requests (per hour)', await metric('http-requests', webService.id), (v) => v.toFixed(0));
+  const cpu = await metric('cpu', webService.id);
+  if (cpu.n) line('hours with the server awake', `${cpu.n} of 168 (the free plan sleeps after 15 idle minutes)`);
+  // One timed visit, as the first visitor after a quiet spell would see it.
+  const url = (webService.serviceDetails?.url || '').replace(/\/$/, '');
+  if (url) {
+    const t = Date.now();
+    const r = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(120000) }).catch((e) => ({ status: e.name }));
+    line('first request now (/healthz)', `HTTP ${r.status} in ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
 }
 show('database connections', await metric('active-connections', db.id), (v) => v.toFixed(0));
 show('database CPU (cores used)', await metric('cpu', db.id));
