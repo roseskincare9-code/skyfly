@@ -269,6 +269,29 @@ await step('L. The test account sees only the two test businesses; other busines
   return `listed: ${[...new Set(names)].join(', ')}; orders of businesses ${refused.join(', ')} → 404`;
 });
 
+await step('M. The business\'s own WhatsApp number: changed in Settings, the published page hands off to it (never Larose\'s); then restored', async () => {
+  const d = await signIn();
+  const settings = `${SKYFLY}${bizHref}/settings`;
+  await d.goto(settings);
+  const before = await d.inputValue('#whatsapp_number');
+  const save = async (value) => {
+    await d.goto(settings);
+    await d.fill('#whatsapp_number', value);
+    await Promise.all([d.waitForLoadState('load'), d.click('button:text-is("Save settings")')]);
+  };
+  let seen;
+  try {
+    await save('08012340000'); // a test value: only a link is built, nobody is messaged
+    // Public data is cached briefly in production; a saved change clears it at once.
+    seen = (await (await fetch(`${SKYFLY}/api/public/pages/${SLUG}/catalog`)).json()).whatsapp;
+    assert(seen === '2348012340000', `page hands off to ${seen}`);
+  } finally {
+    await save(before);
+  }
+  const after = (await (await fetch(`${SKYFLY}/api/public/pages/${SLUG}/catalog`)).json()).whatsapp;
+  return `set 08012340000 → page uses ${seen}; restored to ${before || '(none)'} → page uses ${after ?? '(none)'}`;
+});
+
 await browser.close();
 if (blocked) console.log(`\n${blocked} check(s) BLOCKED (missing credential, see above)`);
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks that could run passed');
