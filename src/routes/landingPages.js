@@ -448,10 +448,18 @@ export function landingPageRoutes({ pool, config }) {
     // Server-side checks first: a version customers could not order from is not published.
     let validation = await validateVersion(pool, config, page, version.id);
     let autoConnected = false;
-    if (validation.blocked && validation.checks.find((c) => c.key === 'checkout')?.status === 'BLOCKED') {
+    // Not connected yet, or the checkout was added but the page's own purchase buttons (e.g. "Order on
+    // WhatsApp" to another number) still leave the page: Publish connects them too.
+    const leaving = !validation.blocked && validation.checks.find((c) => c.key === 'buttons')?.status === 'WARNING';
+    if (leaving || (validation.blocked && validation.checks.find((c) => c.key === 'checkout')?.status === 'BLOCKED')) {
       // Not connected yet: Publish connects the checkout itself when every product and field was matched confidently.
       const { rows: [full] } = await pool.query('SELECT id, entry_path, source_name FROM page_versions WHERE id = $1', [version.id]);
-      const connected = await connectVersion(pool, { page, version: full, userId: req.session.userId, onlyIfConfident: true });
+      // Buttons only need to open the order form (a product is preselected only when matched with
+      // certainty), so they are connected without the owner's answers unless a form's fields need them.
+      const fieldsUnsure = leaving && needsAnswers(detectCheckout(
+        (await readFile(pool, full.id, full.entry_path)).data.toString('utf8'), await businessCatalogue(pool, page.business_id))).fields.length > 0;
+      const connected = leaving && fieldsUnsure ? null
+        : await connectVersion(pool, { page, version: full, userId: req.session.userId, onlyIfConfident: !leaving });
       if (connected?.needsAnswers) {
         return renderPage(req, res, page, { error: 'Not published yet: some products or form fields on this page need your answer. Choose them in step 3, click "Connect checkout automatically", then publish.', status: 400, validationFor: version.id });
       }

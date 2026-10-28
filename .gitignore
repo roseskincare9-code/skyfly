@@ -10,3 +10,5 @@ test/e2e/.glow-promo.zip
 landing-pages/dist/
 live-screenshots/
 perf-results.json
+test/e2e/.glow.html
+test/e2e/.second.html
