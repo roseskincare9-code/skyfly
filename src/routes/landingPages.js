@@ -96,8 +96,33 @@ function readPage(body) {
   return { name, slug, url: url ?? null, status, notes, productIds, testMode, upsellProductId, upsellHeadline, upsellText, orderDestination, notifyEmail, errors };
 }
 
+// A business has as many landing pages as its limit allows (default 4, set by the platform admin).
+export class PageLimitError extends Error {
+  constructor(limit) {
+    super(`This business can have up to ${limit} landing page${limit === 1 ? '' : 's'}. Archive a page you no longer use, or ask the Skyfly team to raise the limit.`);
+    this.limit = limit;
+  }
+}
+
+export async function pageAllowance(pool, businessId) {
+  const { rows: [r] } = await pool.query(
+    "SELECT b.max_landing_pages AS limit, (SELECT count(*)::int FROM landing_pages lp WHERE lp.business_id = b.id AND lp.status <> 'archived') AS used FROM businesses b WHERE b.id = $1", [businessId]);
+  return r;
+}
+
 export function landingPageRoutes({ pool, config }) {
   const router = Router({ mergeParams: true });
+  const limitReached = (res, limit) => res.redirect(`${res.locals.base}/landing-pages?error=${encodeURIComponent(new PageLimitError(limit).message)}`);
+
+  // Ways of adding a page stop early once the limit is reached (an upload is checked after its CSRF
+  // token, when the page is saved).
+  router.post(['/', '/import', '/template', '/import-url', '/:pageId/duplicate'], asyncHandler(async (req, res, next) => {
+    const wanted = String(req.body?.business_id ?? '');
+    if (req.path === '/' && /^\d+$/.test(wanted) && Number(wanted) !== Number(req.business.id)) return next(); // checked when saving
+    const { limit, used } = await pageAllowance(pool, req.business.id);
+    if (used >= limit) return limitReached(res, limit);
+    next();
+  }));
 
   async function products(businessId) {
     const { rows } = await pool.query(
@@ -116,11 +141,18 @@ export function landingPageRoutes({ pool, config }) {
   }
 
   // Saves a page and its product links in one transaction. Only this business's products can be linked.
+  // A new page counts against the business's landing page limit (checked under a lock on the
+  // business, so two pages created at the same moment can't both slip past it).
   async function savePage(businessId, page, id = null) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       let pageId = id;
+      if (!id) {
+        const { rows: [b] } = await client.query('SELECT max_landing_pages FROM businesses WHERE id = $1 FOR UPDATE', [businessId]);
+        const { rows: [n] } = await client.query("SELECT count(*)::int AS n FROM landing_pages WHERE business_id = $1 AND status <> 'archived'", [businessId]);
+        if (n.n >= b.max_landing_pages) throw new PageLimitError(b.max_landing_pages);
+      }
       if (id) {
         await client.query(
           'UPDATE landing_pages SET name = $1, slug = $2, url = $3, status = $4, notes = $5, test_mode = $8, order_destination = $9, updated_at = now() WHERE id = $6 AND business_id = $7',
@@ -181,7 +213,7 @@ export function landingPageRoutes({ pool, config }) {
       const live = p.status === 'active' && p.published_version_id;
       p.public_url = live ? (p.custom_domain && p.domain_status?.startsWith('ok') ? `https://${p.custom_domain}/` : publishedUrl(config, p)) : null;
     }
-    res.render('landing-pages', { pages: rows, error: req.query.error ?? null });
+    res.render('landing-pages', { pages: rows, error: req.query.error ?? null, allowance: await pageAllowance(pool, req.business.id) });
   }));
 
   // Businesses this user may add pages to (manage their pages), for "Business that owns the page".
@@ -548,6 +580,8 @@ export function landingPageRoutes({ pool, config }) {
     res.set('Content-Security-Policy', `default-src 'self'; style-src 'self' 'unsafe-inline'; frame-src ${origin}`);
     res.render('landing-page-preview', { page });
   }));
+
+  router.use((err, req, res, next) => (err instanceof PageLimitError ? limitReached(res, err.limit) : next(err)));
 
   return router;
 }

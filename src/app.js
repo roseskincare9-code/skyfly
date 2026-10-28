@@ -18,6 +18,7 @@ import { injectSkyfly } from './hosting/inject.js';
 import { optimizeHtml } from './hosting/speed.js';
 import { imageMeta } from './hosting/images.js';
 import { recordPurchase } from './services/pixels.js';
+import { createLoadControl } from './services/load.js';
 import { setGoogleAccess } from './services/googleSheetsApi.js';
 import { formatMoney } from './lib/money.js';
 import { lineChart, donut, shortMoney } from './lib/charts.js';
@@ -41,12 +42,18 @@ function isDashboardRequest(req, config) {
   return !config.dashboardHost;
 }
 
-export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {}, workers = null }) {
+export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = () => {}, workers = null, load = null }) {
   setGoogleAccess(config.google);
+  // Fair sharing of the database between businesses, caches and measurements for public traffic.
+  load ??= createLoadControl({ pool, config });
   // Published hosted pages get the Skyfly SDK + pixel config; previews are served untouched.
-  transformHtml ??= async (html, ctx) => optimizeHtml(await injectSkyfly(pool, config, html, ctx), {
-    meta: await imageMeta(pool, ctx.versionId), filePath: ctx.filePath, versionId: ctx.versionId,
-  });
+  // The rendered HTML of a published page is the same for every visitor: built once per cache period.
+  transformHtml ??= async (html, ctx) => {
+    const build = async () => optimizeHtml(await injectSkyfly(pool, config, html, { ...ctx, load }), {
+      meta: await imageMeta(pool, ctx.versionId), filePath: ctx.filePath, versionId: ctx.versionId,
+    });
+    return ctx.preview ? build() : load.caches.html.get(`${ctx.page.id}:${ctx.versionId}:${ctx.filePath}`, build);
+  };
   // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
   onPaid ??= (orderId) => recordPurchase(pool, config, orderId).catch((err) => console.error('Purchase event error:', err.message));
   const app = express();
@@ -79,12 +86,12 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     }
   });
 
-  const pages = pageServer({ pool, config, transformHtml });
+  const pages = pageServer({ pool, config, transformHtml, load });
   app.use((req, res, next) => (isDashboardRequest(req, config) ? next() : pages(req, res, next)));
 
   // Sandboxed previews and published pages on the dashboard address (before Helmet: they carry their own CSP).
   app.use(sandboxPreview({ pool, config, transformHtml }));
-  app.use(pathPages({ pool, transformHtml }));
+  app.use(pathPages({ pool, transformHtml, load }));
 
   app.use(helmet());
 
@@ -100,7 +107,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   });
 
   // Public order API and confirmation page: no admin session involved.
-  app.use(publicRoutes({ pool, config, onOrderSaved }));
+  app.use(publicRoutes({ pool, config, onOrderSaved, load }));
 
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(
@@ -151,7 +158,13 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.use(authRoutes({ pool, config }));
   app.use(backupKeyRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
-  app.use(adminRoutes({ pool, config }));
+  // Anything saved in the dashboard (pixels, products, pages, publishing) is visible to visitors at
+  // once: the public caches are cleared after every successful change.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') res.once('finish', () => { if (res.statusCode < 400) load.clearCaches(); });
+    next();
+  });
+  app.use(adminRoutes({ pool, config, load }));
   app.use(workspaceRoutes({ pool, config, onPaid, onOrderSaved }));
 
   app.use((req, res) => res.status(404).render('error', { message: 'Page not found.' }));

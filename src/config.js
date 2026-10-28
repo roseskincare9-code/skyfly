@@ -118,6 +118,27 @@ export function loadConfig() {
     // Must match the browser event (the SDK sends CompletePayment) so TikTok deduplicates them.
     tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'CompletePayment',
     orderRateLimit: Number(process.env.ORDER_RATE_LIMIT) || 20,
+    // Orders per business per 10 minutes from public pages (a flood of fake orders on one page can't
+    // fill the database for everyone). Far above real demand: 50,000 visitors a day at 2% is ~7 per
+    // 10 minutes on average.
+    orderBusinessLimit: Number(process.env.ORDER_BUSINESS_LIMIT) || 1000,
+    // Database connections of this server instance, and how long a query may run.
+    dbPoolMax: Number(process.env.DB_POOL_MAX) || 20,
+    dbStatementTimeoutMs: Number(process.env.DB_STATEMENT_TIMEOUT_MS) || 15000,
+    // How long public data many visitors ask for is kept in memory (production: 30 s; changes saved in
+    // the dashboard clear it at once). 0 = off (tests and local development, unless set).
+    publicCacheMs: process.env.PUBLIC_CACHE_MS !== undefined ? Number(process.env.PUBLIC_CACHE_MS) : (isProduction ? 30000 : 0),
+    // Fair share of the database for each business's public traffic (see src/lib/fairness.js).
+    fairness: {
+      readPerBusiness: Number(process.env.FAIR_READ_PER_BUSINESS) || 4,
+      readTotal: Number(process.env.FAIR_READ_TOTAL) || 10,
+      readQueue: Number(process.env.FAIR_READ_QUEUE) || 200,
+      readWaitMs: Number(process.env.FAIR_READ_WAIT_MS) || 5000,
+      orderPerBusiness: Number(process.env.FAIR_ORDER_PER_BUSINESS) || 3,
+      orderTotal: Number(process.env.FAIR_ORDER_TOTAL) || 6,
+      orderQueue: Number(process.env.FAIR_ORDER_QUEUE) || 100,
+      orderWaitMs: Number(process.env.FAIR_ORDER_WAIT_MS) || 15000,
+    },
     // Local development only: send emails to a stand-in provider instead of the real one.
     emailApiBase: isProduction ? null : (process.env.EMAIL_API_BASE || null),
     // Skyfly's own sender for order notifications and address verification, used for businesses that

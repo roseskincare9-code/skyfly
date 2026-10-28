@@ -76,7 +76,7 @@ export function backupKeyRoutes({ pool, config }) {
   return router;
 }
 
-export function adminRoutes({ pool, config }) {
+export function adminRoutes({ pool, config, load = null }) {
   const router = Router();
   router.use('/admin', requireAuth, asyncHandler(async (req, res, next) => {
     const { rows: [u] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
@@ -170,9 +170,10 @@ export function adminRoutes({ pool, config }) {
                    WHERE a.business_id = $1 AND (a.action LIKE 'subscription.%' OR a.action LIKE 'admin.%') ORDER BY a.id DESC LIMIT 30`, [b.id]),
     ]);
     const checklist = await setupChecklist(pool, b);
+    const { rows: [pagesUsed] } = await pool.query("SELECT count(*)::int AS n FROM landing_pages WHERE business_id = $1 AND status <> 'archived'", [b.id]);
     res.set('Cache-Control', 'no-store');
     res.status(status).render('admin/business', {
-      checklist, b, sub: subscriptionState(b), members, invites, history, error, notice, link, ROLES, ROLE_LABELS, CURRENCIES, SUBSCRIPTION_LABELS,
+      checklist, b, pagesUsed: pagesUsed.n, sub: subscriptionState(b), members, invites, history, error, notice, link, ROLES, ROLE_LABELS, CURRENCIES, SUBSCRIPTION_LABELS,
       subdomain: { platformDomain: config.platformDomain, host: subdomainHost(b, config), status: b.subdomain_status, checkedAt: b.subdomain_checked_at,
         state: (await subdomainState(b, config)).message },
       renewDefault: addMonths(b.subscription_expires_on && b.subscription_expires_on > b.local_today ? b.subscription_expires_on : b.local_today, 1),
@@ -288,6 +289,20 @@ export function adminRoutes({ pool, config }) {
     return renderBusiness(req, res, { ...b, ...d }, { notice: 'Business details saved.' });
   }));
 
+  // Landing page limit (default 4). Lowering it below what the business already has is refused, so no
+  // page is ever removed or hidden by changing it.
+  router.post('/admin/businesses/:id/page-limit', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const limit = Number(req.body.max_landing_pages);
+    const { rows: [{ used }] } = await pool.query("SELECT count(*)::int AS used FROM landing_pages WHERE business_id = $1 AND status <> 'archived'", [b.id]);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) return renderBusiness(req, res, b, { error: 'Enter a landing page limit from 1 to 1000.', status: 400 });
+    if (limit < used) return renderBusiness(req, res, b, { error: `${b.name} already has ${used} landing pages (not archived). Choose ${used} or more, or archive pages first.`, status: 400 });
+    await pool.query('UPDATE businesses SET max_landing_pages = $2 WHERE id = $1', [b.id, limit]);
+    await audit(pool, req, { action: 'admin.page_limit_changed', businessId: b.id, entityType: 'business', entityId: b.id, details: { from: b.max_landing_pages, to: limit } });
+    return renderBusiness(req, res, { ...b, max_landing_pages: limit }, { notice: `Landing page limit set to ${limit}.` });
+  }));
+
   // Business subdomain on the platform domain (reserved now, live only once the domain is set up).
   router.post('/admin/businesses/:id/subdomain', asyncHandler(async (req, res) => {
     const b = await loadBusiness(req.params.id);
@@ -328,6 +343,56 @@ export function adminRoutes({ pool, config }) {
   }));
 
   router.get('/admin/backup.json', asyncHandler(async (req, res) => sendBackup(pool, req, res, { via: 'signed in' })));
+
+  // Capacity: how close the shared platform is to its limits, and which businesses use it most.
+  router.get('/admin/capacity.json', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await capacity(Number(req.query.minutes) || 15));
+  }));
+  router.get('/admin/capacity', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.render('admin/capacity', { c: await capacity(Number(req.query.minutes) || 15) });
+  }));
+  async function capacity(minutes) {
+    const window = [5, 15, 60].includes(minutes) ? minutes : 15;
+    const report = load ? load.metrics.report(window) : null;
+    const status = load ? load.status() : null;
+    const [{ rows: [db] }, { rows: queues }, { rows: names }, { rows: usage }] = await Promise.all([
+      pool.query(`SELECT current_setting('max_connections')::int AS max_connections,
+                         (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database()) AS connections,
+                         pg_database_size(current_database()) AS bytes`),
+      pool.query(`SELECT 'Google Sheet copies waiting' AS label, count(*)::int AS n, min(created_at) AS oldest FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND NOT is_test
+                  UNION ALL SELECT 'Emails queued', count(*)::int, min(scheduled_for) FROM email_messages WHERE status = 'queued' AND scheduled_for <= now()`),
+      pool.query('SELECT id::text, name FROM businesses'),
+      pool.query(`SELECT b.id::text, b.name, b.max_landing_pages,
+                         (SELECT count(*)::int FROM landing_pages lp WHERE lp.business_id = b.id AND lp.status <> 'archived') AS pages,
+                         (SELECT count(*)::int FROM orders o WHERE o.business_id = b.id AND o.created_at > now() - interval '24 hours' AND NOT o.is_test) AS orders_24h,
+                         (SELECT count(*)::int FROM products p WHERE p.business_id = b.id) AS products
+                    FROM businesses b ORDER BY orders_24h DESC, b.name`),
+    ]);
+    const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    const rows = (report?.rows ?? []).map((r) => ({ ...r, name: nameOf.get(r.business) ?? (r.business === 'unknown' ? 'Unknown page' : r.business) }));
+    // Plain verdicts with the measured reason.
+    const advice = [];
+    const poolMax = config.dbPoolMax ?? 10;
+    if (report) {
+      if (report.pool.waitingAvg > 0.5 || report.pool.timeouts > 0) advice.push({ level: 'act', text: `Requests waited for a database connection (average ${report.pool.waitingAvg} waiting, ${report.pool.timeouts} timed out). Upgrade the database plan and raise DB_POOL_MAX, or add caching.` });
+      else if (report.pool.busyMax >= poolMax) advice.push({ level: 'watch', text: `All ${poolMax} database connections were in use at least once in the last ${window} minutes. Watch this; act if requests start waiting.` });
+      if (report.cpuPercent > 70) advice.push({ level: 'act', text: `The server used ${report.cpuPercent}% of its CPU. Upgrade the web instance (more CPU) or add a second instance.` });
+      if (report.eventLoopP99Ms > 250) advice.push({ level: 'act', text: `Requests waited up to ${report.eventLoopP99Ms} ms for the server's CPU. Upgrade the web instance or add a second instance.` });
+      if (report.memoryMb > 400) advice.push({ level: 'watch', text: `The server uses ${report.memoryMb} MB of memory (Render's smallest instances have 512 MB).` });
+      const busy = rows.filter((r) => r.busy > 0);
+      if (busy.length) advice.push({ level: 'watch', text: `"Busy, try again" answers were given to: ${[...new Set(busy.map((r) => r.name))].join(', ')}. That business reached its fair share; other businesses were protected. If this happens often for real visitors, the platform needs more capacity.` });
+      const slow = rows.filter((r) => r.requests >= 20 && typeof r.p95 === 'number' && r.p95 >= (r.kind === 'order' ? 2500 : 1000));
+      if (slow.length) advice.push({ level: 'act', text: `Slow answers (95th percentile): ${slow.map((r) => `${r.name} ${r.kind} ${r.p95} ms`).join('; ')}.` });
+    }
+    if (db.connections > db.max_connections * 0.8) advice.push({ level: 'act', text: `The database has ${db.connections} of ${db.max_connections} connections open. Upgrade the database plan before adding web instances.` });
+    for (const q of queues) {
+      if (q.n > 0 && q.oldest && Date.now() - new Date(q.oldest).getTime() > 60 * 60 * 1000) advice.push({ level: 'watch', text: `${q.label}: ${q.n}, the oldest since ${new Date(q.oldest).toISOString().slice(0, 16).replace('T', ' ')} UTC.` });
+    }
+    if (!advice.length) advice.push({ level: 'ok', text: `No limit was reached in the last ${window} minutes.` });
+    return { window, report: report && { ...report, rows }, status, db: { ...db, sizeMb: Math.round(db.bytes / 1048576) }, queues, usage, advice };
+  }
 
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {

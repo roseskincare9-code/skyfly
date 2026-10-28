@@ -4,6 +4,7 @@
 // Orders are saved in Skyfly first; the server then copies each one to its sheet, with a
 // visible status, retries with back-off, and a search before every write so a row is
 // never added twice.
+import { singleRunner, JOB_LOCKS } from '../lib/singleRunner.js';
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
 import { SHEET_COLUMNS, REQUIRED_COLUMNS, SKYFLY_TAB } from './sheetColumns.js';
@@ -404,12 +405,17 @@ export async function syncOrder(pool, orderId, { key = null } = {}) {
   }
 }
 
-// Orders due for a (re)try, oldest first. Returns how many were processed.
+// Orders due for a (re)try, oldest first, with businesses taking turns: a business with a long
+// backlog (e.g. its sheet was offline during a sale) can't delay other businesses' copies.
+// Returns how many were processed.
 export async function syncDue(pool, { limit = 10, key = null } = {}) {
   await adoptLegacyUrls(pool, key);
   const { rows } = await pool.query(
-    `SELECT id FROM orders WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
-        AND sheet_sync_attempts < $1 AND NOT is_test ORDER BY id LIMIT $2`, [MAX_ATTEMPTS, limit]);
+    `SELECT id FROM (
+       SELECT id, row_number() OVER (PARTITION BY business_id ORDER BY id) AS turn FROM orders
+        WHERE sheet_sync_status IN ('pending', 'failed') AND sheet_sync_next_at <= now()
+          AND sheet_sync_attempts < $1 AND NOT is_test) due
+      ORDER BY turn, id LIMIT $2`, [MAX_ATTEMPTS, limit]);
   for (const r of rows) await syncOrder(pool, r.id, { key });
   return rows.length;
 }
@@ -465,8 +471,11 @@ export function startSheetWorker(pool, { key = null, intervalMs = 60000, log = c
     running = true;
     status.lastRunAt = new Date().toISOString();
     try {
-      await recheckConnections(pool, key);
-      do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
+      // One instance at a time (see lib/singleRunner.js).
+      await singleRunner(pool, JOB_LOCKS.sheets, async () => {
+        await recheckConnections(pool, key);
+        do { again = false; while (await syncDue(pool, { key }) === 10) { /* drain */ } } while (again);
+      });
       status.lastOkAt = status.lastRunAt;
       status.lastError = null;
     } catch (err) {
