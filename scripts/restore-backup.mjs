@@ -19,9 +19,29 @@ try {
   await migrate(pool);
   const counts = await restoreBackup(pool, backup);
   console.log(`Restored backup from ${backup.createdAt}:`);
-  for (const [t, n] of Object.entries(counts)) console.log(`  ${t.padEnd(24)} ${n}`);
+  // Proof, read back from the restored database: every table has exactly the file's rows, and
+  // every order (reference, business, total, status, payment) is identical.
+  const problems = [];
+  for (const [t, n] of Object.entries(counts)) {
+    const { rows: [r] } = await pool.query(`SELECT count(*)::int AS n FROM ${t}`);
+    console.log(`  ${t.padEnd(24)} ${String(n).padStart(6)} in the file, ${String(r.n).padStart(6)} restored${r.n === n ? '' : '  MISMATCH'}`);
+    if (r.n !== n) problems.push(`${t}: ${n} in the file, ${r.n} restored`);
+  }
+  const o = backup.tables.orders;
+  if (o) {
+    const col = (name) => o.columns.indexOf(name);
+    const key = (ref, biz, total, status, pay) => [ref, biz, total, status, pay].map(String).join('|');
+    const fromFile = new Set(o.rows.map((r) => key(r[col('reference')], r[col('business_id')], r[col('total_minor')], r[col('status')], r[col('payment_status')])));
+    const { rows } = await pool.query('SELECT reference, business_id, total_minor, status, payment_status FROM orders');
+    const restored = new Set(rows.map((r) => key(r.reference, r.business_id, r.total_minor, r.status, r.payment_status)));
+    const missing = [...fromFile].filter((k) => !restored.has(k));
+    if (missing.length || restored.size !== fromFile.size) problems.push(`orders: ${missing.length} order(s) differ after restoring`);
+    else console.log(`  orders: all ${fromFile.size} identical (reference, business, total, status, payment)`);
+  }
+  if (problems.length) throw new Error(`the restored database does not match the backup: ${problems.join('; ')}`);
+  console.log('Verified: the restored database matches the backup file.');
 } catch (err) {
-  console.error(`Restore failed, nothing was changed: ${err.message}`);
+  console.error(err.message.startsWith('the restored database') ? `Verification FAILED: ${err.message}` : `Restore failed, nothing was changed: ${err.message}`);
   process.exitCode = 1;
 } finally {
   await pool.end();
