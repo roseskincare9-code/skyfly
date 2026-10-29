@@ -16,6 +16,7 @@ import { sendEmail, renderEmail, SendError, PROVIDERS } from './emailProviders.j
 import { subscriptionState, expireSubscriptions } from './tenancy.js';
 import { classifyCheckouts } from './checkouts.js';
 import { planOrderNotifications, sendOrderNotifications } from './orderNotifications.js';
+import { runDomainJobs } from './platformDomains.js';
 
 const RETRY_MINUTES = [5, 30, 120];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -279,7 +280,10 @@ export async function runEmailJobs(pool, config) {
   const notified = await sendOrderNotifications(pool, config);
   // Checkout sessions: idle ones become abandoned; the retention policy is applied.
   const checkouts = await classifyCheckouts(pool);
-  return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned };
+  // The platform's own domains: registry check (every 12 hours) and expiry reminders. A failure here
+  // never stops the other jobs.
+  const domains = await runDomainJobs(pool, config).catch((err) => ({ error: String(err.message).slice(0, 200) }));
+  return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned, domainReminders: domains.reminders?.length ?? 0, ...(domains.error ? { domainError: domains.error } : {}) };
 }
 
 export function startEmailWorker(pool, config, { intervalMs = 60000, log = console } = {}) {

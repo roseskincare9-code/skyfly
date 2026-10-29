@@ -17,6 +17,8 @@ import { inviteOrAdd, readInvite } from './team.js';
 import { normalizeSubdomain, subdomainHost, subdomainState } from '../services/subdomains.js';
 import { clearOriginCache } from '../lib/origins.js';
 import { TABLE_ORDER, exportBackup, uncoveredTables } from '../services/backup.js';
+import { normalizeDomain, checkDomain } from '../hosting/domains.js';
+import { listDomains, domainSummary, refreshDomain, normalizeRegistrarUrl, DOMAIN_COLUMNS, REMINDER_DAYS } from '../services/platformDomains.js';
 import multer from 'multer';
 import { requireCsrf } from '../lib/csrf.js';
 import { googleStatus, googleAccountEmail, readServiceAccount, useServiceAccount, googleSelfCheck } from '../services/googleSheetsApi.js';
@@ -112,7 +114,8 @@ export function adminRoutes({ pool, config, load = null }) {
     const counts = businesses.reduce((acc, b) => { acc[b.sub.status] = (acc[b.sub.status] || 0) + 1; return acc; }, {});
     const inAWeek = (b) => new Date(Date.parse(`${b.local_today}T00:00:00Z`) + 7 * 864e5).toISOString().slice(0, 10);
     const soon = businesses.filter((b) => b.sub.open && b.subscription_expires_on && b.subscription_expires_on <= inAWeek(b));
-    res.render('admin/index', { businesses, counts, soon, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+    const domainAlerts = (await listDomains(pool)).map((d) => ({ domain: d.domain, ...domainSummary(d) })).filter((d) => d.level !== 'ok');
+    res.render('admin/index', { businesses, counts, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
   }));
 
   router.get('/admin/businesses/new', (req, res) => {
@@ -394,6 +397,84 @@ export function adminRoutes({ pool, config, load = null }) {
     return { window, report: report && { ...report, rows }, status, db: { ...db, sizeMb: Math.round(db.bytes / 1048576) }, queues, usage, advice };
   }
 
+
+  // ---- Skyfly's own domains (e.g. getskyfly.com): expiry, renewal, reminders and the connection to this server.
+  // "Verified" facts come from the domain registry; the rest is what the owner typed in. No payment
+  // details or registrar passwords are stored.
+  const DOMAIN_NOTICES = { added: 'Domain added and the registry checked. The results are below.', saved: 'Saved.', checked: 'Registry checked again.' };
+  const domainsPage = async (req, res, { error = null, status = 200, connection = null } = {}) => {
+    const domains = (await listDomains(pool)).map((d) => ({ ...d, summary: domainSummary(d) }));
+    const { rows: reminders } = await pool.query(
+      `SELECT r.days_before, r.expires_on, r.status, r.detail, r.created_at, d.domain FROM platform_domain_reminders r
+         JOIN platform_domains d ON d.id = r.domain_id ORDER BY r.id DESC LIMIT 20`);
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/domains', {
+      domains, reminders, error, connection, notice: DOMAIN_NOTICES[req.query.done] ?? null, reminderDays: REMINDER_DAYS,
+      dashboardUrl: config.publicBaseUrl, aliases: config.dashboardAliases ?? [], emailReady: Boolean(config.notifyEmail?.apiKey && config.notifyEmail?.fromEmail),
+    });
+  };
+  const loadDomain = async (id) => (await pool.query(`SELECT ${DOMAIN_COLUMNS} FROM platform_domains WHERE id = $1`, [id])).rows[0] ?? null;
+
+  router.get('/admin/domains', asyncHandler((req, res) => domainsPage(req, res)));
+
+  router.post('/admin/domains', asyncHandler(async (req, res) => {
+    const domain = normalizeDomain(req.body.domain);
+    if (!domain) return domainsPage(req, res, { error: 'Enter a domain name like getskyfly.com.', status: 400 });
+    const { rows: [row] } = await pool.query('INSERT INTO platform_domains (domain) VALUES ($1) ON CONFLICT (domain) DO NOTHING RETURNING id', [domain]);
+    if (!row) return domainsPage(req, res, { error: `${domain} is already listed.`, status: 409 });
+    await refreshDomain(pool, row.id);
+    await audit(pool, req, { action: 'admin.domain_added', entityType: 'platform_domain', entityId: row.id, details: { domain } });
+    res.redirect('/admin/domains?done=added');
+  }));
+
+  router.post('/admin/domains/:id', asyncHandler(async (req, res) => {
+    const d = await loadDomain(req.params.id);
+    if (!d) return res.status(404).render('error', { message: 'Domain not found.' });
+    const url = normalizeRegistrarUrl(req.body.registrar_url);
+    if (url.error) return domainsPage(req, res, { error: url.error, status: 400 });
+    const expires = String(req.body.manual_expires_on ?? '').trim();
+    if (expires && !validDate(expires)) return domainsPage(req, res, { error: 'The expiry date must be a valid date.', status: 400 });
+    const confirmed = String(req.body.manual_auto_renew_confirmed_on ?? '').trim();
+    if (confirmed && !validDate(confirmed)) return domainsPage(req, res, { error: 'The "last checked" date must be a valid date.', status: 400 });
+    const autoRenew = { on: true, off: false }[req.body.manual_auto_renew] ?? null;
+    await pool.query(
+      `UPDATE platform_domains SET registrar_name = $2, registrar_url = $3, manual_expires_on = $4, manual_auto_renew = $5,
+              manual_auto_renew_confirmed_on = $6, notes = $7, updated_at = now() WHERE id = $1`,
+      [d.id, String(req.body.registrar_name ?? '').trim().slice(0, 100) || null, url.value, expires || null, autoRenew,
+        confirmed || null, String(req.body.notes ?? '').trim().slice(0, 1000) || null]);
+    await audit(pool, req, { action: 'admin.domain_updated', entityType: 'platform_domain', entityId: d.id, details: { domain: d.domain, autoRenew } });
+    res.redirect('/admin/domains?done=saved');
+  }));
+
+  router.post('/admin/domains/:id/check', asyncHandler(async (req, res) => {
+    const d = await loadDomain(req.params.id);
+    if (!d) return res.status(404).render('error', { message: 'Domain not found.' });
+    await refreshDomain(pool, d.id);
+    res.redirect('/admin/domains?done=checked');
+  }));
+
+  // Is the domain connected to this server? DNS → HTTPS → this Skyfly answers. Checked, never assumed.
+  router.post('/admin/domains/:id/connection', asyncHandler(async (req, res) => {
+    const d = await loadDomain(req.params.id);
+    if (!d) return res.status(404).render('error', { message: 'Domain not found.' });
+    const target = config.renderHost || config.dashboardHost;
+    const steps = [];
+    const dnsResult = await checkDomain(d.domain, target);
+    steps.push({ ok: dnsResult.ok, text: `DNS: ${dnsResult.message}` });
+    let https = false;
+    try {
+      const r = await fetch(`https://${d.domain}/healthz`, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+      const body = await r.json().catch(() => null);
+      https = r.status === 200 && body?.status === 'ok';
+      steps.push({ ok: https, text: https ? `HTTPS: https://${d.domain}/healthz answered securely from Skyfly.` : `HTTPS: https://${d.domain}/healthz answered HTTP ${r.status}, not Skyfly's health check.` });
+    } catch (err) {
+      const cause = String(err?.cause?.code || err?.cause?.message || err?.message || '');
+      steps.push({ ok: false, text: `HTTPS: no secure answer (${/CERT|SSL|TLS|certificate/i.test(cause) ? 'no valid certificate yet' : cause.slice(0, 80) || 'timeout'}). The domain must be added in Render → skyfly → Settings → Custom Domains.` });
+    }
+    const main = config.dashboardHost === d.domain;
+    steps.push({ ok: main, text: main ? `Skyfly uses https://${d.domain} as its main address (PUBLIC_BASE_URL).` : `Skyfly's main address is still ${config.publicBaseUrl}. Set PUBLIC_BASE_URL=https://${d.domain} in Render only after DNS and HTTPS pass.` });
+    domainsPage(req, res, { connection: { domain: d.domain, steps, at: new Date() } });
+  }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
     res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null });

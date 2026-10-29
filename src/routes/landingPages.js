@@ -512,7 +512,9 @@ export function landingPageRoutes({ pool, config }) {
     if (!page) return res.status(404).render('error', { message: 'Landing page not found.' });
     const domain = normalizeDomain(req.body.domain);
     const reserved = [config.publicBaseUrl, config.pagesBaseUrl].filter(Boolean).map((u) => new URL(u).hostname);
-    if (domain === null || reserved.includes(domain) || (domain && domain.endsWith('.onrender.com'))) {
+    // Skyfly's own domain and its subdomains (e.g. getskyfly.com, www.getskyfly.com) are never a business's.
+    const platformOwned = [config.dashboardHost, config.platformDomain].filter(Boolean).some((h) => !h.endsWith('.onrender.com') && domain && (domain === h || domain.endsWith(`.${h}`)));
+    if (domain === null || reserved.includes(domain) || platformOwned || (domain && domain.endsWith('.onrender.com'))) {
       return renderPage(req, res, page, { error: 'Enter a domain you own, like shop.example.com.', status: 400 });
     }
     try {

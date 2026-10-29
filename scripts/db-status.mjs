@@ -2,6 +2,8 @@
 // backups/exports, and row counts (counts only, never customer data). Runs in GitHub
 // Actions with RENDER_API_KEY. Connects in a READ ONLY transaction; changes nothing.
 import pg from 'pg';
+import { promises as dns } from 'node:dns';
+import { rdapLookup } from '../src/services/platformDomains.js';
 
 const RENDER = 'https://api.render.com/v1';
 const api = async (path) => {
@@ -46,6 +48,37 @@ const metric = async (name, resource, extra = '', hours = 168, step = 3600) => {
   return { status: 200, n: values.length, max: Math.max(...values), avg: values.reduce((a, b) => a + b, 0) / values.length };
 };
 const show = (label, m, fmt = (v) => v.toFixed(3)) => line(label, m.n ? `max ${fmt(m.max)}, average ${fmt(m.avg)} (${m.n} hourly points, last 7 days)` : m.empty ? 'no data' : `HTTP ${m.status} ${m.text ?? ''}`);
+
+// The platform domain (read-only): the registry's record, public DNS, and Render's custom domains.
+const domain = (process.env.PLATFORM_DOMAIN_CHECK || 'getskyfly.com').toLowerCase();
+console.log(`\n== Domain ${domain}`);
+try {
+  const r = await rdapLookup(domain);
+  if (!r.registered) line('registry (RDAP)', 'NOT REGISTERED: the .com registry has no record of this domain');
+  else {
+    line('registry (RDAP)', 'registered');
+    line('registrar', r.registrar ?? 'unknown');
+    line('registered on', r.registeredAt ?? 'unknown');
+    line('expires', r.expiresAt ?? 'unknown');
+    line('status codes', r.statuses.join(', ') || 'none');
+  }
+} catch (err) { line('registry (RDAP)', `check failed: ${err.message}`); }
+for (const host of [domain, `www.${domain}`]) {
+  const out = [];
+  for (const [type, fn] of [['NS', dns.resolveNs], ['A', dns.resolve4], ['AAAA', dns.resolve6], ['CNAME', dns.resolveCname]]) {
+    if (type === 'NS' && host !== domain) continue;
+    const v = await fn.call(dns, host).catch((e) => (e.code === 'ENODATA' || e.code === 'ENOTFOUND' ? [] : [`error ${e.code}`]));
+    if (v.length) out.push(`${type} ${v.join(', ')}`);
+  }
+  line(`DNS ${host}`, out.join('; ') || 'no records');
+}
+if (webService) {
+  const cd = await api(`/services/${webService.id}/custom-domains?limit=20`);
+  const list = (Array.isArray(cd.json) ? cd.json : []).map((x) => x.customDomain ?? x);
+  if (cd.status !== 200) line('Render custom domains', `HTTP ${cd.status}`);
+  else if (!list.length) line('Render custom domains', 'none (the service answers only on its onrender.com address)');
+  for (const c of list) line(`Render custom domain`, `${c.name}: ${c.verificationStatus ?? '?'}${c.domainType ? ` (${c.domainType})` : ''}${c.redirectForName ? `, redirects to ${c.redirectForName}` : ''}`);
+}
 
 const detail = (await api(`/postgres/${db.id}`)).json ?? db;
 console.log('== Render database (skyfly-db)');
