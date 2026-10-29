@@ -38,6 +38,7 @@ function isDashboardRequest(req, config) {
   const host = req.hostname;
   if (config.pagesHost && host === config.pagesHost) return false;
   if (config.dashboardHost && host === config.dashboardHost) return true;
+  if (config.dashboardAliases?.includes(host)) return true;
   if (!config.isProduction && (host === 'localhost' || host === '127.0.0.1')) return true;
   return !config.dashboardHost;
 }
@@ -86,6 +87,10 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     }
   });
 
+  // www.<dashboard domain> (e.g. www.getskyfly.com) goes to the main address.
+  if (config.dashboardHost) {
+    app.use((req, res, next) => (req.hostname === `www.${config.dashboardHost}` ? res.redirect(301, `${config.publicBaseUrl}${req.originalUrl}`) : next()));
+  }
   const pages = pageServer({ pool, config, transformHtml, load });
   app.use((req, res, next) => (isDashboardRequest(req, config) ? next() : pages(req, res, next)));
 

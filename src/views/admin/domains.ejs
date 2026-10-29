@@ -1,0 +1,82 @@
+<%- include('../partials/head', { title: 'Domains' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main style="max-width:900px">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Domains</h1>
+  <p class="muted" style="margin-top:0">Skyfly's own domains: expiry, renewal and reminders (<%= reminderDays.join(', ') %> days before expiry).
+    <span class="badge confirmed">Verified</span> = read from the domain registry. <span class="badge pending">Entered by you</span> = typed in here, not checked by Skyfly.
+    No payment details or registrar passwords are stored here.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+  <div class="card">
+    <h2>Skyfly's address</h2>
+    <dl class="kv"><dt>Main address</dt><dd><%= dashboardUrl || 'not set' %></dd>
+      <% if (aliases.length) { %><dt>Also answers on</dt><dd><%= aliases.map((h) => 'https://' + h).join(', ') %> (kept working for existing links)</dd><% } %>
+      <dt>Reminder emails</dt><dd><%= emailReady ? 'Sent to the platform admins with Skyfly\'s email sender.' : 'Not possible yet: no Skyfly email sender is configured. Reminders are shown on this page and in Platform admin only.' %></dd></dl>
+  </div>
+
+  <% if (connection) { %>
+  <div class="card" data-domain-connection>
+    <h2>Connection check: <%= connection.domain %></h2>
+    <% connection.steps.forEach((s) => { %><p class="<%= s.ok ? '' : 'error' %>" style="margin:6px 0"><strong><%= s.ok ? '✓' : '✗' %></strong> <%= s.text %></p><% }) %>
+    <p class="muted" style="margin-bottom:0">Checked <%= formatDate(connection.at) %>.</p>
+  </div>
+  <% } %>
+
+  <% domains.forEach((d) => { const s = d.summary; %>
+  <div class="card" data-domain="<%= d.domain %>">
+    <h2 style="margin-bottom:4px"><%= d.domain %></h2>
+    <p class="<%= s.level === 'act' ? 'error' : s.level === 'watch' ? 'warn-box' : '' %>" style="margin:6px 0" data-domain-level="<%= s.level %>"><strong><%= s.headline %></strong><% if (s.expiresOn) { %> (<%= s.expiresOn %>, <span class="badge <%= s.source === 'verified' ? 'confirmed' : 'pending' %>"><%= s.source === 'verified' ? 'Verified' : 'Entered by you' %></span>)<% } %></p>
+    <ul style="margin:8px 0;padding-left:18px">
+      <% s.facts.forEach((f) => { %><li data-fact="<%= f.kind %>"><span class="badge <%= { verified: 'confirmed', manual: 'pending', error: 'cancelled', unknown: 'pending' }[f.kind] %>"><%= { verified: 'Verified', manual: 'Entered by you', error: 'Check failed', unknown: 'Unknown' }[f.kind] %></span> <%= f.text %></li><% }) %>
+    </ul>
+    <p class="muted">Registry last checked: <%= d.rdap_checked_at ? formatDate(d.rdap_checked_at) : 'never' %> (automatically every 12 hours).</p>
+    <div class="row">
+      <% if (d.registrar_url) { %><a class="btn" href="<%= d.registrar_url %>" target="_blank" rel="noopener noreferrer">Open registrar<%= d.registrar_name ? ` (${d.registrar_name})` : '' %></a><% } %>
+      <form method="post" action="/admin/domains/<%= d.id %>/check"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check registry now</button></form>
+      <form method="post" action="/admin/domains/<%= d.id %>/connection"><%- include('../partials/csrf') %><button class="secondary" type="submit">Check connection (DNS, HTTPS)</button></form>
+    </div>
+    <details style="margin-top:12px">
+      <summary>Registrar and renewal details (entered by you)</summary>
+      <form method="post" action="/admin/domains/<%= d.id %>">
+        <%- include('../partials/csrf') %>
+        <label for="registrar_name_<%= d.id %>">Registrar</label>
+        <input id="registrar_name_<%= d.id %>" name="registrar_name" maxlength="100" value="<%= d.registrar_name || '' %>" placeholder="e.g. Cloudflare">
+        <label for="registrar_url_<%= d.id %>">Link to the domain at the registrar (https://)</label>
+        <input id="registrar_url_<%= d.id %>" name="registrar_url" type="url" maxlength="500" value="<%= d.registrar_url || '' %>">
+        <label for="manual_auto_renew_<%= d.id %>">Auto-renew at the registrar</label>
+        <select id="manual_auto_renew_<%= d.id %>" name="manual_auto_renew">
+          <option value="" <%= d.manual_auto_renew === null ? 'selected' : '' %>>Not checked</option>
+          <option value="on" <%= d.manual_auto_renew === true ? 'selected' : '' %>>On (I checked in the registrar's account)</option>
+          <option value="off" <%= d.manual_auto_renew === false ? 'selected' : '' %>>Off</option>
+        </select>
+        <label for="manual_auto_renew_confirmed_on_<%= d.id %>">Date you last checked auto-renew</label>
+        <input id="manual_auto_renew_confirmed_on_<%= d.id %>" name="manual_auto_renew_confirmed_on" type="date" value="<%= d.manual_auto_renew_confirmed_on || '' %>">
+        <label for="manual_expires_on_<%= d.id %>">Expiry date shown by the registrar (used only if the registry cannot be read)</label>
+        <input id="manual_expires_on_<%= d.id %>" name="manual_expires_on" type="date" value="<%= d.manual_expires_on || '' %>">
+        <label for="notes_<%= d.id %>">Notes (never passwords or card details)</label>
+        <textarea id="notes_<%= d.id %>" name="notes" maxlength="1000"><%= d.notes || '' %></textarea>
+        <p><button type="submit">Save</button></p>
+      </form>
+    </details>
+  </div>
+  <% }) %>
+
+  <form class="card" method="post" action="/admin/domains">
+    <%- include('../partials/csrf') %>
+    <h2>Add a domain</h2>
+    <label for="domain">Domain</label>
+    <input id="domain" name="domain" required maxlength="253" placeholder="getskyfly.com">
+    <p><button type="submit">Add and check the registry</button></p>
+  </form>
+
+  <div class="card">
+    <h2>Reminders</h2>
+    <div class="table-wrap"><table class="stack" data-domain-reminders><thead><tr><th>Domain</th><th>Reminder</th><th>For expiry on</th><th>Status</th><th>When</th></tr></thead><tbody>
+      <% if (!reminders.length) { %><tr><td colspan="5" class="muted">No reminders yet.</td></tr><% } %>
+      <% reminders.forEach((r) => { %><tr><td><%= r.domain %></td><td><%= r.days_before %> days before</td><td><%= r.expires_on %></td><td><%= r.status === 'sent' ? 'Sent' : 'Not emailed' %><%= r.detail ? ': ' + r.detail : '' %></td><td><%= formatDate(r.created_at) %></td></tr><% }) %>
+    </tbody></table></div>
+  </div>
+</main>
+</body></html>

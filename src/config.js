@@ -69,6 +69,9 @@ export function loadConfig() {
     backupKey: String(process.env.SKYFLY_BACKUP_KEY || '').trim().length >= 32 ? String(process.env.SKYFLY_BACKUP_KEY).trim() : null,
     pagesHost: hostOf(pagesBaseUrl),
     dashboardHost: hostOf(publicBaseUrl),
+    // The Render address keeps serving the dashboard, the API and /p/ pages after PUBLIC_BASE_URL moves
+    // to a custom domain (e.g. getskyfly.com), so existing links and embedded pages keep working.
+    dashboardAliases: [process.env.RENDER_EXTERNAL_HOSTNAME].filter((h) => h && h !== hostOf(publicBaseUrl)),
     // Set automatically by Render; the CNAME target for custom domains.
     renderHost: process.env.RENDER_EXTERNAL_HOSTNAME || null,
     // Encrypts pixel access tokens at rest. Without it, server-side Purchase events are unavailable.
