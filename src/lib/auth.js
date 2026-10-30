@@ -1,5 +1,9 @@
 export function requireAuth(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
+  if (!req.session.userId) {
+    // The Super Admin area has its own sign-in page; everything else uses the business login.
+    if (/^\/admin(\/|$|\?)/.test(req.originalUrl)) return res.redirect(`/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+    return res.redirect('/login');
+  }
   next();
 }
 
