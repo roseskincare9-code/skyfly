@@ -211,8 +211,8 @@ export function adminRoutes({ pool, config, load = null }) {
       [req.session.userId, name, slug || 'business', currency, timezone, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
     await audit(pool, req, { action: 'admin.business_created', businessId: b.id, details: { name, status: sub.status, expires: sub.expires, price: sub.priceMinor } });
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: invite.email, role: 'owner' });
-    if (result.link) {
-      return res.render('admin/new-business', { error: null, values: {}, CURRENCIES, SUBSCRIPTION_LABELS, link: result.link, created: { id: b.id, name, email: invite.email } });
+    if (result.link || result.emailed || result.error) {
+      return res.render('admin/new-business', { error: result.error ?? null, values: {}, CURRENCIES, SUBSCRIPTION_LABELS, link: result.link ?? null, emailed: Boolean(result.emailed), created: { id: b.id, name, email: invite.email } });
     }
     res.redirect('/admin?done=created');
   }));
@@ -308,6 +308,8 @@ export function adminRoutes({ pool, config, load = null }) {
     if (f.errors.length) return renderBusiness(req, res, b, { error: f.errors.join(' '), status: 400 });
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: f.email, role: f.role });
     if (result.alreadyMember) return renderBusiness(req, res, b, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
+    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: 502 });
+    if (result.emailed) return renderBusiness(req, res, b, { notice: `Invitation emailed to ${f.email} (valid 14 days). Only the person with that mailbox can accept it.` });
     return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));
 

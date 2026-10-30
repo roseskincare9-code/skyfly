@@ -108,7 +108,11 @@ describe('1. each business is created and configured', () => {
       const created = await form(admin, '/admin/businesses/new', '/admin/businesses', {
         name: c.name, currency: 'NGN', timezone: 'Africa/Lagos', subscription_status: 'active', price: '15000', expires_on: '2099-12-31', owner_email: c.owner,
       }, 200);
-      const invite = created.text.match(/https?:\/\/[^\s"<]+\/invite\/([A-Za-z0-9_-]+)/)[1];
+      // Skyfly's email sender is set up here, so the invitation goes to the owner's mailbox (not shown on screen).
+      assert.match(created.text, /invitation was emailed to/);
+      assert.doesNotMatch(created.text, /\/invite\/[A-Za-z0-9_-]{20,}/);
+      const sent = mail.filter((m) => m.to?.[0] === c.owner).at(-1);
+      const invite = sent.text.match(/\/invite\/([A-Za-z0-9_-]+)/)[1];
       c.id = (await pool.query('SELECT id FROM businesses WHERE name = $1', [c.name])).rows[0].id;
       await form(admin, `/admin/businesses/${c.id}`, `/admin/businesses/${c.id}/details`,
         { name: c.name, contact_name: `${c.name} Owner`, contact_phone: '+2348030000000', contact_email: c.owner, website: 'https://example.com' }, 200);

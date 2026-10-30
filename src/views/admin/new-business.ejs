@@ -4,8 +4,10 @@
   <p><a href="/admin">← Client businesses</a></p>
   <h1>New client business</h1>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
-  <% if (link) { %>
-    <div class="notice" role="status"><strong><%= created.name %></strong> was created. <%= created.email %> has no Skyfly account yet: send them this invitation link (valid 14 days, shown once):<br><code style="word-break:break-all"><%= link %></code></div>
+  <% if (typeof created !== 'undefined' && created) { %>
+    <% if (link) { %><div class="notice" role="status"><strong><%= created.name %></strong> was created. Send <%= created.email %> this invitation link privately (valid 14 days, shown once; whoever has it can accept):<br><code style="word-break:break-all"><%= link %></code></div>
+    <% } else if (typeof emailed !== 'undefined' && emailed) { %><div class="notice" role="status"><strong><%= created.name %></strong> was created. The invitation was emailed to <%= created.email %> (valid 14 days); only the person with that mailbox can accept it.</div>
+    <% } else { %><div class="notice" role="status"><strong><%= created.name %></strong> was created, but the invitation was not sent. Invite the owner again from the business page.</div><% } %>
     <p><a class="btn" href="/admin/businesses/<%= created.id %>">Manage <%= created.name %></a> <a class="btn secondary" href="/admin">Back to all businesses</a></p>
   <% } else { %>
   <form class="card" method="post" action="/admin/businesses">
