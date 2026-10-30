@@ -123,3 +123,47 @@ test('a business owner can invite only into their own business, and only an owne
   assert.equal((await staff.post(`/businesses/${bizA}/team/invite`).type('form').send({ _csrf, email: 'y@y.test', role: 'owner' })).status, 403);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM business_invites WHERE email IN ('x@x.test', 'y@y.test')")).rows[0].n, 0);
 });
+
+test('with an email sender set up, the link goes only to the invited mailbox (never shown), and a failed send leaves nothing usable', async () => {
+  const mailed = [];
+  let failNext = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).startsWith('https://api.resend.com/')) {
+      if (failNext) return new Response('{"message":"rejected"}', { status: 422 });
+      mailed.push(JSON.parse(opts.body));
+      return new Response('{"id":"m1"}', { status: 200 });
+    }
+    return realFetch(url, opts);
+  };
+  const mail = setup({ allowedOrigins: [], notifyEmail: { provider: 'resend', apiKey: 'test-key', fromEmail: 'team@skyfly.test', fromName: 'Skyfly' } });
+  const server = mail.app.listen(0);
+  try {
+    const owner = request.agent(server);
+    let _csrf = await csrfToken(owner, '/login');
+    await owner.post('/login').type('form').send({ _csrf, email: 'new-owner@shop-a.test', password: PASSWORD }).expect(302);
+    _csrf = await csrfToken(owner, `/businesses/${bizA}/team`);
+    const res = await owner.post(`/businesses/${bizA}/team/invite`).type('form').send({ _csrf, email: 'mailed@shop-a.test', role: 'staff' }).expect(200);
+    assert.match(res.text, /Invitation emailed to mailed@shop-a\.test/);
+    assert.doesNotMatch(res.text, /\/invite\/[A-Za-z0-9_-]{20,}/, 'the link is not shown to the inviter');
+    assert.equal(mailed.length, 1);
+    assert.deepEqual(mailed[0].to, ['mailed@shop-a.test']);
+    assert.match(mailed[0].subject, /invited to Shop A/);
+    const token = mailed[0].text.match(/\/invite\/([A-Za-z0-9_-]+)/)[1];
+    const { res: joined } = await accept(token, request.agent(server));
+    assert.equal(joined.headers.location, `/businesses/${bizA}`);
+    assert.deepEqual(await members('mailed@shop-a.test'), [{ business_id: bizA, role: 'staff' }]);
+
+    failNext = true;
+    _csrf = await csrfToken(owner, `/businesses/${bizA}/team`);
+    const failed = await owner.post(`/businesses/${bizA}/team/invite`).type('form').send({ _csrf, email: 'bounce@shop-a.test', role: 'staff' });
+    assert.equal(failed.status, 502);
+    assert.match(failed.text, /could not be sent/);
+    const { rows: [inv] } = await pool.query("SELECT revoked_at IS NOT NULL AS revoked FROM business_invites WHERE email = 'bounce@shop-a.test'");
+    assert.equal(inv.revoked, true, 'the unsent link cannot be used');
+  } finally {
+    globalThis.fetch = realFetch;
+    server.close();
+    await mail.pool.end();
+  }
+});

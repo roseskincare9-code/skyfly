@@ -277,3 +277,20 @@ describe('database guards (even if application code forgot a check)', () => {
     await pool.query('UPDATE landing_pages SET upsell_product_id = NULL, published_version_id = NULL WHERE id = $1', [B.pageId]);
   });
 });
+
+describe('public links and files', () => {
+  test("A's order, draft page and page files are not reachable without their secret token", async () => {
+    const anon = request(app);
+    for (const url of [`/o/SKY-ALPHA1`, `/o/SKY-ALPHA1?t=wrong-token-0123456789`, `/o/sky-alpha1?t=`]) {
+      const res = await anon.get(url);
+      assert.equal(res.status, 404, url);
+      assert.deepEqual(leaks(res.text), [], url);
+    }
+    const ok = await anon.get('/o/SKY-ALPHA1?t=tok-Alpha-0123456789');
+    assert.equal(ok.status, 200, 'with the token, the customer sees their own confirmation');
+    // A draft page has no public catalog, and its version is not served without a signed preview link.
+    assert.equal((await anon.get('/api/public/pages/alpha-page/catalog')).status, 404);
+    assert.equal((await anon.get(`/_preview/${A.versionId}/not-a-valid-signature/`).set('Host', 'pages.test')).status >= 400, true);
+    assert.notEqual((await ownerB.get(`/businesses/${B.business}/landing-pages/${A.pageId}/preview`)).status, 200);
+  });
+});
