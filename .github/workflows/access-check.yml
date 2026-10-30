@@ -1,0 +1,28 @@
+# Live check of Skyfly's entry points (logins, sign-up, Super Admin, password recovery, invitations) on
+# the Render address and on getskyfly.com, and of the domain's connection to the Render service.
+# "add" adds getskyfly.com to the skyfly web service in Render (no DNS change, no app setting change);
+# "verify" asks Render to re-check its DNS. Anything else is read-only.
+name: Access links and domain check
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: status (read-only), add (add getskyfly.com to Render), verify (ask Render to re-check DNS)
+        type: choice
+        options: [status, add, verify]
+        default: status
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --omit=dev --ignore-scripts
+      - run: node scripts/access-check.mjs ${{ inputs.action == 'add' && '--add' || '' }} ${{ inputs.action == 'verify' && '--verify' || '' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
