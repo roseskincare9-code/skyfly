@@ -13,6 +13,7 @@ import { insightRoutes } from './insights.js';
 import { googleSheetsRoutes } from './googleSheets.js';
 import { SALES_DEFINITIONS, ORDER_STATUSES } from '../lib/statuses.js';
 import { audit } from '../lib/audit.js';
+import { adminVerified } from '../lib/adminSession.js';
 import { workspaceAccess, subscriptionState, expireSubscriptions, platformSettings, can } from '../services/tenancy.js';
 import { teamRoutes } from './team.js';
 import { checkoutRoutes } from './checkouts.js';
@@ -30,6 +31,11 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
     if (!/^\d+$/.test(req.params.businessId)) return res.status(404).render('error', { message: 'Business not found.' });
     const access = await workspaceAccess(pool, req.session.userId, req.params.businessId);
     if (!access) return res.status(404).render('error', { message: 'Business not found.' });
+    // A Super Admin who is not a member of this business opens it only with a Super Admin sign-in.
+    if (access.viaAdmin && !adminVerified(req)) {
+      if (req.method !== 'GET') return res.status(403).render('error', { message: 'Sign in to Super Admin again to change a client\'s workspace.' });
+      return res.redirect(`/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+    }
     const b = access.business;
     req.business = b;
     req.role = access.role;
@@ -49,7 +55,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
         await audit(pool, req, { action: 'admin.workspace_opened', businessId: b.id });
       }
     }
-    if (!sub.open && !access.isPlatformAdmin) {
+    if (!sub.open && !(access.isPlatformAdmin && adminVerified(req))) {
       const settings = await platformSettings(pool);
       return res.status(402).render('account-locked', { sub, renewalInstructions: settings.renewalInstructions, active: 'subscription' });
     }

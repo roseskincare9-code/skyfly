@@ -5,7 +5,7 @@ import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp } from './helpers.js';
+import { setup, resetDatabase, csrfToken, signUp, adminSignIn } from './helpers.js';
 import { ensureE2eAccount, E2E_EMAIL } from '../src/services/setup.js';
 
 const mail = []; let down = false;
@@ -125,6 +125,7 @@ describe('password reset link made by the platform owner', () => {
   let bizId;
   before(async () => {
     owner = (await login('owner@skyfly.test', 'a-new-password-1234')).agent;
+    await adminSignIn(owner, { email: 'owner@skyfly.test', password: 'a-new-password-1234' });
     const { rows: [u] } = await pool.query("INSERT INTO users (email, password_hash, name) VALUES ('client@shop.test', 'x', 'Client') RETURNING id");
     bizId = (await pool.query("INSERT INTO businesses (owner_id, name, slug, currency) VALUES ($1, 'Client Shop', 'client-shop', 'NGN') RETURNING id", [u.id])).rows[0].id;
     await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [bizId, u.id]);

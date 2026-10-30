@@ -1,0 +1,27 @@
+<%- include('../partials/head', { title: 'Super Admins' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main class="narrow">
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Super Admins</h1>
+  <p class="muted" style="margin-top:0">These accounts can open platform administration (after signing in to Super Admin) and, for support, any client's workspace; every such visit is logged. Business owners and their teams never appear here.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <div class="card">
+    <div class="table-wrap"><table class="stack" data-admins><thead><tr><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
+      <% admins.forEach((a) => { %><tr><td><%= a.name %></td><td><%= a.email %></td><td>
+        <% if (a.id === me) { %><span class="muted">You</span><% } else if (admins.length > 1) { %>
+        <form method="post" action="/admin/admins/<%= a.id %>/revoke" class="row"><%- include('../partials/csrf') %><input name="password" type="password" placeholder="Your password" aria-label="Your password" required autocomplete="current-password"><button class="secondary" type="submit">Remove access</button></form><% } %>
+      </td></tr><% }) %>
+    </tbody></table></div>
+  </div>
+  <form class="card" method="post" action="/admin/admins">
+    <%- include('../partials/csrf') %>
+    <h2>Give an existing account Super Admin access</h2>
+    <label for="email">Their account email</label>
+    <input id="email" name="email" type="email" required>
+    <label for="password">Your password (to confirm)</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password">
+    <p><button type="submit">Grant Super Admin access</button></p>
+  </form>
+</main>
+</body></html>

@@ -9,7 +9,7 @@ import { authRoutes } from './routes/auth.js';
 import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
-import { adminRoutes, backupKeyRoutes } from './routes/admin.js';
+import { adminRoutes, adminLoginRoutes, backupKeyRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
 import { pageServer, sandboxPreview, pathPages } from './hosting/server.js';
@@ -153,7 +153,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   });
 
   // Slow down password guessing.
-  app.use(['/login', '/signup', '/forgot-password', '/reset-password'], rateLimit({
+  app.use(['/login', '/admin/login', '/signup', '/forgot-password', '/reset-password'], rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 20,
     skip: (req) => req.method !== 'POST',
@@ -162,6 +162,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   app.use(authRoutes({ pool, config }));
   app.use(backupKeyRoutes({ pool, config }));
+  app.use(adminLoginRoutes({ pool }));
   app.use(businessRoutes({ pool }));
   // Anything saved in the dashboard (pixels, products, pages, publishing) is visible to visitors at
   // once: the public caches are cleared after every successful change.

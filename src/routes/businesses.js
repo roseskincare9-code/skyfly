@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, slugify } from '../lib/auth.js';
 import { seedLarose } from '../scripts/seed-larose.js';
 import { audit } from '../lib/audit.js';
+import { adminVerified } from '../lib/adminSession.js';
 import { platformSettings, subscriptionState } from '../services/tenancy.js';
 
 export function businessRoutes({ pool }) {
@@ -18,6 +19,7 @@ export function businessRoutes({ pool }) {
         [req.session.userId],
       );
       const { rows: [me] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
+      me.is_platform_admin = me.is_platform_admin && adminVerified(req);
       // A client with exactly one business goes straight to it.
       if (rows.length === 1 && !me.is_platform_admin && req.query.all !== '1') return res.redirect(`/businesses/${rows[0].id}`);
       // Offer one-click Larose setup until the Larose landing page is registered by anyone (platform owner only).
@@ -36,7 +38,7 @@ export function businessRoutes({ pool }) {
   router.post('/setup/larose', async (req, res, next) => {
     try {
       const { rows: [user] } = await pool.query('SELECT email, is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
-      if (!user.is_platform_admin) return res.status(404).render('error', { message: 'Page not found.' });
+      if (!user.is_platform_admin || !adminVerified(req)) return res.status(404).render('error', { message: 'Page not found.' });
       const businessId = await seedLarose(pool, user.email);
       await audit(pool, req, { action: 'business.larose_setup', businessId });
       res.redirect(`/businesses/${businessId}`);
@@ -56,6 +58,7 @@ export function businessRoutes({ pool }) {
       // Clients may create their own business only when the platform owner has opened sign-up.
       // It starts as a trial (or locked until the platform owner activates it, with 0 trial days).
       const { rows: [me] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
+      me.is_platform_admin = me.is_platform_admin && adminVerified(req);
       const settings = await platformSettings(pool);
       if (!me.is_platform_admin && settings.clientSignup !== 'open') return res.status(403).render('error', { message: 'New businesses are set up by the Skyfly team. Ask them for an invitation.' });
       const status = me.is_platform_admin ? 'active' : (settings.trialDays > 0 ? 'trial' : 'locked');

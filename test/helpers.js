@@ -61,7 +61,17 @@ export async function signUp(app, { name = 'Owner', email, password = 'correct-h
   const _csrf = await csrfToken(agent, '/signup');
   const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
+  // The platform owner (the first account in tests) also signs in to Super Admin, as the owner does in
+  // the browser before using platform administration. Business owners get "not found" here.
+  await adminSignIn(agent, { email, password }).catch(() => {});
   return agent;
+}
+
+export async function adminSignIn(agent, { email, password = 'correct-horse-battery' }) {
+  const page = await agent.get('/admin/login');
+  if (page.status !== 200) return page;
+  const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
+  return agent.post('/admin/login').type('form').send({ _csrf, email, password, next: '/admin' });
 }
 
 // Adds a tracking ID (Tracking & Pixels) straight to the database, as the dashboard saves it.
