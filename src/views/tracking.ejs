@@ -29,7 +29,8 @@
           <td><% if (p.all_pages) { %>All pages<% } else if (p.page_count) { %><%= p.page_names %><% } else { %><span class="pill pending">Not assigned</span><% } %></td>
           <td style="font-size:13px"><%= p.events.join(', ') || '—' %><% if (xMissing.length) { %><br><span class="pill pending" style="white-space:normal" title="Add the X event ID for these events">needs X event ID: <%= xMissing.join(', ') %></span><% } %></td>
           <td style="font-size:13px" data-statuses>
-            <span class="pill active">Saved</span>
+            <div data-status="<%= p.status.key %>" style="margin-bottom:4px"><span class="pill <%= { saved: 'pending', installed: 'active', receiving: 'active', failed: 'cancelled' }[p.status.key] %>" style="font-weight:600"><%= p.status.label %></span>
+              <span class="muted" style="display:block;font-size:12px"><%= p.status.detail %></span></div>
             <span class="pill <%= p.enabled ? 'active' : '' %>"><%= p.enabled ? 'Enabled' : 'Disabled' %></span>
             <span class="pill <%= p.all_pages || p.page_count ? 'active' : 'pending' %>"><%= p.all_pages || p.page_count ? 'Assigned' : 'No pages' %></span>
             <span class="pill <%= p.browser_seen_at ? 'active' : '' %>" title="The platform's script loaded with this ID on a live page"><%= p.browser_seen_at ? 'Tag loaded ' + formatDate(p.browser_seen_at) : 'Tag not seen yet' %></span>
@@ -57,7 +58,7 @@
     <ul style="padding-left:18px;margin-top:0">
       <li>Every enabled tracking ID assigned to a page is loaded there <strong>once</strong>, with the platform's official script, and gets only the events ticked for it.</li>
       <li><strong>Purchase</strong> is sent only after Skyfly has saved a real order (never for test orders or unfinished checkouts), once per order, with the saved total. Browser and server events share the order's event ID, so each platform counts it once. "Order placed" is not "delivered and paid": an order's payment status is on the order page.</li>
-      <li>Statuses come from evidence: <em>Tag loaded</em> = a live page reported the platform's script loaded with this ID; <em>Test event received</em> = the platform accepted a server test event; <em>Server delivery confirmed</em> = the platform accepted a server event from Skyfly.</li>
+      <li>Statuses come from evidence, never from saving alone: <strong>Saved</strong> = stored, not seen on a live page yet; <strong>Installed</strong> = a published page reported the platform's script loaded with this ID; <strong>Receiving events</strong> = the platform accepted an event from Skyfly (a test event or a server Purchase), or you confirmed events in the platform's own test tool; <strong>Verification failed</strong> = the platform refused Skyfly's last event.</li>
     </ul>
   </div>
 </main>
