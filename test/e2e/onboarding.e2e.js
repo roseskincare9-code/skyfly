@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+import { superAdminSignIn } from './admin-signin.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots/onboarding');
@@ -62,6 +63,7 @@ try {
     await admin.goto(`${DASH}/signup`);
     await admin.fill('#name', 'Platform Owner'); await admin.fill('#email', 'platform@skyfly.test'); await admin.fill('#password', 'a-very-long-password');
     await Promise.all([admin.waitForLoadState('load'), admin.click('button[type=submit]')]);
+    await superAdminSignIn(admin, DASH, 'platform@skyfly.test', 'a-very-long-password');
     for (const [key, name, email] of [['a', 'Glow Test Shop', 'owner-a@glow.test'], ['b', 'Second Test Shop', 'owner-b@second.test']]) {
       await admin.goto(`${DASH}/admin/businesses/new`);
       await admin.fill('#name', name); await admin.fill('[name=owner_email]', email);

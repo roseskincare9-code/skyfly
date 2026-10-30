@@ -12,6 +12,7 @@ import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
 import { seedLarose } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+import { superAdminSignIn } from './admin-signin.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots/workspaces');
@@ -78,6 +79,8 @@ try {
     await p.waitForLoadState('load');
     await seedLarose(pool, 'owner@skyfly.test');
     await login(owner.mobile, 'owner@skyfly.test', 'owner-password-123');
+    await superAdminSignIn(p, DASH, 'owner@skyfly.test', 'owner-password-123');
+    await superAdminSignIn(owner.mobile.pages()[0], DASH, 'owner@skyfly.test', 'owner-password-123');
     await p.goto(`${DASH}/admin`);
     assert.match(await p.textContent('main'), /Larose Natural Skincare Nigeria[\s\S]*Internal/);
   });
