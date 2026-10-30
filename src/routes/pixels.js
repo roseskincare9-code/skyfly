@@ -10,7 +10,7 @@ import { encrypt } from '../lib/secrets.js';
 import { parsePixelCode } from '../services/pixelCode.js';
 import {
   PLATFORMS, PLATFORM_LABELS, SHORT_LABELS, PROVIDERS, EVENTS, PIXEL_ID_RULES, X_EVENTS, X_EVENT_RE, TIKTOK_PURCHASE_EVENTS,
-  normalizePixelId, sendTestEvent, markServerVerified, platformPixel,
+  normalizePixelId, sendTestEvent, markServerVerified, markVerificationFailed, trackingStatus, platformPixel,
 } from '../services/pixels.js';
 
 // A generous safety ceiling (not a product limit): stops a runaway script, never a real business.
@@ -57,6 +57,9 @@ export function pixelRoutes({ pool, config }) {
     const [{ rows: list }, { rows: counts }, pages, { rows: lastEvents }] = await Promise.all([
       pool.query(
         `SELECT tp.*, (SELECT count(*)::int FROM tracking_pixel_pages pp WHERE pp.tracking_pixel_id = tp.id) AS page_count,
+                (SELECT count(*)::int FROM landing_pages lp WHERE lp.business_id = tp.business_id AND lp.status = 'active'
+                    AND (lp.published_version_id IS NOT NULL OR lp.url IS NOT NULL)
+                    AND (tp.all_pages OR EXISTS (SELECT 1 FROM tracking_pixel_pages pp WHERE pp.tracking_pixel_id = tp.id AND pp.landing_page_id = lp.id))) AS live_pages,
                 (SELECT string_agg(lp.name, ', ' ORDER BY lp.name) FROM tracking_pixel_pages pp JOIN landing_pages lp ON lp.id = pp.landing_page_id WHERE pp.tracking_pixel_id = tp.id) AS page_names
            FROM tracking_pixels tp WHERE tp.business_id = $1 AND tp.platform = $2 ORDER BY tp.id`, [b.id, platform]),
       pool.query('SELECT platform, count(*)::int AS n, count(*) FILTER (WHERE enabled)::int AS on FROM tracking_pixels WHERE business_id = $1 GROUP BY platform', [b.id]),
@@ -72,7 +75,7 @@ export function pixelRoutes({ pool, config }) {
     const skyfly = platform === 'meta' && !list.length ? await platformPixel(pool, config, b.id) : null;
     res.set('Cache-Control', 'no-store');
     res.render('tracking', {
-      active: 'pixels', platform, list, byPlatform, pages, last, skyfly, PLATFORMS, PLATFORM_LABELS, SHORT_LABELS, PROVIDERS, X_EVENTS,
+      active: 'pixels', platform, list: list.map((p) => ({ ...p, status: trackingStatus(p) })), byPlatform, pages, last, skyfly, PLATFORMS, PLATFORM_LABELS, SHORT_LABELS, PROVIDERS, X_EVENTS,
       notice: { added: 'Tracking ID added. It is used on its pages straight away.', saved: 'Saved.', on: 'Switched on.', off: 'Switched off. The other tracking IDs are unchanged.', removed: 'Tracking ID removed.' }[req.query.done] ?? null,
     });
   }));
@@ -307,6 +310,7 @@ export function pixelRoutes({ pool, config }) {
     if (!PROVIDERS.includes(p.platform)) return verifyPage(req, res, p, { error: 'X tracking IDs are checked in the browser (see the steps below).', status: 400 });
     const result = await sendTestEvent(config, p.platform, p, req.business.currency);
     if (result.ok) await markServerVerified(pool, p.id, { test: true });
+    else await markVerificationFailed(pool, p.id, result.error);
     await audit(pool, req, { action: 'tracking.test_sent', businessId: req.business.id, entityType: 'tracking_pixel', entityId: p.id, details: { ok: result.ok, error: result.error ?? null } });
     const fresh = await load(req);
     return result.ok

@@ -260,12 +260,39 @@ async function recordTestPurchase(pool, config, order, items) {
 // lives in the server config, not in tracking_pixels).
 export async function markServerVerified(pool, trackingId, { test = false } = {}) {
   if (!trackingId) return;
-  await pool.query(`UPDATE tracking_pixels SET server_verified_at = now()${test ? ', test_event_at = now()' : ''} WHERE id = $1`, [trackingId]);
+  await pool.query(`UPDATE tracking_pixels SET server_verified_at = now()${test ? ', test_event_at = now()' : ''}, verification_failed_at = NULL, verification_error = NULL WHERE id = $1`, [trackingId]);
+}
+
+// The platform refused a test or server event: shown as "Verification failed" until one is accepted.
+export async function markVerificationFailed(pool, trackingId, error) {
+  if (!trackingId) return;
+  await pool.query('UPDATE tracking_pixels SET verification_failed_at = now(), verification_error = $2 WHERE id = $1', [trackingId, String(error ?? 'refused').slice(0, 300)]);
+}
+
+// One headline status per tracking ID, from evidence only (never from "saved"):
+//  Saved             - stored; not yet seen on a live page (with the reason: off, no pages, no published page, no visit yet)
+//  Installed         - a published page reported the platform's script loaded with this ID
+//  Receiving events  - the platform accepted an event from Skyfly (test or server), or the owner confirmed
+//                      events in the platform's own tool (labelled as such)
+//  Verification failed - the platform refused Skyfly's last test or server event
+export function trackingStatus(p) {
+  const accepted = [p.server_verified_at, p.test_event_at].filter(Boolean).map((d) => new Date(d).getTime());
+  const lastOk = accepted.length ? Math.max(...accepted) : 0;
+  if (p.verification_failed_at && new Date(p.verification_failed_at).getTime() >= lastOk) {
+    return { key: 'failed', label: 'Verification failed', detail: `The platform refused Skyfly's last event: ${p.verification_error ?? 'no reason given'}. Check the ID and access token, then send a test again.` };
+  }
+  if (lastOk) return { key: 'receiving', label: 'Receiving events', detail: `The platform accepted an event from Skyfly (${p.test_event_at ? 'test event' : 'server event'}).` };
+  if (p.browser_verified_at) return { key: 'receiving', label: 'Receiving events', detail: 'You confirmed events in the platform\'s own test tool (Skyfly cannot see the platform\'s reports).' };
+  if (p.browser_seen_at) return { key: 'installed', label: 'Installed', detail: 'A published page reported this ID\'s script loaded. Events are not confirmed by the platform yet.' };
+  const why = !p.enabled ? 'switched off' : !(p.all_pages || p.page_count) ? 'not assigned to any page'
+    : !p.live_pages ? 'none of its pages is published yet' : 'waiting for the first visit to a published page';
+  return { key: 'saved', label: 'Saved', detail: `Not installed yet: ${why}.` };
 }
 
 async function attempt(pool, config, eventRowId, provider, settings, order, items, eventId, { test = false } = {}) {
   const r = await deliver(config, provider, settings, order, items, eventId, { test });
   if (r.ok) await markServerVerified(pool, settings.id, { test });
+  else await markVerificationFailed(pool, settings.id, r.error ?? `HTTP ${r.status}`);
   await pool.query(
     `UPDATE conversion_events SET attempts = attempts + 1, status = $2, response_code = $3, last_error = $4,
             sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END WHERE id = $1`,
