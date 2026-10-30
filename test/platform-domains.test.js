@@ -166,9 +166,8 @@ describe('moving the dashboard to the custom domain', () => {
     // Sign in as the platform owner on the new domain and try every form of the platform's domain.
     let _csrf = (await host(owner.get('/login'))).text.match(/name="_csrf" value="([^"]+)"/)[1];
     await host(owner.post('/login')).type('form').send({ _csrf, email: 'owner@skyfly.test', password: 'correct-horse-battery' }).expect(302);
-    _csrf = (await host(owner.get('/'))).text.match(/name="_csrf" value="([^"]+)"/)[1];
-    await host(owner.post('/businesses')).type('form').send({ _csrf, name: 'Domain Shop' }).expect(302);
-    const { rows: [b] } = await pool.query("SELECT id FROM businesses WHERE name = 'Domain Shop'");
+    const { rows: [b] } = await pool.query("INSERT INTO businesses (owner_id, name, slug) SELECT id, 'Domain Shop', 'domain-shop' FROM users WHERE email = 'owner@skyfly.test' RETURNING id");
+    await pool.query("INSERT INTO business_members (business_id, user_id, role) SELECT $1, id, 'owner' FROM users WHERE email = 'owner@skyfly.test'", [b.id]);
     const { rows: [lp] } = await pool.query("INSERT INTO landing_pages (business_id, name, slug, status) VALUES ($1, 'P', 'domain-shop-p', 'draft') RETURNING id", [b.id]);
     for (const domain of ['getskyfly.com', 'www.getskyfly.com', 'shop.getskyfly.com']) {
       _csrf = (await host(owner.get(`/businesses/${b.id}/landing-pages/${lp.id}`))).text.match(/name="_csrf" value="([^"]+)"/)[1];

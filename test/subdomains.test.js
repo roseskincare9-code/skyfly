@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createPool } from '../src/db.js';
 import { createApp } from '../src/app.js';
-import { resetDatabase, csrfToken, signUp, makeConfig, testDatabaseUrl, ORIGIN } from './helpers.js';
+import { resetDatabase, csrfToken, signUp, makeConfig, testDatabaseUrl, ORIGIN, adminSignIn } from './helpers.js';
 import { clearOriginCache } from '../src/lib/origins.js';
 
 const pool = createPool(testDatabaseUrl(), false);
@@ -62,6 +62,7 @@ describe('choosing a subdomain', () => {
     const admin2 = request.agent(noDomain);
     const _csrf = await csrfToken(admin2, '/login');
     await admin2.post('/login').type('form').send({ _csrf, email: 'owner@platform.test', password: 'correct-horse-battery' }).expect(302);
+    await adminSignIn(admin2, { email: 'owner@platform.test' });
     const page = await admin2.get(`/admin/businesses/${ids.Glow}`).expect(200);
     assert.match(page.text, /Reserved, not live: the platform domain is not configured yet/);
     await request(noDomain).get(`/${ids.glowSlug}/`).set('Host', 'glow.platform.test').expect(404);

@@ -1,0 +1,19 @@
+<%- include('../partials/head', { title: 'Super Admin sign-in' }) %>
+<main class="narrow auth">
+  <a class="auth-brand" href="/"><span class="logo-mark"><%- include('../partials/icon', { name: 'shield', size: 22 }) %></span><span>Skyfly<small>Super Admin</small></span></a>
+  <div class="card" data-admin-login>
+    <h1>Super Admin sign-in</h1>
+    <p class="muted" style="margin-top:0">For the Skyfly team only. Enter your password again to open platform administration (valid <%= hours %> hours on this device). Business owners sign in at <a href="/login">the normal login</a>.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form method="post" action="/admin/login">
+      <%- include('../partials/csrf') %>
+      <input type="hidden" name="next" value="<%= next %>">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" value="<%= email || '' %>" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in to Super Admin</button>
+    </form>
+  </div>
+</main>
+</body></html>

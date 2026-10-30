@@ -4,15 +4,13 @@ import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { ROLES, ROLE_LABELS, createInvite } from '../services/tenancy.js';
 
+// Always an invitation link that the person accepts while signed in with that email: nobody is added to a
+// business without agreeing, and the answer is the same whether or not the email has a Skyfly account.
+// Someone already in the business keeps their role (change it under Team instead).
 export async function inviteOrAdd(pool, req, config, { businessId, email, role }) {
-  const { rows: [user] } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-  if (user) {
-    await pool.query(
-      `INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, $3)
-       ON CONFLICT (business_id, user_id) DO UPDATE SET role = EXCLUDED.role`, [businessId, user.id, role]);
-    await audit(pool, req, { action: 'team.member_added', businessId, entityType: 'user', entityId: user.id, details: { role } });
-    return { added: true };
-  }
+  const { rows: [member] } = await pool.query(
+    'SELECT m.role FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 AND u.email = $2', [businessId, email]);
+  if (member) return { alreadyMember: member.role };
   const token = await createInvite(pool, { businessId, email, role, createdBy: req.session.userId });
   await audit(pool, req, { action: 'team.invited', businessId, details: { email, role } });
   return { link: `${config.publicBaseUrl || `${req.protocol}://${req.get('host')}`}/invite/${token}` };
@@ -49,7 +47,7 @@ export function teamRoutes({ pool, config }) {
     const f = readInvite(req.body);
     if (f.errors.length) return render(req, res, { error: f.errors.join(' '), status: 400 });
     const result = await inviteOrAdd(pool, req, config, { businessId: req.business.id, email: f.email, role: f.role });
-    if (result.added) return render(req, res, { notice: `${f.email} already has a Skyfly account and was added as ${ROLE_LABELS[f.role]}.` });
+    if (result.alreadyMember) return render(req, res, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
     return render(req, res, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));
 

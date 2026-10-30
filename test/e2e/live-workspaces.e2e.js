@@ -8,6 +8,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium, devices } from 'playwright-core';
+import { superAdminSignIn } from './admin-signin.js';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 const OWNER = { email: process.env.SKYFLY_OWNER_EMAIL, password: process.env.SKYFLY_OWNER_PASSWORD };
@@ -51,20 +52,24 @@ const biz = {};
 await step('1. The deployed app loads and protected pages require sign-in', async () => {
   const h = await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) });
   assert(h.ok, `/healthz HTTP ${h.status}`);
-  for (const p of ['/', '/admin', '/businesses/1/orders', '/businesses/1/settings']) {
+  for (const p of ['/', '/businesses/1/orders', '/businesses/1/settings']) {
     const r = await fetch(`${SKYFLY}${p}`, { redirect: 'manual' });
     assert(r.status === 302 && /\/login$/.test(r.headers.get('location')), `${p}: HTTP ${r.status}`);
   }
-  return 'healthz 200; /, /admin and workspace pages redirect to /login';
+  const a = await fetch(`${SKYFLY}/admin`, { redirect: 'manual' });
+  assert(a.status === 302 && /^\/admin\/login\?next=/.test(a.headers.get('location')), `/admin: HTTP ${a.status}`);
+  return 'healthz 200; / and workspace pages redirect to /login; /admin to the separate Super Admin sign-in';
 });
 
 const ownerOk = await step('1. Platform owner signs in, logs out, and signs in again', async () => {
   const p = await signIn(owner, OWNER.email, OWNER.password);
   await Promise.all([p.waitForURL(/\/login$/), p.click('form.logout button')]);
   const after = await p.goto(`${SKYFLY}/admin`);
-  assert(after.url().endsWith('/login'), 'still signed in after logout');
+  assert(new URL(after.url()).pathname === '/admin/login', 'still signed in after logout');
   await signIn(owner, OWNER.email, OWNER.password);
   await signIn(ownerPhone, OWNER.email, OWNER.password);
+  await superAdminSignIn(owner.pages()[0], SKYFLY, OWNER.email, OWNER.password);
+  await superAdminSignIn(ownerPhone.pages()[0], SKYFLY, OWNER.email, OWNER.password);
   const admin = await shot(owner, `${SKYFLY}/admin`, '01-owner-dashboard-desktop');
   const m = await shot(ownerPhone, `${SKYFLY}/admin`, '01-owner-dashboard-mobile');
   assert(admin.status === 200 && m.status === 200, 'Platform admin did not open');

@@ -7,6 +7,7 @@ import { slugify } from '../lib/auth.js';
 import { LANDING_PAGE_STATUSES } from '../lib/statuses.js';
 import multer from 'multer';
 import { audit } from '../lib/audit.js';
+import { adminVerified } from '../lib/adminSession.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { clearOriginCache } from '../lib/origins.js';
 import { importUpload, ImportError } from '../hosting/importer.js';
@@ -221,7 +222,7 @@ export function landingPageRoutes({ pool, config }) {
     const { rows } = await pool.query(
       `SELECT b.id, b.name, m.role, u.is_platform_admin FROM businesses b CROSS JOIN users u
          LEFT JOIN business_members m ON m.business_id = b.id AND m.user_id = u.id
-        WHERE u.id = $1 AND (m.user_id IS NOT NULL OR u.is_platform_admin) ORDER BY b.name`, [req.session.userId]);
+        WHERE u.id = $1 AND (m.user_id IS NOT NULL OR (u.is_platform_admin AND $2)) ORDER BY b.name`, [req.session.userId, adminVerified(req)]);
     return rows.filter((b) => can(b.role ?? 'owner', 'catalog')).map((b) => ({ id: b.id, name: b.name }));
   }
   const formExtras = async (req, businessId = req.business.id) => ({
@@ -247,7 +248,7 @@ export function landingPageRoutes({ pool, config }) {
     const wanted = String(req.body.business_id ?? '');
     if (/^\d+$/.test(wanted) && Number(wanted) !== Number(req.business.id)) {
       const access = await workspaceAccess(pool, req.session.userId, wanted);
-      if (!access || !can(access.role, 'catalog')) return res.status(404).render('error', { message: 'Business not found.' });
+      if (!access || (access.viaAdmin && !adminVerified(req)) || !can(access.role, 'catalog')) return res.status(404).render('error', { message: 'Business not found.' });
       owner = { id: access.business.id, role: access.role };
     }
     let pageId;

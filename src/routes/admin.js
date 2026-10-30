@@ -7,6 +7,8 @@ import { createResetLink, ADMIN_LINK_HOURS } from '../services/passwordReset.js'
 import { E2E_EMAIL_LIKE } from '../services/setup.js';
 import { setupChecklist } from '../services/onboarding.js';
 import { requireAuth, slugify } from '../lib/auth.js';
+import { verifyPassword } from '../lib/passwords.js';
+import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminSession.js';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import {
@@ -78,11 +80,61 @@ export function backupKeyRoutes({ pool, config }) {
   return router;
 }
 
+// Super Admin sign-in and sign-out, mounted before the normal sign-in check so /admin/login opens
+// without a session.
+export function adminLoginRoutes({ pool }) {
+  const router = Router();
+  // Super Admin sign-in: email and password again, every ADMIN_SESSION_HOURS, even when already signed
+  // in. Only accounts marked as platform admin in the database can pass; anyone else gets the same
+  // "invalid" answer, and a signed-in business owner gets "not found".
+  const isAdmin = async (userId) => Boolean(userId && (await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [userId])).rows[0]?.is_platform_admin);
+  const loginPage = (res, { status = 200, error = null, next = '/admin', email = '' } = {}) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/login', { error, next: safeAdminNext(next), email, hours: ADMIN_SESSION_HOURS });
+  };
+  router.get('/admin/login', asyncHandler(async (req, res) => {
+    if (req.session.userId && !(await isAdmin(req.session.userId))) return res.status(404).render('error', { message: 'Page not found.' });
+    loginPage(res, { next: req.query.next });
+  }));
+  router.post('/admin/login', asyncHandler(async (req, res, next) => {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    if (req.session.userId && !(await isAdmin(req.session.userId))) return res.status(404).render('error', { message: 'Page not found.' });
+    const { rows: [u] } = await pool.query('SELECT id, password_hash, is_platform_admin FROM users WHERE email = $1', [email]);
+    const ok = u && (await verifyPassword(password, u.password_hash)) && u.is_platform_admin
+      && (!req.session.userId || req.session.userId === u.id);
+    if (!ok) {
+      await audit(pool, req, { action: 'admin.sign_in_failed', details: { email } });
+      return loginPage(res, { status: 401, error: 'Invalid email or password, or this account is not a Skyfly administrator.', next: req.body.next, email });
+    }
+    const to = safeAdminNext(req.body.next);
+    req.session.regenerate((err) => {
+      if (err) return next(err);
+      Object.assign(req.session, { userId: u.id, adminUserId: u.id, adminVerifiedAt: Date.now() });
+      audit(pool, req, { action: 'admin.signed_in' }).then(() => res.redirect(to), next);
+    });
+  }));
+  // Leaves the Super Admin area on this device (the normal sign-in stays).
+  router.post('/admin/logout', (req, res) => {
+    delete req.session.adminUserId;
+    delete req.session.adminVerifiedAt;
+    delete req.session.adminVisits;
+    res.redirect('/');
+  });
+
+  return router;
+}
+
 export function adminRoutes({ pool, config, load = null }) {
   const router = Router();
-  router.use('/admin', requireAuth, asyncHandler(async (req, res, next) => {
-    const { rows: [u] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
-    if (!u?.is_platform_admin) return res.status(404).render('error', { message: 'Page not found.' });
+  const isAdmin = async (userId) => Boolean(userId && (await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [userId])).rows[0]?.is_platform_admin);
+  router.use('/admin', asyncHandler(async (req, res, next) => {
+    if (!req.session.userId) return res.redirect(`/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+    if (!(await isAdmin(req.session.userId))) return res.status(404).render('error', { message: 'Page not found.' });
+    if (!adminVerified(req)) {
+      if (req.method !== 'GET') return res.status(403).render('error', { message: 'Your Super Admin sign-in has ended. Sign in to Super Admin again.' });
+      return res.redirect(`/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+    }
     res.locals.adminArea = true;
     next();
   }));
@@ -255,7 +307,7 @@ export function adminRoutes({ pool, config, load = null }) {
     const f = readInvite(req.body);
     if (f.errors.length) return renderBusiness(req, res, b, { error: f.errors.join(' '), status: 400 });
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: f.email, role: f.role });
-    if (result.added) return renderBusiness(req, res, b, { notice: `${f.email} was added as ${ROLE_LABELS[f.role]}.` });
+    if (result.alreadyMember) return renderBusiness(req, res, b, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
     return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));
 
@@ -474,6 +526,41 @@ export function adminRoutes({ pool, config, load = null }) {
     const main = config.dashboardHost === d.domain;
     steps.push({ ok: main, text: main ? `Skyfly uses https://${d.domain} as its main address (PUBLIC_BASE_URL).` : `Skyfly's main address is still ${config.publicBaseUrl}. Set PUBLIC_BASE_URL=https://${d.domain} in Render only after DNS and HTTPS pass.` });
     domainsPage(req, res, { connection: { domain: d.domain, steps, at: new Date() } });
+  }));
+
+  // ---- Super Admins: who may sign in to this area. Granting or removing needs the acting Super Admin's
+  // password again; the last Super Admin cannot be removed, and nobody removes themselves.
+  const ADMIN_NOTICES = { granted: 'Super Admin access granted.', revoked: 'Super Admin access removed.' };
+  const adminsPage = async (req, res, { error = null, status = 200 } = {}) => {
+    const { rows: admins } = await pool.query('SELECT id, name, email, created_at FROM users WHERE is_platform_admin ORDER BY id');
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/admins', { admins, me: req.session.userId, error, notice: ADMIN_NOTICES[req.query.done] ?? null });
+  };
+  const confirmPassword = async (req) => {
+    const { rows: [me] } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
+    return Boolean(me && (await verifyPassword(String(req.body.password || ''), me.password_hash)));
+  };
+  router.get('/admin/admins', asyncHandler((req, res) => adminsPage(req, res)));
+  router.post('/admin/admins', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const { rows: [u] } = await pool.query('SELECT id, is_platform_admin FROM users WHERE email = $1 AND email NOT LIKE $2', [email, E2E_EMAIL_LIKE]);
+    if (!u) return adminsPage(req, res, { error: 'No Skyfly account uses that email. The person must have an account first.', status: 404 });
+    if (!u.is_platform_admin) {
+      await pool.query('UPDATE users SET is_platform_admin = true WHERE id = $1', [u.id]);
+      await audit(pool, req, { action: 'admin.access_granted', entityType: 'user', entityId: u.id, details: { email } });
+    }
+    res.redirect('/admin/admins?done=granted');
+  }));
+  router.post('/admin/admins/:userId/revoke', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    const id = Number(req.params.userId);
+    if (!Number.isInteger(id) || id === req.session.userId) return adminsPage(req, res, { error: 'You cannot remove your own Super Admin access.', status: 400 });
+    const { rowCount } = await pool.query(
+      'UPDATE users SET is_platform_admin = false WHERE id = $1 AND is_platform_admin AND (SELECT count(*) FROM users WHERE is_platform_admin) > 1', [id]);
+    if (!rowCount) return adminsPage(req, res, { error: 'That account is not a Super Admin, or it is the last one.', status: 400 });
+    await audit(pool, req, { action: 'admin.access_revoked', entityType: 'user', entityId: id });
+    res.redirect('/admin/admins?done=revoked');
   }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {

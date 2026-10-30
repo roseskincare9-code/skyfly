@@ -79,6 +79,10 @@ export const hashToken = (token) => createHash('sha256').update(token).digest('h
 
 export async function createInvite(pool, { businessId, email, role, createdBy, days = 14 }) {
   const token = randomBytes(24).toString('base64url');
+  // Only the newest link for this business and email works: earlier unused ones are revoked.
+  await pool.query(
+    'UPDATE business_invites SET revoked_at = now() WHERE business_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL',
+    [businessId, email.toLowerCase()]);
   await pool.query(
     `INSERT INTO business_invites (business_id, email, role, token_hash, created_by, expires_at)
      VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => $6))`,
@@ -95,15 +99,49 @@ export async function findInvite(pool, token) {
   return invite ?? null;
 }
 
-// Adds the user to the business (keeps a stronger existing role) and closes the invite.
-export async function acceptInvite(db, invite, userId) {
-  await db.query(
-    `INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, $3)
-     ON CONFLICT (business_id, user_id) DO UPDATE SET role = CASE
-       WHEN business_members.role = 'owner' OR EXCLUDED.role = 'owner' THEN 'owner'
-       WHEN business_members.role = 'manager' OR EXCLUDED.role = 'manager' THEN 'manager' ELSE 'staff' END`,
-    [invite.business_id, userId, invite.role]);
-  await db.query('UPDATE business_invites SET accepted_at = now(), accepted_by = $2 WHERE id = $1', [invite.id, userId]);
+// Why an invitation link does not work (for a clear message), or null when it does.
+export async function inviteProblem(pool, token) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(String(token ?? ''))) return 'invalid';
+  const { rows: [i] } = await pool.query(
+    'SELECT accepted_at, revoked_at, expires_at <= now() AS expired FROM business_invites WHERE token_hash = $1', [hashToken(token)]);
+  if (!i) return 'invalid';
+  if (i.accepted_at) return 'used';
+  if (i.revoked_at) return 'revoked';
+  if (i.expired) return 'expired';
+  return null;
+}
+export const INVITE_PROBLEMS = {
+  invalid: 'This invitation link is not valid. Check that the whole link was copied, or ask for a new one.',
+  used: 'This invitation has already been used. Sign in to open the business, or ask the business owner for a new invitation.',
+  revoked: 'This invitation was cancelled or replaced by a newer one. Use the latest link you were sent, or ask for a new one.',
+  expired: 'This invitation has expired. Ask the business owner (or the Skyfly team) for a new one.',
+};
+
+// Adds the user to the invite's business (keeps a stronger existing role) and closes the invite, in one
+// transaction: the invite is claimed first, so a link can be used once only, even twice at the same time.
+// Returns false when the invite was no longer open.
+export async function acceptInvite(pool, invite, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rowCount } = await client.query(
+      `UPDATE business_invites SET accepted_at = now(), accepted_by = $2
+        WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()`, [invite.id, userId]);
+    if (!rowCount) { await client.query('ROLLBACK'); return false; }
+    await client.query(
+      `INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, $3)
+       ON CONFLICT (business_id, user_id) DO UPDATE SET role = CASE
+         WHEN business_members.role = 'owner' OR EXCLUDED.role = 'owner' THEN 'owner'
+         WHEN business_members.role = 'manager' OR EXCLUDED.role = 'manager' THEN 'manager' ELSE 'staff' END`,
+      [invite.business_id, userId, invite.role]);
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // "Done / to do" for a client's setup, shown on the platform owner's dashboard.

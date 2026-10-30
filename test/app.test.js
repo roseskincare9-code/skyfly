@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { setup, resetDatabase, csrfToken, signUp, makeConfig } from './helpers.js';
+import { setup, resetDatabase, csrfToken, signUp, makeConfig, adminSignIn } from './helpers.js';
 
 const { pool, app } = setup();
 
@@ -35,7 +35,10 @@ test('owner can sign up, create a business, log out and log back in', async () =
   _csrf = await csrfToken(agent, '/login');
   await agent.post('/login').type('form').send({ _csrf, email: 'owner@example.com', password: 'wrong-password' }).expect(401);
   await agent.post('/login').type('form').send({ _csrf, email: 'owner@example.com', password: 'correct-horse-battery' }).expect(302);
-  await agent.get('/').expect(200);
+  // A normal sign-in opens the owner's own business; platform administration needs the Super Admin sign-in.
+  const home = await agent.get('/').expect(302);
+  assert.match(home.headers.location, /^\/businesses\/\d+$/);
+  assert.equal((await agent.get('/admin')).headers.location, '/admin/login?next=%2Fadmin');
 });
 
 test('a user cannot view another user\'s business', async () => {
@@ -55,6 +58,7 @@ test('one-click Larose setup creates the business, packages and landing page onc
   const agent = await signUp(app, { name: 'Larose Owner', email: 'larose-owner@example.com' });
   // The Larose setup is offered to the platform owner.
   await pool.query("UPDATE users SET is_platform_admin = true WHERE email = 'larose-owner@example.com'");
+  await adminSignIn(agent, { email: 'larose-owner@example.com' });
   let home = await agent.get('/').expect(200);
   assert.match(home.text, /Set up Larose Natural Skincare Nigeria/);
   const _csrf = home.text.match(/name="_csrf" value="([^"]+)"/)[1];

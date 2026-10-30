@@ -3,7 +3,7 @@ import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
 import { ensureLaroseForOwner, E2E_EMAIL_LIKE } from '../services/setup.js';
 import { requestResetEmail, findReset, completeReset } from '../services/passwordReset.js';
-import { platformSettings, findInvite, acceptInvite } from '../services/tenancy.js';
+import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS } from '../services/tenancy.js';
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -31,7 +31,9 @@ export function authRoutes({ pool, config }) {
       const { rows } = await client.query(
         `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, $3, $4)
          ON CONFLICT (email) DO NOTHING RETURNING id`,
-        [email, passwordHash, name, !any]);
+        // Production never makes anyone a Super Admin by signing up (see scripts/grant-admin.mjs);
+        // local development and tests keep "the first account is the owner".
+        [email, passwordHash, name, !any && (config.adminBootstrapFirstAccount ?? !config.isProduction)]);
       await client.query('COMMIT');
       return rows[0] ?? null;
     } catch (err) {
@@ -157,7 +159,7 @@ export function authRoutes({ pool, config }) {
   router.get('/invite/:token', async (req, res, next) => {
     try {
       const invite = await findInvite(pool, req.params.token);
-      if (!invite) return res.status(404).render('error', { message: 'This invitation link is not valid any more. Ask for a new one.' });
+      if (!invite) return res.status(410).render('error', { message: INVITE_PROBLEMS[await inviteProblem(pool, req.params.token) ?? 'invalid'] });
       let user = null;
       if (req.session.userId) ({ rows: [user] } = await pool.query('SELECT id, email FROM users WHERE id = $1', [req.session.userId]));
       const { rows: [existing] } = await pool.query('SELECT 1 FROM users WHERE email = $1', [invite.email]);
@@ -171,7 +173,7 @@ export function authRoutes({ pool, config }) {
   router.post('/invite/:token', async (req, res, next) => {
     try {
       const invite = await findInvite(pool, req.params.token);
-      if (!invite) return res.status(404).render('error', { message: 'This invitation link is not valid any more. Ask for a new one.' });
+      if (!invite) return res.status(410).render('error', { message: INVITE_PROBLEMS[await inviteProblem(pool, req.params.token) ?? 'invalid'] });
       let userId = req.session.userId;
       if (userId) {
         const { rows: [u] } = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
@@ -188,7 +190,7 @@ export function authRoutes({ pool, config }) {
         if (!user) return res.status(409).render('invite', { invite, user: null, hasAccount: true, token: req.params.token, error: 'An account with this email already exists. Sign in first.' });
         userId = user.id;
       }
-      await acceptInvite(pool, invite, userId);
+      if (!(await acceptInvite(pool, invite, userId))) return res.status(410).render('error', { message: INVITE_PROBLEMS.used });
       await audit(pool, { session: { userId }, ip: req.ip }, { action: 'team.invite_accepted', businessId: invite.business_id, details: { role: invite.role } });
       delete req.session.returnTo;
       if (req.session.userId) return res.redirect(`/businesses/${invite.business_id}`);

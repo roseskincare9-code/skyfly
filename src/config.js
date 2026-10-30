@@ -50,6 +50,9 @@ export function loadConfig() {
     sessionSecret,
     // "true": anyone may sign up. "first": only while no account exists (creating the owner).
     allowSignup: ['true', 'first'].includes(process.env.ALLOW_SIGNUP),
+    // Local development only: the first account becomes the platform owner. In production nobody becomes
+    // a Super Admin by signing up; an existing Super Admin grants it (or scripts/grant-admin.mjs).
+    adminBootstrapFirstAccount: !isProduction,
     signupFirstOnly: process.env.ALLOW_SIGNUP === 'first',
     // Owner-only deployments set up the Larose business automatically (AUTO_SETUP_LAROSE=false turns it off).
     autoSetupLarose: process.env.ALLOW_SIGNUP === 'first' && process.env.AUTO_SETUP_LAROSE !== 'false',
