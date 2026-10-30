@@ -179,3 +179,27 @@ describe('moving the dashboard to the custom domain', () => {
     await host(owner.post(`/businesses/${b.id}/landing-pages/${lp.id}/domain`)).type('form').send({ _csrf, domain: 'shop.domainshop.com' }).expect(302);
   });
 });
+
+describe('auto-renew that has not happened', () => {
+  test('within 14 days of a verified expiry the domain is flagged, and the reminder says auto-renew has not renewed it', async () => {
+    await pool.query('DELETE FROM platform_domains');
+    registry['stuck.com'] = rdapJson(inDays(30));
+    const { rows: [d] } = await pool.query("INSERT INTO platform_domains (domain, manual_auto_renew) VALUES ('stuck.com', true) RETURNING id");
+    await refreshDomain(pool, d.id);
+    let row = (await pool.query('SELECT * FROM platform_domains WHERE id = $1', [d.id])).rows[0];
+    assert.ok(!domainSummary(row).facts.some((f) => f.kind === 'error'), 'not flagged 30 days out');
+    const later = new Date(Date.now() + 18 * DAY);
+    const s = domainSummary(row, later);
+    assert.equal(s.level, 'act');
+    assert.ok(s.facts.some((f) => f.kind === 'error' && /registry still shows the old expiry date/.test(f.text)));
+    emails.length = 0;
+    const withSender = makeConfig({ notifyEmail: { provider: 'resend', apiKey: 'test-key', fromEmail: 'alerts@skyfly.test', fromName: 'Skyfly' } });
+    await remindDomains(pool, withSender, { now: later });
+    assert.match(emails.at(-1).subject, /stuck\.com expires in 12 days: auto-renew has not renewed it/);
+    // Once the registrar renews, the registry's date moves and the alert clears.
+    registry['stuck.com'] = rdapJson(inDays(395));
+    await refreshDomain(pool, d.id);
+    row = (await pool.query('SELECT * FROM platform_domains WHERE id = $1', [d.id])).rows[0];
+    assert.equal(domainSummary(row, later).level, 'ok');
+  });
+});
