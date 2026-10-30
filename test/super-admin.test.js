@@ -82,6 +82,13 @@ describe('the Super Admin sign-in', () => {
     admin = await login(devServer, 'first@new.test');
   });
 
+  test('signed out, the Super Admin area opens its own sign-in page (not the business login)', async () => {
+    const res = await request(devServer).get('/admin/capacity');
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, '/admin/login?next=%2Fadmin%2Fcapacity');
+    assert.equal((await request(devServer).get('/businesses/1')).headers.location, '/login');
+  });
+
   test('a normal sign-in is not enough: admin pages and support access ask for the Super Admin sign-in', async () => {
     assert.equal((await admin.get('/admin')).headers.location, '/admin/login?next=%2Fadmin');
     const ws = await admin.get(`/businesses/${bizId}/orders`);

@@ -30,17 +30,17 @@ test('a wrong key is refused and logged; no key goes to the sign-in page', async
   await request(app).get('/admin/backup.json').set('Authorization', 'Bearer wrong-key-wrong-key-wrong-key-123').expect(401);
   const { rows } = await pool.query("SELECT 1 FROM audit_log WHERE action = 'admin.backup_key_refused'");
   assert.equal(rows.length, 1);
-  await request(app).get('/admin/backup.json').expect(302).expect('Location', '/login');
+  await request(app).get('/admin/backup.json').expect(302).expect('Location', '/admin/login?next=%2Fadmin%2Fbackup.json');
 });
 
 test('the key opens nothing else', async () => {
   for (const path of ['/admin', '/admin/system', '/admin/settings', '/']) {
     const res = await request(app).get(path).set('Authorization', `Bearer ${KEY}`);
     assert.equal(res.status, 302, path);
-    assert.equal(res.headers.location, '/login', path);
+    assert.equal(res.headers.location, path === '/' ? '/login' : `/admin/login?next=${encodeURIComponent(path)}`, path);
   }
 });
 
 test('without a key configured on the server, a key is never accepted', async () => {
-  await request(noKey).get('/admin/backup.json').set('Authorization', `Bearer ${KEY}`).expect(302).expect('Location', '/login');
+  await request(noKey).get('/admin/backup.json').set('Authorization', `Bearer ${KEY}`).expect(302).expect('Location', '/admin/login?next=%2Fadmin%2Fbackup.json');
 });

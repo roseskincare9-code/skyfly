@@ -245,7 +245,7 @@ if (!url) {
     report(null, 'Client workspaces / email automations release', workspacesLive ? 'live' : 'not deployed yet');
     if (workspacesLive) {
       const admin = await get(`${url}/admin`);
-      report(admin.status === 302 && /\/login$/.test(admin.headers.get('location') || ''), 'Platform admin requires sign-in', `HTTP ${admin.status} → ${admin.headers.get('location')}`);
+      report(admin.status === 302 && /^\/(admin\/)?login(\?next=.*)?$/.test(admin.headers.get('location') || ''), 'Platform admin requires sign-in', `HTTP ${admin.status} → ${admin.headers.get('location')}`);
       report(signup.status === 404, 'Client sign-up closed (invitation only)', `HTTP ${signup.status}`);
       const badKey = await get(`${url}/api/public/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer sky_${'x'.repeat(32)}` }, body: '{}' });
       report(badKey.status === 401, 'Business API refuses unknown API keys', `HTTP ${badKey.status}`);
