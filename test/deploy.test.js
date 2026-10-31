@@ -43,16 +43,16 @@ describe('ALLOW_SIGNUP=first', () => {
     const page = await agent.get('/signup');
     if (page.status !== 200) return page.status;
     const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-    return (await agent.post('/signup').type('form').send({ _csrf, name: 'X', email, password: 'a-long-password' })).status;
+    return (await agent.post('/signup').type('form').send({ _csrf, name: 'X', email, password: 'a-long-password', confirm: 'a-long-password' })).status;
   };
 
   test('the first account can be created, and then sign-up closes by itself', async () => {
     const login = await request(app).get('/login');
-    assert.match(login.text, /Create the owner account/);
+    assert.match(login.text, /href="\/signup"/);
     assert.equal(await signup('owner@first.test'), 302);
     assert.equal(await signup('intruder@first.test'), 404);
     const after = await request(app).get('/login');
-    assert.doesNotMatch(after.text, /Create the owner account/);
+    assert.doesNotMatch(after.text, /href="\/signup"/);
   });
 
   test('a direct POST cannot bypass it', async () => {

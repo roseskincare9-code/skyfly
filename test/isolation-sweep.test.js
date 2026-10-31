@@ -18,7 +18,7 @@ const app = expressApp.listen(0);
 async function signUp(server, { name, email, password = 'correct-horse-battery' }) {
   const agent = request.agent(server);
   const _csrf = await csrfToken(agent, '/signup');
-  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password });
+  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
   await adminSignIn(agent, { email, password });
   return agent;

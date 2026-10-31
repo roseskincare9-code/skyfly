@@ -1,24 +1,27 @@
-<%- include('partials/head', { title: 'Create account' }) %>
+<%- include('partials/head', { title: 'Create a business account' }) %>
 <main class="narrow auth">
-  <a class="auth-brand" href="/"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
-  <div class="card">
-    <h1>Create your Skyfly account</h1>
-    <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <a class="auth-brand" href="/signup"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
+  <div class="card" data-owner-signup>
+    <h1>Create your business account</h1>
+    <p class="muted" style="margin-top:0">Your own private Skyfly workspace for your business.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <form method="post" action="/signup">
       <%- include("partials/csrf") %>
-      <label for="name">Name</label>
-      <input id="name" name="name" autocomplete="name" required value="<%= values.name || '' %>">
-      <label for="email">Email</label>
-      <input id="email" name="email" type="email" autocomplete="email" required value="<%= values.email || '' %>">
+      <label for="name">Full name</label>
+      <input id="name" name="name" autocomplete="name" required maxlength="200" value="<%= values.name || '' %>">
       <% if (askBusiness) { %>
       <label for="business_name">Business name</label>
-      <input id="business_name" name="business_name" maxlength="100" required value="<%= values.business_name || '' %>">
+      <input id="business_name" name="business_name" autocomplete="organization" required maxlength="100" value="<%= values.business_name || '' %>">
       <% } %>
+      <label for="email">Email address</label>
+      <input id="email" name="email" type="email" autocomplete="email" required value="<%= values.email || '' %>">
       <label for="password">Password (at least 10 characters)</label>
       <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required>
-      <button type="submit">Create account</button>
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="10" required>
+      <button type="submit"><%= askBusiness ? 'Create Business Account' : 'Create account' %></button>
     </form>
-    <p class="muted">Already have an account? <a href="/login">Log in</a></p>
+    <p class="muted">Already registered? <a href="/login">Sign in</a></p>
   </div>
 </main>
 </body></html>

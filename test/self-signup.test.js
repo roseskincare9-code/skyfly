@@ -19,7 +19,7 @@ async function register(srv, { name, email, business }) {
   const page = await agent.get('/signup');
   if (page.status !== 200) return { agent, res: page };
   const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  return { agent, page, res: await agent.post('/signup').type('form').send({ _csrf, name, email, password: PASSWORD, business_name: business }) };
+  return { agent, page, res: await agent.post('/signup').type('form').send({ _csrf, name, email, password: PASSWORD, confirm: PASSWORD, business_name: business }) };
 }
 
 before(async () => {
@@ -131,5 +131,74 @@ describe('email confirmation (with Skyfly\'s email sender set up)', () => {
       srv.close();
       await mail.pool.end();
     }
+  });
+});
+
+describe('routing for each browser state', () => {
+  test('signed out: /signup shows registration, /login shows sign-in, /admin opens the Super Admin sign-in', async () => {
+    const anon = request(server);
+    const s = await anon.get('/signup');
+    assert.equal(s.status, 200);
+    for (const f of ['name="name"', 'name="business_name"', 'name="email"', 'name="password"', 'name="confirm"', 'Create Business Account']) assert.ok(s.text.includes(f), f);
+    const l = await anon.get('/login');
+    for (const f of ['data-owner-login', 'name="email"', 'name="password"', 'Sign In', 'href="/forgot-password"']) assert.ok(l.text.includes(f), f);
+    assert.equal((await anon.get('/admin')).headers.location, '/admin/login?next=%2Fadmin');
+  });
+
+  test("a browser with an old session is told whose session it is on /signup and /login (never sent into that workspace)", async () => {
+    const o = owners.A;
+    for (const path of ['/signup', '/login']) {
+      const res = await o.agent.get(path);
+      assert.equal(res.status, 200, path);
+      assert.match(res.text, /data-signed-in/);
+      assert.match(res.text, /owner-a@shop-a\.test/);
+      assert.doesNotMatch(res.text, /Shop B|Shop C/);
+    }
+    const _csrf = await csrfToken(o.agent, '/signup');
+    const post = await o.agent.post('/signup').type('form').send({ _csrf, name: 'X', email: 'x@new.test', password: PASSWORD, confirm: PASSWORD, business_name: 'Sneaky' });
+    assert.equal(post.status, 409, 'cannot register a second account while signed in');
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email = 'x@new.test'")).rows[0].n, 0);
+  });
+
+  test('registration checks: the two passwords must match, and the business name is required', async () => {
+    const agent = request.agent(server);
+    const _csrf = await csrfToken(agent, '/signup');
+    const a = await agent.post('/signup').type('form').send({ _csrf, name: 'Mismatch', email: 'm@x.test', password: PASSWORD, confirm: 'different-password-1', business_name: 'M Shop' });
+    assert.equal(a.status, 400); assert.match(a.text, /not the same/);
+    const b = await agent.post('/signup').type('form').send({ _csrf, name: 'No Biz', email: 'n@x.test', password: PASSWORD, confirm: PASSWORD, business_name: '' });
+    assert.equal(b.status, 400); assert.match(b.text, /business name/);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email IN ('m@x.test', 'n@x.test')")).rows[0].n, 0);
+  });
+
+  test('without an email sender, password recovery says so honestly (no "email sent" message)', async () => {
+    const page = await request(server).get('/forgot-password');
+    assert.match(page.text, /data-reset-unavailable/);
+    const agent = request.agent(server);
+    const _csrf = await csrfToken(agent, '/login');
+    const res = await agent.post('/forgot-password').type('form').send({ _csrf, email: 'owner-a@shop-a.test' });
+    assert.equal(res.status, 503);
+    assert.doesNotMatch(res.text, /on its way/);
+  });
+
+  test('the Super Admin can resend (old link stops working) and revoke an invitation', async () => {
+    const admin = request.agent(server);
+    await adminSignIn(admin, { email: 'admin@skyfly.test' });
+    let _csrf = await csrfToken(admin, `/admin/businesses/${owners.B.biz}`);
+    const first = await admin.post(`/admin/businesses/${owners.B.biz}/invite`).type('form').send({ _csrf, email: 'staff@shop-b.test', role: 'staff' });
+    const oldToken = first.text.match(/\/invite\/([A-Za-z0-9_-]+)/)[1];
+    const { rows: [inv] } = await pool.query("SELECT id FROM business_invites WHERE email = 'staff@shop-b.test' AND revoked_at IS NULL");
+    _csrf = await csrfToken(admin, `/admin/businesses/${owners.B.biz}`);
+    const resent = await admin.post(`/admin/businesses/${owners.B.biz}/invites/${inv.id}/resend`).type('form').send({ _csrf }).expect(200);
+    const newToken = resent.text.match(/\/invite\/([A-Za-z0-9_-]+)/)[1];
+    assert.notEqual(newToken, oldToken);
+    assert.equal((await request(server).get(`/invite/${oldToken}`)).status, 410);
+    assert.equal((await request(server).get(`/invite/${newToken}`)).status, 200);
+    const { rows: [inv2] } = await pool.query("SELECT id FROM business_invites WHERE email = 'staff@shop-b.test' AND revoked_at IS NULL");
+    _csrf = await csrfToken(admin, `/admin/businesses/${owners.B.biz}`);
+    await admin.post(`/admin/businesses/${owners.B.biz}/invites/${inv2.id}/revoke`).type('form').send({ _csrf }).expect(200);
+    assert.equal((await request(server).get(`/invite/${newToken}`)).status, 410);
+    // Another business's invitation cannot be touched through this business's page.
+    _csrf = await csrfToken(admin, `/admin/businesses/${owners.A.biz}`);
+    assert.equal((await admin.post(`/admin/businesses/${owners.A.biz}/invites/${inv2.id}/resend`).type('form').send({ _csrf })).status, 404);
   });
 });
