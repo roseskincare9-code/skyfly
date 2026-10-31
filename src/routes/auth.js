@@ -59,8 +59,20 @@ export function authRoutes({ pool, config }) {
     res.redirect(to);
   });
 
+  // Someone already signed in who opens /login or /signup: say whose session it is, instead of quietly
+  // opening that account's workspace (e.g. an old Larose session in a shared browser).
+  async function signedIn(req, res, purpose) {
+    const { rows: [u] } = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [req.session.userId]);
+    if (!u) return false;
+    const { rows: businesses } = await pool.query(
+      'SELECT b.name FROM business_members m JOIN businesses b ON b.id = m.business_id WHERE m.user_id = $1 ORDER BY b.created_at', [u.id]);
+    res.set('Cache-Control', 'no-store');
+    res.render('signed-in', { user: u, businesses, purpose });
+    return true;
+  }
+
   router.get('/login', async (req, res, next) => {
-    if (req.session.userId) return res.redirect('/');
+    if (req.session.userId && await signedIn(req, res, 'login').catch(next)) return;
     try {
       res.render('login', { error: null, allowSignup: await signupOpen() });
     } catch (err) {
@@ -90,18 +102,19 @@ export function authRoutes({ pool, config }) {
   });
 
   // Forgot password: the same answer whether or not the address has an account.
-  router.get('/forgot-password', (req, res) => res.render('forgot-password', { sent: false, error: null }));
+  router.get('/forgot-password', (req, res) => res.render('forgot-password', { sent: false, error: null, canEmail: senderReady(config) }));
   router.post('/forgot-password', async (req, res, next) => {
     try {
       const email = String(req.body.email || '').trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).render('forgot-password', { sent: false, error: 'Enter the email address you sign in with.' });
+      if (!senderReady(config)) return res.status(503).render('forgot-password', { sent: false, error: null, canEmail: false });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).render('forgot-password', { sent: false, error: 'Enter the email address you sign in with.', canEmail: true });
       const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
       const result = await requestResetEmail(pool, config, email, base).catch((err) => {
         console.error('Password reset email failed:', err.message);
         return { sent: false, reason: 'send failed' };
       });
       await audit(pool, req, { action: 'password_reset.requested', details: { sent: result.sent, reason: result.reason ?? undefined } });
-      res.render('forgot-password', { sent: true, error: null });
+      res.render('forgot-password', { sent: true, error: null, canEmail: true });
     } catch (err) {
       next(err);
     }
@@ -139,7 +152,8 @@ export function authRoutes({ pool, config }) {
 
   router.get('/signup', async (req, res, next) => {
     try {
-      if (!(await signupOpen())) return res.status(404).render('error', { message: 'Sign-up is disabled.' });
+      if (req.session.userId && await signedIn(req, res, 'signup')) return;
+      if (!(await signupOpen())) return res.status(404).render('signup-closed');
       res.render('signup', { error: null, values: {}, askBusiness: await businessWithSignup() });
     } catch (err) {
       next(err);
@@ -148,15 +162,17 @@ export function authRoutes({ pool, config }) {
 
   router.post('/signup', async (req, res, next) => {
     try {
-      if (!(await signupOpen())) return res.status(404).render('error', { message: 'Sign-up is disabled.' });
+      if (!(await signupOpen())) return res.status(404).render('signup-closed');
+      if (req.session.userId) return res.status(409).render('error', { message: 'You are signed in. Sign out first to create a new business account.' });
       const name = String(req.body.name || '').trim().slice(0, 200);
       const email = String(req.body.email || '').trim().toLowerCase();
       const password = String(req.body.password || '');
       const businessName = String(req.body.business_name || '').trim().slice(0, 100);
       const askBusiness = await businessWithSignup();
       const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, business_name: businessName }, askBusiness });
-      if (!validSignup({ name, email, password })) return again(400, 'Enter a name, a valid email and a password of at least 10 characters.');
-      if (askBusiness && businessName && !slugify(businessName)) return again(400, 'Enter a business name with letters or numbers.');
+      if (!validSignup({ name, email, password })) return again(400, 'Enter your full name, a valid email and a password of at least 10 characters.');
+      if (password !== String(req.body.confirm || '')) return again(400, 'The two passwords are not the same.');
+      if (askBusiness && !slugify(businessName)) return again(400, 'Enter your business name (letters or numbers).');
       // Re-checked inside: the first-account rule must hold even with two sign-ups at once.
       const user = await createUser({ name, email, password });
       if (!user) return again(409, 'An account with that email already exists. Log in instead, or use "Forgot your password?".');
@@ -164,7 +180,7 @@ export function authRoutes({ pool, config }) {
       await ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
       // The owner's own business, linked to this account only (never Super Admin).
       let to = '/';
-      if (askBusiness && businessName) {
+      if (askBusiness) {
         const settings = await platformSettings(pool);
         const b = await createBusiness(pool, { userId: user.id, name: businessName, slug: slugify(businessName), trialDays: settings.trialDays });
         await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'business.created', businessId: b.id, details: { status: b.status, via: 'signup' } });
@@ -263,7 +279,7 @@ export function authRoutes({ pool, config }) {
     req.session.destroy((err) => {
       if (err) return next(err);
       res.clearCookie('skyfly.sid');
-      res.redirect('/login');
+      res.redirect(req.body?.next === '/signup' ? '/signup' : '/login');
     });
   });
 

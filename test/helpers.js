@@ -35,6 +35,9 @@ export function makeConfig(overrides = {}) {
 export async function resetDatabase(pool) {
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(pool);
+  // Tests start from "by invitation only" (migration 041 opens public registration in production);
+  // each test that needs open registration opens it itself.
+  await pool.query("UPDATE platform_settings SET value = '\"invite_only\"' WHERE key = 'client_signup'");
 }
 
 export function setup(overrides) {
@@ -57,10 +60,29 @@ export async function csrfToken(agent, path = '/login') {
   return match[1];
 }
 
-export async function signUp(app, { name = 'Owner', email, password = 'correct-horse-battery' }) {
+export async function signUp(app, { name = 'Owner', email, password = 'correct-horse-battery', business = null }) {
   const agent = request.agent(app);
-  const _csrf = await csrfToken(agent, '/signup');
-  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password });
+  const page = await agent.get('/signup');
+  // Public sign-up creates a business too. Tests that want a plain account (no business yet) get one
+  // made directly, then sign in as usual.
+  if (page.status !== 200 && page.status !== 302) throw new Error(`Sign-up failed with ${page.status}`);
+  if (page.status === 200 && /name="business_name"/.test(page.text) && !business) {
+    const client = new pg.Client({ connectionString: testDatabaseUrl() });
+    await client.connect();
+    try {
+      const { hashPassword } = await import('../src/lib/passwords.js');
+      const { rowCount } = await client.query(
+        'INSERT INTO users (email, password_hash, name, email_verified_at) VALUES ($1, $2, $3, now()) ON CONFLICT (email) DO NOTHING', [email, await hashPassword(password), name]);
+      if (!rowCount) throw new Error('Sign-up failed with 409');
+    } finally { await client.end(); }
+    const _c = await csrfToken(agent, '/login');
+    const login = await agent.post('/login').type('form').send({ _csrf: _c, email, password });
+    if (login.status !== 302) throw new Error(`Sign-in failed with ${login.status}`);
+    await adminSignIn(agent, { email, password }).catch(() => {});
+    return agent;
+  }
+  const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
+  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password, ...(business ? { business_name: business } : {}) });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
   // With an email sender configured the new account must confirm its email: tests stand in for the click.
   if (res.headers.location === '/verify-email') await confirmEmail(email);

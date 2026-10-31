@@ -1,0 +1,14 @@
+<%- include('partials/head', { title: 'You are signed in' }) %>
+<main class="narrow auth">
+  <a class="auth-brand" href="/login"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
+  <div class="card" data-signed-in>
+    <h1>You are signed in</h1>
+    <p>This browser is signed in as <strong><%= user.name %></strong> (<%= user.email %>)<%= businesses.length ? ` for ${businesses.map((b) => b.name).join(', ')}` : '' %>.</p>
+    <% if (purpose === 'signup') { %><p class="muted">To create a different business account, sign out first.</p><% } else { %><p class="muted">To sign in with a different account, sign out first.</p><% } %>
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      <a class="btn" href="/">Continue as <%= user.name %></a>
+      <form method="post" action="/logout" style="margin:0"><%- include('partials/csrf') %><input type="hidden" name="next" value="<%= purpose === 'signup' ? '/signup' : '/login' %>"><button class="secondary" type="submit">Sign out</button></form>
+    </div>
+  </div>
+</main>
+</body></html>

@@ -226,7 +226,7 @@ if (!url) {
     report(/HttpOnly/i.test(cookie) && /Secure/i.test(cookie), 'Session cookie HttpOnly + Secure');
 
     const signup = await get(`${url}/signup`);
-    report(null, 'Owner account', signup.status === 200 ? 'NOT created yet (sign-up is open for the first account)' : signup.status === 404 ? 'created (sign-up closed)' : `unexpected HTTP ${signup.status}`);
+    report(null, 'Owner account', signup.status === 200 ? 'sign-up page open' : signup.status === 404 ? 'created (sign-up closed)' : `unexpected HTTP ${signup.status}`);
 
     const tracking = await get(`${url}/api/public/pages/larosenigeria/tracking`);
     report(null, 'Larose setup', tracking.status === 200 ? 'done (larosenigeria page registered and active)' : tracking.status === 404 ? 'NOT done yet (click "Set up Larose" on the dashboard)' : `unexpected HTTP ${tracking.status}`);
@@ -246,7 +246,8 @@ if (!url) {
     if (workspacesLive) {
       const admin = await get(`${url}/admin`);
       report(admin.status === 302 && /^\/(admin\/)?login(\?next=.*)?$/.test(admin.headers.get('location') || ''), 'Platform admin requires sign-in', `HTTP ${admin.status} → ${admin.headers.get('location')}`);
-      report(signup.status === 404, 'Client sign-up closed (invitation only)', `HTTP ${signup.status}`);
+      const regForm = signup.status === 200 ? signup.text : '';
+      report(signup.status === 404 || (signup.status === 200 && /name="business_name"/.test(regForm)), 'Public business registration', signup.status === 404 ? 'closed (invitation only)' : signup.status === 200 ? 'open: /signup creates the owner\'s account and their own business' : `unexpected HTTP ${signup.status}`);
       const badKey = await get(`${url}/api/public/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer sky_${'x'.repeat(32)}` }, body: '{}' });
       report(badKey.status === 401, 'Business API refuses unknown API keys', `HTTP ${badKey.status}`);
     }

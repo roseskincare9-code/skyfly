@@ -58,6 +58,11 @@ jobs:
         run: node test/e2e/live-pixel-cert.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
+      - name: Entry points in a real browser (/admin, /signup, /login, /forgot-password) and one labelled test registration
+        if: always()
+        run: node test/e2e/live-auth.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
       - name: Abandoned checkouts on the demo shop (in progress → abandoned → resumed → recovered; about 12 minutes)
         if: always() && inputs.suite == 'all'
         run: node test/e2e/live-abandoned.e2e.js

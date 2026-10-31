@@ -313,6 +313,25 @@ export function adminRoutes({ pool, config, load = null }) {
     return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));
 
+  // Resend (a fresh link; the old one stops working) or revoke an open invitation of this business.
+  router.post('/admin/businesses/:id/invites/:inviteId/:action(resend|revoke)', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    const { rows: [i] } = await pool.query(
+      'SELECT id, email, role FROM business_invites WHERE id = $1 AND business_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL', [req.params.inviteId, b.id]);
+    if (!i) return renderBusiness(req, res, b, { error: 'That invitation is no longer open.', status: 404 });
+    if (req.params.action === 'revoke') {
+      await pool.query('UPDATE business_invites SET revoked_at = now() WHERE id = $1', [i.id]);
+      await audit(pool, req, { action: 'team.invite_revoked', businessId: b.id, details: { email: i.email } });
+      return renderBusiness(req, res, b, { notice: `The invitation for ${i.email} was revoked; its link no longer works.` });
+    }
+    const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: i.email, role: i.role });
+    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: 502 });
+    if (result.alreadyMember) return renderBusiness(req, res, b, { error: `${i.email} has already joined.`, status: 409 });
+    if (result.emailed) return renderBusiness(req, res, b, { notice: `A new invitation was emailed to ${i.email}; the previous link no longer works.` });
+    return renderBusiness(req, res, b, { notice: `New invitation link for ${i.email} (valid 14 days, shown once; the previous link no longer works):`, link: result.link });
+  }));
+
   // A one-time password reset link for a member of this business, to pass on personally (e.g. when
   // Skyfly has no email sender). Shown once; works for 24 hours; logged.
   router.post('/admin/businesses/:id/members/:userId/reset-link', asyncHandler(async (req, res) => {

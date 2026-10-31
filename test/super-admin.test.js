@@ -19,7 +19,7 @@ const PASSWORD = 'correct-horse-battery';
 async function signUpOn(server, email, extra = {}) {
   const agent = request.agent(server);
   const _csrf = await csrfToken(agent, '/signup');
-  const res = await agent.post('/signup').type('form').send({ _csrf, name: email.split('@')[0], email, password: PASSWORD, ...extra });
+  const res = await agent.post('/signup').type('form').send({ _csrf, name: email.split('@')[0], email, password: PASSWORD, confirm: PASSWORD, business_name: `${email.split('@')[0]} Shop`, ...extra });
   assert.equal(res.status, 302, `sign-up ${email}`);
   return agent;
 }
@@ -76,7 +76,7 @@ describe('the Super Admin sign-in', () => {
     const owner = await signUpOn(devServer, 'owner@client.test');
     await pool.query("UPDATE users SET is_platform_admin = false WHERE email = 'owner@client.test'");
     await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
-    const _csrf = await csrfToken(owner, '/');
+    const _csrf = await csrfToken(owner, '/?all=1');
     const res = await owner.post('/businesses').type('form').send({ _csrf, name: 'Client Shop' }).expect(302);
     bizId = Number(res.headers.location.match(/businesses\/(\d+)/)[1]);
     admin = await login(devServer, 'first@new.test');
@@ -94,7 +94,7 @@ describe('the Super Admin sign-in', () => {
     const ws = await admin.get(`/businesses/${bizId}/orders`);
     assert.equal(ws.status, 302);
     assert.equal(ws.headers.location, `/admin/login?next=${encodeURIComponent(`/businesses/${bizId}/orders`)}`);
-    const _csrf = await csrfToken(admin, '/');
+    const _csrf = await csrfToken(admin, '/?all=1');
     assert.equal((await admin.post(`/admin/businesses/${bizId}/lock`).type('form').send({ _csrf })).status, 403);
     assert.equal((await pool.query('SELECT subscription_status FROM businesses WHERE id = $1', [bizId])).rows[0].subscription_status, 'trial');
   });
