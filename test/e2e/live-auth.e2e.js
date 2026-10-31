@@ -36,7 +36,7 @@ try {
     await shot(anon, '1-super-admin');
     return anon.url();
   });
-  await step('2. /signup: Full name, Business name, Email address, Password, Confirm password, "Create Business Account"', async () => {
+  if ((await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup')) await step('2. /signup: Full name, Business name, Email address, Password, Confirm password, "Create Business Account"', async () => {
     await anon.goto(`${SKYFLY}/signup`);
     for (const s of ['#name', '#business_name', '#email', '#password', '#confirm']) assert(await anon.locator(`[data-owner-signup] ${s}`).count() === 1, `missing ${s}`);
     assert((await anon.textContent('[data-owner-signup] button[type=submit]')).trim() === 'Create Business Account', 'button text');
@@ -58,7 +58,13 @@ try {
 
   const owner = await fresh();
   let biz;
-  await step('5. A new owner registers on /signup and lands in their OWN new business (not Larose)', async () => {
+  const regOpen = (await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup');
+  if (!regOpen) {
+    console.log('INFO  Public registration is closed (by invitation only): steps 5–8 (test registration) not run; the page shows "Registration is by invitation".');
+    await anon.goto(`${SKYFLY}/signup`);
+    await shot(anon, '2b-signup-closed');
+  }
+  if (regOpen) await step('5. A new owner registers on /signup and lands in their OWN new business (not Larose)', async () => {
     await owner.goto(`${SKYFLY}/signup`);
     await owner.fill('#name', 'Signup Test Owner'); await owner.fill('#business_name', BUSINESS);
     await owner.fill('#email', EMAIL); await owner.fill('#password', PASSWORD); await owner.fill('#confirm', PASSWORD);
@@ -71,7 +77,7 @@ try {
     await shot(owner, '5-new-business-dashboard');
     return `business #${biz}: ${BUSINESS}`;
   });
-  await step('6. The new owner is refused every other business (Larose included) and the Super Admin area', async () => {
+  if (regOpen) await step('6. The new owner is refused every other business (Larose included) and the Super Admin area', async () => {
     assert(biz, 'no business');
     const refused = [];
     for (let id = 1; id <= Number(biz) + 2; id += 1) {
@@ -88,7 +94,7 @@ try {
     }
     return `businesses ${refused.join(', ')} × 6 sections → 404; /admin → 404`;
   });
-  await step('7. Signed in: /signup and /login say "You are signed in" (no silent jump into a workspace)', async () => {
+  if (regOpen) await step('7. Signed in: /signup and /login say "You are signed in" (no silent jump into a workspace)', async () => {
     for (const path of ['/signup', '/login']) {
       await owner.goto(`${SKYFLY}${path}`);
       assert(await owner.locator('[data-signed-in]').count() === 1, `${path}: ${owner.url()}`);
@@ -96,7 +102,7 @@ try {
     }
     await shot(owner, '6-signed-in-notice');
   });
-  await step('8. Sign out, then sign in on /login: back in the same own business', async () => {
+  if (regOpen) await step('8. Sign out, then sign in on /login: back in the same own business', async () => {
     await Promise.all([owner.waitForURL(/\/(login|signup)$/), owner.click('[data-signed-in] button[type=submit]')]);
     await owner.goto(`${SKYFLY}/login`);
     await owner.fill('#email', EMAIL); await owner.fill('#password', PASSWORD);
