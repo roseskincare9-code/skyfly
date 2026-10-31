@@ -43,7 +43,8 @@ async function routes(base) {
   const signup = await get(base, '/signup');
   line(`INFO  New owner sign-up  /signup`, signup.status === 200 ? 'HTTP 200: open (anyone can create an account and a trial business)' : `HTTP ${signup.status}: closed — ${(signup.body.match(/<p[^>]*>([^<]{5,120})<\/p>/) || [])[1] ?? ''}`);
   const forgot = await get(base, '/forgot-password');
-  check(forgot.status === 200 && /action="\/forgot-password"/.test(forgot.body), 'Password recovery  /forgot-password', `HTTP ${forgot.status}`);
+  const resetByEmail = /action="\/forgot-password"/.test(forgot.body);
+  check(forgot.status === 200 && (resetByEmail || /data-reset-unavailable/.test(forgot.body)), 'Password recovery  /forgot-password', `HTTP ${forgot.status}, ${resetByEmail ? 'email reset form' : 'says reset by email is not available yet (no email sender)'}`);
   const reset = await get(base, '/reset-password/not-a-real-link-0000000000000000000000000000');
   check(reset.status === 404, 'Reset link (invalid one refused)  /reset-password/<token>', `HTTP ${reset.status}`);
   const invite = await get(base, '/invite/not-a-real-invitation-token-000');
