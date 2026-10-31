@@ -1,3 +1,4 @@
+import pg from 'pg';
 import request from 'supertest';
 import { createPool } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
@@ -61,10 +62,19 @@ export async function signUp(app, { name = 'Owner', email, password = 'correct-h
   const _csrf = await csrfToken(agent, '/signup');
   const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
+  // With an email sender configured the new account must confirm its email: tests stand in for the click.
+  if (res.headers.location === '/verify-email') await confirmEmail(email);
   // The platform owner (the first account in tests) also signs in to Super Admin, as the owner does in
   // the browser before using platform administration. Business owners get "not found" here.
   await adminSignIn(agent, { email, password }).catch(() => {});
   return agent;
+}
+
+// Marks an account's email as confirmed (as the emailed confirmation link does).
+export async function confirmEmail(email) {
+  const client = new pg.Client({ connectionString: testDatabaseUrl() });
+  await client.connect();
+  try { await client.query('UPDATE users SET email_verified_at = now() WHERE email = $1', [email]); } finally { await client.end(); }
 }
 
 export async function adminSignIn(agent, { email, password = 'correct-horse-battery' }) {

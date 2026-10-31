@@ -3,7 +3,7 @@ import { requireAuth, slugify } from '../lib/auth.js';
 import { seedLarose } from '../scripts/seed-larose.js';
 import { audit } from '../lib/audit.js';
 import { adminVerified } from '../lib/adminSession.js';
-import { platformSettings, subscriptionState } from '../services/tenancy.js';
+import { platformSettings, subscriptionState, createBusiness } from '../services/tenancy.js';
 
 export function businessRoutes({ pool }) {
   const router = Router();
@@ -61,17 +61,8 @@ export function businessRoutes({ pool }) {
       me.is_platform_admin = me.is_platform_admin && adminVerified(req);
       const settings = await platformSettings(pool);
       if (!me.is_platform_admin && settings.clientSignup !== 'open') return res.status(403).render('error', { message: 'New businesses are set up by the Skyfly team. Ask them for an invitation.' });
-      const status = me.is_platform_admin ? 'active' : (settings.trialDays > 0 ? 'trial' : 'locked');
-      const { rows: [b] } = await pool.query(
-        `INSERT INTO businesses (owner_id, name, slug, subscription_status, subscription_started_on, subscription_expires_on, subscription_updated_at)
-         VALUES ($1, $2, $3 || CASE WHEN EXISTS (SELECT 1 FROM businesses WHERE slug = $3)
-                                    THEN '-' || substr(md5(random()::text), 1, 6) ELSE '' END,
-                 $4, CASE WHEN $5 THEN NULL ELSE (now() AT TIME ZONE 'Africa/Lagos')::date END,
-                 CASE WHEN $5 OR $6 = 0 THEN NULL ELSE (now() AT TIME ZONE 'Africa/Lagos')::date + $6::int END, now())
-         RETURNING id`,
-        [req.session.userId, name, slug, status, me.is_platform_admin, settings.trialDays],
-      );
-      await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, req.session.userId]);
+      const b = await createBusiness(pool, { userId: req.session.userId, name, slug, asAdmin: me.is_platform_admin, trialDays: settings.trialDays });
+      const { status } = b;
       await audit(pool, req, { action: 'business.created', businessId: b.id, details: { status } });
       res.redirect(`/businesses/${b.id}`);
     } catch (err) {

@@ -9,6 +9,7 @@ import { authRoutes } from './routes/auth.js';
 import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
+import { senderReady } from './services/emailVerification.js';
 import { adminRoutes, adminLoginRoutes, backupKeyRoutes } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
@@ -152,8 +153,23 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     }
   });
 
+  // With Skyfly's email sender set up, a self-registered account confirms its email before any dashboard
+  // page opens (sign-out, the confirmation pages, invitations and password reset stay reachable).
+  if (senderReady(config)) {
+    const open = /^\/(verify-email(\/.*)?|logout|login|signup|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
+    app.use(async (req, res, next) => {
+      if (!req.session.userId || open.test(req.path)) return next();
+      try {
+        const { rows: [u] } = await pool.query('SELECT email_verified_at, is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
+        if (!u || u.email_verified_at || u.is_platform_admin) return next();
+        if (req.method === 'GET') return res.redirect('/verify-email');
+        return res.status(403).render('error', { message: 'Confirm your email address first (see the link we sent you).' });
+      } catch (err) { next(err); }
+    });
+  }
+
   // Slow down password guessing.
-  app.use(['/login', '/admin/login', '/signup', '/forgot-password', '/reset-password'], rateLimit({
+  app.use(['/login', '/admin/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'], rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 20,
     skip: (req) => req.method !== 'POST',

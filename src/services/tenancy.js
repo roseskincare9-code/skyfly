@@ -154,3 +154,20 @@ export function setupStatus(b) {
   ];
   return { done: steps.filter(([, ok]) => ok).length, total: steps.length, missing: steps.filter(([, ok]) => !ok).map(([n]) => n) };
 }
+
+// Creates a business with a unique address name and makes the user its owner. A client's business
+// starts as a trial for the platform's trial days (or locked until the platform owner activates it, with
+// 0 trial days); one created by a signed-in Super Admin starts active.
+export async function createBusiness(db, { userId, name, slug, asAdmin = false, trialDays = 7 }) {
+  const status = asAdmin ? 'active' : (trialDays > 0 ? 'trial' : 'locked');
+  const { rows: [b] } = await db.query(
+    `INSERT INTO businesses (owner_id, name, slug, subscription_status, subscription_started_on, subscription_expires_on, subscription_updated_at)
+     VALUES ($1, $2, $3 || CASE WHEN EXISTS (SELECT 1 FROM businesses WHERE slug = $3)
+                                THEN '-' || substr(md5(random()::text), 1, 6) ELSE '' END,
+             $4, CASE WHEN $5 THEN NULL ELSE (now() AT TIME ZONE 'Africa/Lagos')::date END,
+             CASE WHEN $5 OR $6 = 0 THEN NULL ELSE (now() AT TIME ZONE 'Africa/Lagos')::date + $6::int END, now())
+     RETURNING id`,
+    [userId, name, slug, status, asAdmin, trialDays]);
+  await db.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, userId]);
+  return { id: b.id, status };
+}

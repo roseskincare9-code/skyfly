@@ -139,6 +139,8 @@ test('with an email sender set up, the link goes only to the invited mailbox (ne
   const mail = setup({ allowedOrigins: [], notifyEmail: { provider: 'resend', apiKey: 'test-key', fromEmail: 'team@skyfly.test', fromName: 'Skyfly' } });
   const server = mail.app.listen(0);
   try {
+    // This owner joined before the sender was set up; they have confirmed their email since.
+    await pool.query("UPDATE users SET email_verified_at = now() WHERE email = 'new-owner@shop-a.test'");
     const owner = request.agent(server);
     let _csrf = await csrfToken(owner, '/login');
     await owner.post('/login').type('form').send({ _csrf, email: 'new-owner@shop-a.test', password: PASSWORD }).expect(302);
