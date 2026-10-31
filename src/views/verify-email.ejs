@@ -1,0 +1,13 @@
+<%- include('partials/head', { title: 'Confirm your email' }) %>
+<main class="narrow auth">
+  <a class="auth-brand" href="/"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
+  <div class="card" data-verify-email>
+    <h1>Confirm your email</h1>
+    <p>We sent a confirmation link to <strong><%= email %></strong>. Open it to go to your dashboard. The link works once, for 48 hours.</p>
+    <% if (sent) { %><p class="notice" role="status">A new link was sent.</p><% } %>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form method="post" action="/verify-email/resend"><%- include('partials/csrf') %><button type="submit" class="secondary">Send the link again</button></form>
+    <form method="post" action="/logout" style="margin-top:12px"><%- include('partials/csrf') %><button type="submit" class="secondary">Log out</button></form>
+  </div>
+</main>
+</body></html>

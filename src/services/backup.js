@@ -13,7 +13,7 @@ export const TABLE_ORDER = [
   'platform_domains', 'platform_domain_reminders',
   'audit_log',
 ];
-export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets']; // sign-ins, migration bookkeeping and one-time reset links are not data
+export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets', 'email_verifications']; // sign-ins, migration bookkeeping and one-time reset links are not data
 const LATE = { businesses: ['default_sheet_connection_id'], landing_pages: ['published_version_id'] };
 
 async function columnsOf(db, table) {

@@ -3,6 +3,9 @@
 // Render service (registry, DNS, Render custom domains, HTTPS). Read-only, except:
 //   --add     adds the official domain (and Render's automatic www redirect) to the skyfly web service
 //   --verify  asks Render to re-check the domain's DNS now
+//   --switch  makes https://<domain> Skyfly's main address (PUBLIC_BASE_URL) and redeploys, ONLY when Render
+//             shows both names verified and https://<domain>/healthz answers as Skyfly. The Render address
+//             keeps working (it stays a dashboard address). Undo: delete PUBLIC_BASE_URL in Render.
 // Never changes DNS, never changes the app's settings.
 //   RENDER_API_KEY=… node scripts/access-check.mjs [--add | --verify]
 import { promises as dns } from 'node:dns';
@@ -11,7 +14,7 @@ import { rdapLookup } from '../src/services/platformDomains.js';
 const DOMAIN = (process.env.PLATFORM_DOMAIN_CHECK || 'getskyfly.com').toLowerCase();
 const RENDER_URL = 'https://skyfly-gybf.onrender.com';
 const RENDER = 'https://api.render.com/v1';
-const mode = process.argv.includes('--add') ? 'add' : process.argv.includes('--verify') ? 'verify' : 'status';
+const mode = process.argv.includes('--add') ? 'add' : process.argv.includes('--verify') ? 'verify' : process.argv.includes('--switch') ? 'switch' : 'status';
 const api = async (path, opts = {}) => {
   const res = await fetch(`${RENDER}${path}`, { ...opts, headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json', 'Content-Type': 'application/json', ...(opts.headers || {}) }, signal: AbortSignal.timeout(30000) });
   const text = await res.text();
@@ -96,6 +99,17 @@ async function domain() {
       const res = await fetch(`https://${host}/healthz`, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
       line(`HTTPS https://${host}/healthz`, `HTTP ${res.status}${res.headers.get('location') ? ` → ${res.headers.get('location')}` : ''}${res.status === 200 ? ` ${(await res.text()).slice(0, 60)}` : ''}`);
     } catch (err) { line(`HTTPS https://${host}/healthz`, `no secure answer (${String(err.cause?.code || err.cause?.message || err.message).slice(0, 90)})`); }
+  }
+  if (mode === 'switch') {
+    const verified = [DOMAIN, `www.${DOMAIN}`].every((n) => cds.some((c) => c.name === n && c.verificationStatus === 'verified'));
+    const healthy = await fetch(`https://${DOMAIN}/healthz`, { signal: AbortSignal.timeout(20000) }).then(async (r) => r.ok && /"status":"ok"/.test(await r.text())).catch(() => false);
+    if (!verified || !healthy) { check(false, 'SWITCH main address', `not done: Render verified ${verified}, HTTPS answers as Skyfly ${healthy}`); return true; }
+    const env = await api(`/services/${svc.id}/env-vars/PUBLIC_BASE_URL`, { method: 'PUT', body: JSON.stringify({ value: `https://${DOMAIN}` }) });
+    check(env.status === 200, 'SWITCH set PUBLIC_BASE_URL', `HTTP ${env.status}`);
+    if (env.status === 200) {
+      const dep = await api(`/services/${svc.id}/deploys`, { method: 'POST', body: JSON.stringify({}) });
+      check([200, 201, 202].includes(dep.status), 'SWITCH redeploy', `HTTP ${dep.status} ${dep.json?.id ?? ''}`);
+    }
   }
   return true;
 }

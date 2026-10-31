@@ -3,7 +3,9 @@ import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
 import { ensureLaroseForOwner, E2E_EMAIL_LIKE } from '../services/setup.js';
 import { requestResetEmail, findReset, completeReset } from '../services/passwordReset.js';
-import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS } from '../services/tenancy.js';
+import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS, createBusiness } from '../services/tenancy.js';
+import { slugify } from '../lib/auth.js';
+import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -43,6 +45,13 @@ export function authRoutes({ pool, config }) {
       client.release();
     }
   }
+  // Public registration creates the owner's business in the same step (a trial, per Platform settings).
+  // Not for the very first account of a new local/test installation, which becomes the platform owner.
+  async function businessWithSignup() {
+    const { rows: [{ any }] } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
+    return any || !(config.adminBootstrapFirstAccount ?? !config.isProduction);
+  }
+  const base = (req) => config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
   const validSignup = ({ name, email, password }) => name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && password.length >= 10;
   const startSession = (req, res, next, userId, to = '/') => req.session.regenerate((err) => {
     if (err) return next(err);
@@ -117,6 +126,8 @@ export function authRoutes({ pool, config }) {
       const userId = await completeReset(pool, req.params.token, password);
       if (!userId) return res.status(404).render('reset-password', { valid: false, error: null, token: null, email: null });
       await audit(pool, { session: { userId }, ip: req.ip }, { action: 'password_reset.completed' });
+      // A reset link works only from the account's mailbox or from the platform owner; emailed ones confirm it.
+      if (senderReady(config)) await markVerified(pool, userId);
       req.session.regenerate((err) => {
         if (err) return next(err);
         res.render('login', { error: null, notice: 'Your password has been changed. Log in with the new password.', allowSignup: false });
@@ -129,7 +140,7 @@ export function authRoutes({ pool, config }) {
   router.get('/signup', async (req, res, next) => {
     try {
       if (!(await signupOpen())) return res.status(404).render('error', { message: 'Sign-up is disabled.' });
-      res.render('signup', { error: null });
+      res.render('signup', { error: null, values: {}, askBusiness: await businessWithSignup() });
     } catch (err) {
       next(err);
     }
@@ -141,15 +152,32 @@ export function authRoutes({ pool, config }) {
       const name = String(req.body.name || '').trim().slice(0, 200);
       const email = String(req.body.email || '').trim().toLowerCase();
       const password = String(req.body.password || '');
-      if (!validSignup({ name, email, password })) {
-        return res.status(400).render('signup', { error: 'Enter a name, a valid email and a password of at least 10 characters.' });
-      }
+      const businessName = String(req.body.business_name || '').trim().slice(0, 100);
+      const askBusiness = await businessWithSignup();
+      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, business_name: businessName }, askBusiness });
+      if (!validSignup({ name, email, password })) return again(400, 'Enter a name, a valid email and a password of at least 10 characters.');
+      if (askBusiness && businessName && !slugify(businessName)) return again(400, 'Enter a business name with letters or numbers.');
       // Re-checked inside: the first-account rule must hold even with two sign-ups at once.
       const user = await createUser({ name, email, password });
-      if (!user) return res.status(409).render('signup', { error: 'An account with that email already exists.' });
+      if (!user) return again(409, 'An account with that email already exists. Log in instead, or use "Forgot your password?".');
       await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'signup' });
       await ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
-      startSession(req, res, next, user.id);
+      // The owner's own business, linked to this account only (never Super Admin).
+      let to = '/';
+      if (askBusiness && businessName) {
+        const settings = await platformSettings(pool);
+        const b = await createBusiness(pool, { userId: user.id, name: businessName, slug: slugify(businessName), trialDays: settings.trialDays });
+        await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'business.created', businessId: b.id, details: { status: b.status, via: 'signup' } });
+        to = `/businesses/${b.id}`;
+      }
+      // With Skyfly's email sender set up, the address is confirmed before the dashboard opens.
+      const { rows: [u] } = await pool.query('SELECT id, name, email, email_verified_at, is_platform_admin FROM users WHERE id = $1', [user.id]);
+      if (u.is_platform_admin) await markVerified(pool, u.id);
+      else if (needsVerification(config, u)) {
+        await sendVerification(pool, config, u, base(req)).catch((err) => console.error('Verification email failed:', err.message));
+        to = '/verify-email';
+      }
+      startSession(req, res, next, user.id, to);
     } catch (err) {
       next(err);
     }
@@ -191,6 +219,8 @@ export function authRoutes({ pool, config }) {
         userId = user.id;
       }
       if (!(await acceptInvite(pool, invite, userId))) return res.status(410).render('error', { message: INVITE_PROBLEMS.used });
+      // The link was emailed to this address (sender set up), so using it confirms the address.
+      if (senderReady(config)) await markVerified(pool, userId);
       await audit(pool, { session: { userId }, ip: req.ip }, { action: 'team.invite_accepted', businessId: invite.business_id, details: { role: invite.role } });
       delete req.session.returnTo;
       if (req.session.userId) return res.redirect(`/businesses/${invite.business_id}`);
@@ -198,6 +228,35 @@ export function authRoutes({ pool, config }) {
     } catch (err) {
       next(err);
     }
+  });
+
+  // ---- Email verification
+  router.get('/verify-email', async (req, res, next) => {
+    try {
+      if (!req.session.userId) return res.redirect('/login');
+      const { rows: [u] } = await pool.query('SELECT email, email_verified_at FROM users WHERE id = $1', [req.session.userId]);
+      if (!u || !needsVerification(config, u)) return res.redirect('/');
+      res.render('verify-email', { email: u.email, sent: req.query.sent === '1', error: null });
+    } catch (err) { next(err); }
+  });
+  router.post('/verify-email/resend', async (req, res, next) => {
+    try {
+      if (!req.session.userId) return res.redirect('/login');
+      const { rows: [u] } = await pool.query('SELECT id, name, email, email_verified_at FROM users WHERE id = $1', [req.session.userId]);
+      if (!u || !needsVerification(config, u)) return res.redirect('/');
+      try { await sendVerification(pool, config, u, base(req)); } catch (err) {
+        return res.status(502).render('verify-email', { email: u.email, sent: false, error: `The email could not be sent (${String(err.message).slice(0, 100)}). Try again in a minute.` });
+      }
+      res.redirect('/verify-email?sent=1');
+    } catch (err) { next(err); }
+  });
+  router.get('/verify-email/:token', async (req, res, next) => {
+    try {
+      const userId = await useVerification(pool, req.params.token);
+      if (!userId) return res.status(410).render('error', { message: 'This confirmation link is not valid any more (it works once, for 48 hours). Sign in to get a new one.' });
+      await audit(pool, { session: { userId }, ip: req.ip }, { action: 'email.verified' });
+      res.redirect(req.session.userId === userId ? '/' : '/login');
+    } catch (err) { next(err); }
   });
 
   router.post('/logout', (req, res, next) => {
