@@ -71,6 +71,27 @@ async function domain() {
     }
     line(`DNS ${host}`, out.join('; ') || 'no records');
   }
+  // The same questions asked straight to the domain's own Cloudflare nameservers and to public resolvers:
+  // "nothing at the nameservers" means the records are not saved in this zone; "only at the nameservers"
+  // means they are saved but not yet visible elsewhere (caching).
+  const { Resolver } = dns;
+  const ns = await dns.resolveNs(DOMAIN).catch(() => []);
+  const servers = [];
+  for (const n of ns) servers.push(...(await dns.resolve4(n).catch(() => [])).slice(0, 1).map((ip) => [n, ip]));
+  for (const [label, ip] of [...servers, ['Cloudflare 1.1.1.1', '1.1.1.1'], ['Google 8.8.8.8', '8.8.8.8']]) {
+    const r = new Resolver({ timeout: 5000, tries: 2 }); r.setServers([ip]);
+    for (const host of [DOMAIN, `www.${DOMAIN}`]) {
+      const out = [];
+      for (const [type, fn] of [['A', 'resolve4'], ['AAAA', 'resolve6'], ['CNAME', 'resolveCname'], ['TXT', 'resolveTxt']]) {
+        const v = await r[fn](host).catch((e) => (['ENODATA', 'ENOTFOUND'].includes(e.code) ? [] : [`(${e.code})`]));
+        if (v.length) out.push(`${type} ${v.map((x) => (Array.isArray(x) ? x.join('') : x)).join(', ')}`);
+      }
+      line(`  ${label}: ${host}`, out.join('; ') || 'no A/AAAA/CNAME/TXT records');
+    }
+  }
+  const soa = await dns.resolveSoa(DOMAIN).catch(() => null);
+  if (soa) line('  SOA', `serial ${soa.serial}, negative-cache ${soa.minttl}s (how long a "no record" answer may be remembered)`);
+
   const owners = ((await api('/owners?limit=20')).json || []).map((o) => o.owner ?? o);
   let svc = null;
   for (const o of owners) {
