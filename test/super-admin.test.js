@@ -19,7 +19,7 @@ const PASSWORD = 'correct-horse-battery';
 async function signUpOn(server, email, extra = {}) {
   const agent = request.agent(server);
   const _csrf = await csrfToken(agent, '/signup');
-  const res = await agent.post('/signup').type('form').send({ _csrf, name: email.split('@')[0], email, password: PASSWORD, confirm: PASSWORD, business_name: `${email.split('@')[0]} Shop`, ...extra });
+  const res = await agent.post('/signup').type('form').send({ _csrf, name: email.split('@')[0], email, password: PASSWORD, confirm: PASSWORD, business_name: `${email.split('@')[0]} Shop`, phone: '+44 20 7946 0000', ...extra });
   assert.equal(res.status, 302, `sign-up ${email}`);
   return agent;
 }

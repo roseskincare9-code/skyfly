@@ -37,9 +37,9 @@ try {
     await shot(anon, '1-super-admin');
     return anon.url();
   });
-  if ((await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup')) await step('2. /signup: Full name, Business name, Email address, Password, Confirm password, "Create Business Account"', async () => {
+  if ((await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup')) await step('2. /signup (no invitation needed): Full name, Business name, Email address, Phone number, Password, Confirm password, "Create Business Account"', async () => {
     await anon.goto(`${SKYFLY}/signup`);
-    for (const s of ['#name', '#business_name', '#email', '#password', '#confirm']) assert(await anon.locator(`[data-owner-signup] ${s}`).count() === 1, `missing ${s}`);
+    for (const s of ['#name', '#business_name', '#email', '#phone', '#password', '#confirm']) assert(await anon.locator(`[data-owner-signup] ${s}`).count() === 1, `missing ${s}`);
     assert((await anon.textContent('[data-owner-signup] button[type=submit]')).trim() === 'Create Business Account', 'button text');
     await shot(anon, '2-signup');
   });
@@ -68,7 +68,7 @@ try {
   if (regOpen) await step('5. A new owner registers on /signup and lands in their OWN new business (not Larose)', async () => {
     await owner.goto(`${SKYFLY}/signup`);
     await owner.fill('#name', 'Signup Test Owner'); await owner.fill('#business_name', BUSINESS);
-    await owner.fill('#email', EMAIL); await owner.fill('#password', PASSWORD); await owner.fill('#confirm', PASSWORD);
+    await owner.fill('#email', EMAIL); await owner.fill('#phone', '+234 800 000 0000'); await owner.fill('#password', PASSWORD); await owner.fill('#confirm', PASSWORD);
     await Promise.all([owner.waitForURL(/\/(businesses\/\d+|verify-email)$/, { waitUntil: 'load' }), owner.click('[data-owner-signup] button[type=submit]')]);
     if (owner.url().endsWith('/verify-email')) return 'email confirmation required (sender configured) — confirm via the emailed link';
     biz = owner.url().match(/\/businesses\/(\d+)$/)[1];
@@ -103,14 +103,20 @@ try {
     }
     await shot(owner, '6-signed-in-notice');
   });
-  if (regOpen) await step('8. Sign out, then sign in on /login: back in the same own business', async () => {
+  if (regOpen) await step('8. Sign out, then sign in on /login: taken straight to the same own business dashboard', async () => {
     await Promise.all([owner.waitForURL(/\/(login|signup)$/), owner.click('[data-signed-in] button[type=submit]')]);
     await owner.goto(`${SKYFLY}/login`);
     await owner.fill('#email', EMAIL); await owner.fill('#password', PASSWORD);
-    await Promise.all([owner.waitForLoadState('load'), owner.click('[data-owner-login] button[type=submit]')]);
-    await owner.goto(`${SKYFLY}/`);
+    await Promise.all([owner.waitForURL(/\/businesses\/\d+$/, { waitUntil: 'load' }), owner.click('[data-owner-login] button[type=submit]')]);
     assert(owner.url().endsWith(`/businesses/${biz}`), `landed on ${owner.url()}`);
+    await shot(owner, '7-after-login-dashboard');
     return owner.url();
+  });
+  if (regOpen) await step('9. Email verification status for the new account', async () => {
+    const r = await owner.request.get(`${SKYFLY}/verify-email`, { maxRedirects: 0 });
+    return r.status() === 200 && (await r.text()).includes('data-verify-email')
+      ? 'confirmation email required before the dashboard opens'
+      : `not required: no email sender is configured, so the account works at once (GET /verify-email → HTTP ${r.status()})`;
   });
 } finally {
   await browser.close();
