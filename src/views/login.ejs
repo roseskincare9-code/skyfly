@@ -15,7 +15,12 @@
       <button type="submit">Sign In</button>
     </form>
     <p class="muted"><a href="/forgot-password">Forgot Password?</a></p>
-    <% if (allowSignup) { %><p class="muted">New business? <a href="/signup">Create a business account</a></p><% } %>
+    <% if (allowSignup) { %>
+    <div class="signup-cta" data-signup-cta style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border, #e5e5e5);text-align:center">
+      <p style="margin:0 0 10px"><strong>New to Skyfly?</strong> Get your own private business workspace.</p>
+      <a class="btn" href="/signup" style="display:block;width:100%;box-sizing:border-box;text-align:center">Create Your Business Account</a>
+    </div>
+    <% } %>
   </div>
 </main>
 </body></html>
