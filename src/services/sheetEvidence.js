@@ -104,6 +104,15 @@ export async function logSheetEvidence(pool, conn, sheetId) {
   const { results, sheetOnly, rowCount } = matchEvidence(real, tabs, all);
   const P = `Sheet evidence (read-only) connection ${conn.id} "${title ?? '?'}":`;
   console.log(`${P} ${tabs.length} tabs (${tabs.map((t) => `${t.title}: ${Math.max(0, t.values.length - 1)} rows`).join('; ')}), ${rowCount} data rows; ${waiting.length} waiting orders = ${real.length} real + ${waiting.length - real.length} test (test orders are never copied)`);
+  // Why the copies are waiting or failing, and where new orders go (read-only; no customer details).
+  const { rows: reasons } = await pool.query(
+    `SELECT coalesce(left(sheet_sync_error, 200), '(no error recorded)') AS reason, sheet_sync_status AS status, count(*)::int AS n, min(created_at) AS first, max(created_at) AS last
+       FROM orders WHERE business_id = $1 AND sheet_sync_status IN ('pending', 'failed') AND NOT is_test GROUP BY 1, 2 ORDER BY n DESC`, [conn.business_id]);
+  for (const r of reasons) console.log(`${P} COPY REASON ${r.status} x${r.n} (${new Date(r.first).toISOString().slice(0, 10)} → ${new Date(r.last).toISOString().slice(0, 10)}): ${r.reason}`);
+  const { rows: [def] } = await pool.query(
+    `SELECT c.id, c.provider, c.name, c.check_status, left(c.check_detail, 160) AS detail, c.last_success_at, left(c.last_error, 160) AS last_error
+       FROM businesses b LEFT JOIN sheet_connections c ON c.id = b.default_sheet_connection_id AND c.business_id = b.id WHERE b.id = $1`, [conn.business_id]);
+  console.log(`${P} DEFAULT SHEET for this business: ${def?.id ? `connection ${def.id} (${def.provider}, "${def.name}"), check ${def.check_status}${def.detail ? ` — ${def.detail}` : ''}; last success ${def.last_success_at ? new Date(def.last_success_at).toISOString() : 'never'}${def.last_error ? `; last error: ${def.last_error}` : ''}` : 'none set'}`);
   for (const r of results) {
     const o = r.order;
     const where = r.row ? ` | sheet "${r.row.tab}" row ${r.row.row}, time "${r.row.time}"${r.diffMin != null ? ` (Δ ${r.diffMin} min)` : ''}, name ${maskName(r.row.name)}${r.nameMatch === undefined ? '' : r.nameMatch ? ' (same first name)' : ' (different first name)'}, product "${String(r.row.product).slice(0, 60)}", qty "${r.row.quantity}", total "${r.row.total}"${r.samePhoneRows > 1 ? `, ${r.samePhoneRows} rows with this phone` : ''}` : '';
