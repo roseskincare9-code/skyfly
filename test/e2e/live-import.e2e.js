@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
-if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
+if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^https:\/\/getskyfly\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
 const SLUG = 'skyfly-import-test';
 const PAGE = `${SKYFLY}/p/${SLUG}/`;
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());

@@ -13,7 +13,7 @@ import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
-if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
+if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^https:\/\/getskyfly\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY)) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
 const PASSWORD = process.env.SKYFLY_OWNER_PASSWORD;
 if (!PASSWORD) throw new Error('No live-test sign-in: run this through the "Live import test" workflow');
 const n = String(process.env.GITHUB_RUN_ID || Date.now()).slice(-6).padStart(6, '0');

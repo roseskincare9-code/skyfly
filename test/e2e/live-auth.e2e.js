@@ -27,6 +27,7 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePa
 const fresh = async () => { const ctx = await browser.newContext({ ...devices['iPhone 13'] }); const p = await ctx.newPage(); p.setDefaultTimeout(30000); return p; };
 const shot = (p, name) => p.screenshot({ path: `live-screenshots/auth-${name}.png`, fullPage: true });
 
+let regOpen = false;
 try {
   const anon = await fresh();
   await step('1. /admin (signed out) opens the separate Super Admin sign-in', async () => {
@@ -58,7 +59,7 @@ try {
 
   const owner = await fresh();
   let biz;
-  const regOpen = (await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup');
+  regOpen = (await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup');
   if (!regOpen) {
     console.log('INFO  Public registration is closed (by invitation only): steps 5–8 (test registration) not run; the page shows "Registration is by invitation".');
     await anon.goto(`${SKYFLY}/signup`);
@@ -114,5 +115,5 @@ try {
 } finally {
   await browser.close();
 }
-console.log(failed ? `\n${failed} check(s) failed` : `\nAll entry-point checks passed (test business "${BUSINESS}" was created; no order)`);
+console.log(failed ? `\n${failed} check(s) failed` : `\nAll entry-point checks passed (${regOpen ? `test business "${BUSINESS}" was created` : 'registration closed: no account or business created'}; no order)`);
 process.exit(failed ? 1 : 0);
