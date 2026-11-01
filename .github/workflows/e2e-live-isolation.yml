@@ -1,0 +1,28 @@
+# Live business-isolation audit on the deployed service: registers two test businesses (A and B, "(test)",
+# @skyfly.invalid) and a staff member of A, gives A one of each record type, then sends every workspace
+# route signed out, as B (inside A's workspace and with A's IDs in its own), tampered forms and API
+# requests, searches/exports, the Super Admin area and staff restrictions. Uses no secrets and only
+# made-up test data (one test order in A, marked test). Manual only.
+name: Live isolation audit (two test businesses)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Skyfly address (https://getskyfly.com or https://<name>.onrender.com)
+        required: true
+        default: https://getskyfly.com
+permissions:
+  contents: read
+jobs:
+  isolation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Isolation audit
+        run: node test/e2e/live-isolation.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
