@@ -23,6 +23,16 @@
       <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required>
       <label for="confirm">Confirm password</label>
       <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="10" required>
+      <% if (askBusiness) { %>
+      <label class="check" for="accept_terms" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:normal">
+        <input id="accept_terms" name="accept_terms" type="checkbox" required <%= values.accept_terms ? 'checked' : '' %> style="width:auto;margin-top:3px">
+        <span>I have read and accept the <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+      </label>
+      <% } %>
+      <%# Left empty by people (hidden from view and from screen readers); automated sign-ups fill it in. %>
+      <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden">
+        <label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off" value="">
+      </div>
       <button type="submit"><%= askBusiness ? 'Create Business Account' : 'Create account' %></button>
     </form>
     <p class="muted">Already registered? <a href="/login">Sign in</a></p>

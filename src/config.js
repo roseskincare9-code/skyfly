@@ -54,6 +54,11 @@ export function loadConfig() {
     // a Super Admin by signing up; an existing Super Admin grants it (or scripts/grant-admin.mjs).
     adminBootstrapFirstAccount: !isProduction,
     signupFirstOnly: process.env.ALLOW_SIGNUP === 'first',
+    // Public registration needs working email verification in production: without an email sender it stays
+    // closed whatever Platform settings say.
+    requireEmailForSignup: isProduction,
+    // Per-account limits for sign-in, registration and password reset (src/lib/authThrottle.js).
+    authThrottle: true,
     // Owner-only deployments set up the Larose business automatically (AUTO_SETUP_LAROSE=false turns it off).
     autoSetupLarose: process.env.ALLOW_SIGNUP === 'first' && process.env.AUTO_SETUP_LAROSE !== 'false',
     // After publishing, Skyfly opens the page's public address to confirm it is live (LIVE_CHECK=off disables).

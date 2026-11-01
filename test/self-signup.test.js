@@ -19,7 +19,7 @@ async function register(srv, { name, email, business, phone = '+234 803 123 4567
   const page = await agent.get('/signup');
   if (page.status !== 200) return { agent, res: page };
   const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  return { agent, page, res: await agent.post('/signup').type('form').send({ _csrf, name, email, password: PASSWORD, confirm: PASSWORD, business_name: business, phone }) };
+  return { agent, page, res: await agent.post('/signup').type('form').send({ _csrf, name, email, password: PASSWORD, confirm: PASSWORD, business_name: business, phone, accept_terms: 'on' }) };
 }
 
 before(async () => {
@@ -169,7 +169,7 @@ describe('routing for each browser state', () => {
       assert.doesNotMatch(res.text, /Shop B|Shop C/);
     }
     const _csrf = await csrfToken(o.agent, '/signup');
-    const post = await o.agent.post('/signup').type('form').send({ _csrf, name: 'X', email: 'x@new.test', password: PASSWORD, confirm: PASSWORD, business_name: 'Sneaky', phone: '08031234567' });
+    const post = await o.agent.post('/signup').type('form').send({ _csrf, name: 'X', email: 'x@new.test', password: PASSWORD, confirm: PASSWORD, business_name: 'Sneaky', phone: '08031234567', accept_terms: 'on' });
     assert.equal(post.status, 409, 'cannot register a second account while signed in');
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email = 'x@new.test'")).rows[0].n, 0);
   });
@@ -177,9 +177,9 @@ describe('routing for each browser state', () => {
   test('registration checks: the two passwords must match, and the business name is required', async () => {
     const agent = request.agent(server);
     const _csrf = await csrfToken(agent, '/signup');
-    const a = await agent.post('/signup').type('form').send({ _csrf, name: 'Mismatch', email: 'm@x.test', password: PASSWORD, confirm: 'different-password-1', business_name: 'M Shop', phone: '08031234567' });
+    const a = await agent.post('/signup').type('form').send({ _csrf, name: 'Mismatch', email: 'm@x.test', password: PASSWORD, confirm: 'different-password-1', business_name: 'M Shop', phone: '08031234567', accept_terms: 'on' });
     assert.equal(a.status, 400); assert.match(a.text, /not the same/);
-    const b = await agent.post('/signup').type('form').send({ _csrf, name: 'No Biz', email: 'n@x.test', password: PASSWORD, confirm: PASSWORD, business_name: '', phone: '08031234567' });
+    const b = await agent.post('/signup').type('form').send({ _csrf, name: 'No Biz', email: 'n@x.test', password: PASSWORD, confirm: PASSWORD, business_name: '', phone: '08031234567', accept_terms: 'on' });
     assert.equal(b.status, 400); assert.match(b.text, /business name/);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM users WHERE email IN ('m@x.test', 'n@x.test')")).rows[0].n, 0);
   });

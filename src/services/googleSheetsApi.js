@@ -124,6 +124,9 @@ async function readAll(id) {
   return titles.map((title, i) => ({ title, values: data.valueRanges?.[i]?.values ?? [] }));
 }
 
+// Every tab with all its values, read-only (for reconciliation reports).
+export const readAllTabs = (id) => readAll(id);
+
 // Read-only summary of every tab, for the owner.
 export async function listTabs(id) {
   return (await readAll(id)).map((t) => ({ name: t.title, rows: t.values.length }));

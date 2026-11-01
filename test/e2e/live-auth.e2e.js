@@ -68,7 +68,7 @@ try {
   if (regOpen) await step('5. A new owner registers on /signup and lands in their OWN new business (not Larose)', async () => {
     await owner.goto(`${SKYFLY}/signup`);
     await owner.fill('#name', 'Signup Test Owner'); await owner.fill('#business_name', BUSINESS);
-    await owner.fill('#email', EMAIL); await owner.fill('#phone', '+234 800 000 0000'); await owner.fill('#password', PASSWORD); await owner.fill('#confirm', PASSWORD);
+    await owner.fill('#email', EMAIL); await owner.fill('#phone', '+234 800 000 0000'); await owner.fill('#password', PASSWORD); await owner.fill('#confirm', PASSWORD); await owner.check('#accept_terms');
     await Promise.all([owner.waitForURL(/\/(businesses\/\d+|verify-email)$/, { waitUntil: 'load' }), owner.click('[data-owner-signup] button[type=submit]')]);
     if (owner.url().endsWith('/verify-email')) return 'email confirmation required (sender configured) — confirm via the emailed link';
     biz = owner.url().match(/\/businesses\/(\d+)$/)[1];

@@ -1,0 +1,33 @@
+<%- include('../partials/head', { title: 'Accounts' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main>
+  <p><a href="/admin">← Client businesses</a></p>
+  <h1>Accounts</h1>
+  <p class="muted" style="margin-top:0">Every Skyfly account (business owners, their teams and Super Admins). Disabling an account signs it out everywhere at once and blocks sign-in and password reset; its businesses, orders and records stay exactly as they are. Reactivate it any time. Both need your password and are kept in the audit log.</p>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <form method="get" action="/admin/accounts" class="row" style="margin-bottom:12px">
+    <input name="q" value="<%= q %>" placeholder="Search by email or name" aria-label="Search accounts" style="flex:1;min-width:200px">
+    <button class="secondary" type="submit">Search</button>
+  </form>
+  <div class="card">
+    <div class="table-wrap"><table class="stack" data-accounts><thead><tr><th>Account</th><th>Businesses</th><th>Status</th><th></th></tr></thead><tbody>
+    <% accounts.forEach((a) => { %><tr data-account="<%= a.id %>">
+      <td><strong><%= a.name %></strong><br><span class="muted"><%= a.email %></span><% if (a.is_platform_admin) { %> <span class="pill">Super Admin</span><% } %>
+        <br><span class="muted" style="font-size:13px">Joined <%= formatDate(a.created_at) %><%= a.terms_accepted_at ? ` · accepted terms ${a.terms_version}` : '' %></span></td>
+      <td><%= a.businesses || '—' %></td>
+      <td><% if (a.disabled_at) { %><span class="pill cancelled" data-disabled>Disabled</span><br><span class="muted" style="font-size:13px"><%= formatDate(a.disabled_at) %><%= a.disabled_by_email ? ` by ${a.disabled_by_email}` : '' %><br>Reason: <%= a.disabled_reason %></span><% } else { %><span class="pill confirmed">Active</span><% } %></td>
+      <td>
+        <% if (a.id === me) { %><span class="muted">You</span>
+        <% } else if (a.disabled_at) { %>
+        <form method="post" action="/admin/accounts/<%= a.id %>/enable" class="row" style="margin:0"><%- include('../partials/csrf') %><input name="password" type="password" placeholder="Your password" aria-label="Your password" required autocomplete="current-password"><button class="secondary" type="submit">Reactivate</button></form>
+        <% } else { %>
+        <form method="post" action="/admin/accounts/<%= a.id %>/disable" class="row" style="margin:0"><%- include('../partials/csrf') %><input name="reason" placeholder="Reason" aria-label="Reason for disabling" required maxlength="300"><input name="password" type="password" placeholder="Your password" aria-label="Your password" required autocomplete="current-password"><button class="secondary" type="submit">Disable</button></form>
+        <% } %>
+      </td></tr><% }) %>
+    <% if (!accounts.length) { %><tr><td colspan="4" class="muted">No account matches.</td></tr><% } %>
+    </tbody></table></div>
+    <p class="muted" style="margin-bottom:0">Showing up to 100 accounts<%= q ? ' matching your search' : '' %>, disabled ones first.</p>
+  </div>
+</main>
+</body></html>

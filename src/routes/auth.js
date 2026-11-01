@@ -6,6 +6,12 @@ import { requestResetEmail, findReset, completeReset } from '../services/passwor
 import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS, createBusiness } from '../services/tenancy.js';
 import { slugify } from '../lib/auth.js';
 import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
+import { tooMany, record, clear } from '../lib/authThrottle.js';
+
+// The version of the Terms of Service and Privacy Policy a new account accepts (shown on /terms and /privacy).
+export const TERMS_VERSION = '2026-11-01';
+// Public registration needs working email verification where the configuration says so (production).
+export const signupNeedsSender = (config) => Boolean(config.requireEmailForSignup) && !senderReady(config);
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -16,12 +22,12 @@ export function authRoutes({ pool, config }) {
     if (!config.allowSignup) return false;
     const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
     if (!rows[0].any) return true;
-    if (!config.signupFirstOnly) return true;
-    return (await platformSettings(pool)).clientSignup === 'open';
+    if (!config.signupFirstOnly) return !signupNeedsSender(config);
+    return (await platformSettings(pool)).clientSignup === 'open' && !signupNeedsSender(config);
   }
 
   // Creates an account. The first account ever becomes the platform owner.
-  async function createUser({ name, email, password, phone = null }) {
+  async function createUser({ name, email, password, phone = null, termsVersion = null }) {
     const passwordHash = await hashPassword(password);
     const client = await pool.connect();
     try {
@@ -31,11 +37,12 @@ export function authRoutes({ pool, config }) {
       // The automated live-test account (created at start-up, never a person) does not count.
       const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
       const { rows } = await client.query(
-        `INSERT INTO users (email, password_hash, name, is_platform_admin, phone) VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO users (email, password_hash, name, is_platform_admin, phone, terms_version, terms_accepted_at)
+         VALUES ($1, $2, $3, $4, $5, $6::text, CASE WHEN $6::text IS NULL THEN NULL ELSE now() END)
          ON CONFLICT (email) DO NOTHING RETURNING id`,
         // Production never makes anyone a Super Admin by signing up (see scripts/grant-admin.mjs);
         // local development and tests keep "the first account is the owner".
-        [email, passwordHash, name, !any && (config.adminBootstrapFirstAccount ?? !config.isProduction), phone]);
+        [email, passwordHash, name, !any && (config.adminBootstrapFirstAccount ?? !config.isProduction), phone, termsVersion]);
       await client.query('COMMIT');
       return rows[0] ?? null;
     } catch (err) {
@@ -90,11 +97,23 @@ export function authRoutes({ pool, config }) {
     try {
       const email = String(req.body.email || '').trim().toLowerCase();
       const password = String(req.body.password || '');
-      const { rows } = await pool.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
+      // Too many wrong passwords for this email (whether or not it has an account): wait, or reset the password.
+      if (config.authThrottle && await tooMany(pool, 'login_failed', email)) {
+        await audit(pool, req, { action: 'login.throttled', details: { email } });
+        return res.status(429).render('login', { error: 'Too many failed sign-in attempts for this email. Wait 15 minutes, or use "Forgot your password?".', allowSignup: await signupOpen() });
+      }
+      const { rows } = await pool.query('SELECT id, password_hash, disabled_at FROM users WHERE email = $1', [email]);
       const user = rows[0];
       if (!user || !(await verifyPassword(password, user.password_hash))) {
+        if (config.authThrottle) await record(pool, 'login_failed', email);
         await audit(pool, req, { action: 'login.failed', details: { email } });
         return res.status(401).render('login', { error: 'Invalid email or password.', allowSignup: await signupOpen() });
+      }
+      if (config.authThrottle) await clear(pool, 'login_failed', email);
+      // A disabled account (Super Admin → Accounts) cannot sign in; said only after the right password.
+      if (user.disabled_at) {
+        await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'login.refused_disabled' });
+        return res.status(403).render('login', { error: 'This account has been disabled. Contact Skyfly support if you think this is a mistake.', allowSignup: await signupOpen() });
       }
       const returnTo = /^\/invite\/[A-Za-z0-9_-]+$/.test(req.session.returnTo ?? '') ? req.session.returnTo : '/';
       req.session.regenerate((err) => {
@@ -115,7 +134,10 @@ export function authRoutes({ pool, config }) {
       if (!senderReady(config)) return res.status(503).render('forgot-password', { sent: false, error: null, canEmail: false });
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).render('forgot-password', { sent: false, error: 'Enter the email address you sign in with.', canEmail: true });
       const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
-      const result = await requestResetEmail(pool, config, email, base).catch((err) => {
+      // At most a few reset emails per address per hour; the page answers the same either way.
+      const limited = config.authThrottle && await tooMany(pool, 'reset_requested', email);
+      if (config.authThrottle) await record(pool, 'reset_requested', email);
+      const result = limited ? { sent: false, reason: 'rate limited' } : await requestResetEmail(pool, config, email, base).catch((err) => {
         console.error('Password reset email failed:', err.message);
         return { sent: false, reason: 'send failed' };
       });
@@ -156,6 +178,10 @@ export function authRoutes({ pool, config }) {
     }
   });
 
+  // The Terms of Service and Privacy Policy accepted at registration (public pages).
+  router.get('/terms', (req, res) => res.render('terms', { version: TERMS_VERSION }));
+  router.get('/privacy', (req, res) => res.render('privacy', { version: TERMS_VERSION }));
+
   router.get('/signup', async (req, res, next) => {
     try {
       if (req.session.userId && await signedIn(req, res, 'signup')) return;
@@ -177,15 +203,28 @@ export function authRoutes({ pool, config }) {
       const phoneInput = String(req.body.phone || '').trim().slice(0, 40);
       const phone = cleanPhone(phoneInput);
       const askBusiness = await businessWithSignup();
-      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, phone: phoneInput, business_name: businessName }, askBusiness });
+      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, phone: phoneInput, business_name: businessName, accept_terms: req.body.accept_terms === 'on' }, askBusiness });
       if (!validSignup({ name, email, password })) return again(400, 'Enter your full name, a valid email and a password of at least 10 characters.');
       if (password !== String(req.body.confirm || '')) return again(400, 'The two passwords are not the same.');
       if (askBusiness && !slugify(businessName)) return again(400, 'Enter your business name (letters or numbers).');
       if (askBusiness && !phone) return again(400, 'Enter a valid phone number (7 to 15 digits, for example +234 803 123 4567).');
+      // Public registration: the Terms and Privacy Policy must be accepted (recorded with their version).
+      const acceptedTerms = req.body.accept_terms === 'on';
+      if (askBusiness && !acceptedTerms) return again(400, 'Please read and accept the Terms of Service and Privacy Policy to create your account.');
+      // Automated sign-ups: a hidden field people never fill in, and a daily limit of new accounts per IP address.
+      if (String(req.body.website ?? '').trim()) {
+        await audit(pool, req, { action: 'signup.blocked', details: { reason: 'honeypot' } });
+        return again(400, 'Your registration could not be completed. Please try again.');
+      }
+      if (config.authThrottle && await tooMany(pool, 'signup_ip', req.ip)) {
+        await audit(pool, req, { action: 'signup.blocked', details: { reason: 'ip limit' } });
+        return again(429, 'Too many new accounts were created from this network today. Try again tomorrow, or contact Skyfly support.');
+      }
       // Re-checked inside: the first-account rule must hold even with two sign-ups at once.
-      const user = await createUser({ name, email, password, phone: askBusiness ? phone : null });
+      const user = await createUser({ name, email, password, phone: askBusiness ? phone : null, termsVersion: askBusiness && acceptedTerms ? TERMS_VERSION : null });
       if (!user) return again(409, 'An account with that email already exists. Log in instead, or use "Forgot your password?".');
-      await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'signup' });
+      if (config.authThrottle) await record(pool, 'signup_ip', req.ip);
+      await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'signup', details: askBusiness ? { termsVersion: TERMS_VERSION } : undefined });
       await ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
       // The owner's own business, linked to this account only (never Super Admin).
       let to = '/';

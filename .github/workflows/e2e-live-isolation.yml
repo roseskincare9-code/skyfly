@@ -22,7 +22,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Isolation audit
-        run: node test/e2e/live-isolation.e2e.js
+      - name: Registration and sign-in protection (Terms pages, closed registration, per-email limits; creates nothing)
+        run: node test/e2e/live-abuse.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: Isolation audit (needs registration open or test accounts; skipped while registration is closed)
+        if: always()
+        run: |
+          if curl -fsS -o /dev/null "${{ inputs.url }}/signup"; then node test/e2e/live-isolation.e2e.js; else echo "Registration is closed: the isolation audit needs open registration to create its two test businesses (last full run: 41318450903)."; fi
         env:
           SKYFLY_URL: ${{ inputs.url }}
