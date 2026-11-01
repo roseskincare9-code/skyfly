@@ -118,6 +118,12 @@ async function domain() {
   for (const c of cds) line(`Render custom domain ${c.name}`, `${c.verificationStatus}; type ${c.domainType}${c.redirectForName ? `; redirects to ${c.redirectForName}` : ''}; added ${c.createdAt}`);
   for (const host of [DOMAIN, `www.${DOMAIN}`]) {
     try {
+      const res = await fetch(`http://${host}/login`, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
+      line(`HTTP  http://${host}/login`, `HTTP ${res.status}${res.headers.get('location') ? ` → ${res.headers.get('location')}` : ''}`);
+    } catch (err) { line(`HTTP  http://${host}/login`, `no answer (${String(err.cause?.code || err.message).slice(0, 80)})`); }
+  }
+  for (const host of [DOMAIN, `www.${DOMAIN}`]) {
+    try {
       const res = await fetch(`https://${host}/healthz`, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
       line(`HTTPS https://${host}/healthz`, `HTTP ${res.status}${res.headers.get('location') ? ` → ${res.headers.get('location')}` : ''}${res.status === 200 ? ` ${(await res.text()).slice(0, 60)}` : ''}`);
     } catch (err) { line(`HTTPS https://${host}/healthz`, `no secure answer (${String(err.cause?.code || err.cause?.message || err.message).slice(0, 90)})`); }
