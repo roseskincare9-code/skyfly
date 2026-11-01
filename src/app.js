@@ -133,6 +133,18 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   );
   app.use(csrf);
 
+  // A disabled account is signed out everywhere at once (Super Admin → Accounts), even with an old session.
+  app.use(async (req, res, next) => {
+    if (!req.session.userId) return next();
+    try {
+      const { rows: [u] } = await pool.query('SELECT disabled_at FROM users WHERE id = $1', [req.session.userId]);
+      if (u && !u.disabled_at) return next();
+      return req.session.destroy(() => (req.method === 'GET'
+        ? res.redirect('/login')
+        : res.status(403).render('error', { message: 'This account has been disabled, or no longer exists.' })));
+    } catch (err) { next(err); }
+  });
+
   // Who is signed in, and their businesses, for the sidebar and top bar (dashboard pages only).
   app.use(async (req, res, next) => {
     res.locals.currentUser = null;
@@ -156,7 +168,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   // With Skyfly's email sender set up, a self-registered account confirms its email before any dashboard
   // page opens (sign-out, the confirmation pages, invitations and password reset stay reachable).
   if (senderReady(config)) {
-    const open = /^\/(verify-email(\/.*)?|logout|login|signup|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
+    const open = /^\/(verify-email(\/.*)?|logout|login|signup|terms|privacy|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
     app.use(async (req, res, next) => {
       if (!req.session.userId || open.test(req.path)) return next();
       try {
@@ -171,14 +183,14 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   // Slow down password guessing.
   app.use(['/login', '/admin/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'], rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 20,
+    limit: config.authIpLimit ?? 20,
     skip: (req) => req.method !== 'POST',
     handler: (req, res) => res.status(429).render('error', { message: 'Too many attempts. Try again in 15 minutes.' }),
   }));
 
   app.use(authRoutes({ pool, config }));
   app.use(backupKeyRoutes({ pool, config }));
-  app.use(adminLoginRoutes({ pool }));
+  app.use(adminLoginRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
   // Anything saved in the dashboard (pixels, products, pages, publishing) is visible to visitors at
   // once: the public caches are cleared after every successful change.

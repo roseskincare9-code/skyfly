@@ -10,6 +10,8 @@ import { requireAuth, slugify } from '../lib/auth.js';
 import { verifyPassword } from '../lib/passwords.js';
 import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminSession.js';
 import { asyncHandler } from '../lib/http.js';
+import { tooMany, record, clear } from '../lib/authThrottle.js';
+import { signupNeedsSender } from './auth.js';
 import { audit } from '../lib/audit.js';
 import {
   ROLES, ROLE_LABELS, SUBSCRIPTION_STATUSES, SUBSCRIPTION_LABELS, platformSettings, savePlatformSetting,
@@ -82,7 +84,7 @@ export function backupKeyRoutes({ pool, config }) {
 
 // Super Admin sign-in and sign-out, mounted before the normal sign-in check so /admin/login opens
 // without a session.
-export function adminLoginRoutes({ pool }) {
+export function adminLoginRoutes({ pool, config = {} }) {
   const router = Router();
   // Super Admin sign-in: email and password again, every ADMIN_SESSION_HOURS, even when already signed
   // in. Only accounts marked as platform admin in the database can pass; anyone else gets the same
@@ -100,13 +102,19 @@ export function adminLoginRoutes({ pool }) {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
     if (req.session.userId && !(await isAdmin(req.session.userId))) return res.status(404).render('error', { message: 'Page not found.' });
-    const { rows: [u] } = await pool.query('SELECT id, password_hash, is_platform_admin FROM users WHERE email = $1', [email]);
-    const ok = u && (await verifyPassword(password, u.password_hash)) && u.is_platform_admin
+    if (config.authThrottle && await tooMany(pool, 'admin_login_failed', email)) {
+      await audit(pool, req, { action: 'admin.sign_in_throttled', details: { email } });
+      return loginPage(res, { status: 429, error: 'Too many failed attempts for this email. Wait 15 minutes and try again.', next: req.body.next, email });
+    }
+    const { rows: [u] } = await pool.query('SELECT id, password_hash, is_platform_admin, disabled_at FROM users WHERE email = $1', [email]);
+    const ok = u && (await verifyPassword(password, u.password_hash)) && u.is_platform_admin && !u.disabled_at
       && (!req.session.userId || req.session.userId === u.id);
     if (!ok) {
+      if (config.authThrottle) await record(pool, 'admin_login_failed', email);
       await audit(pool, req, { action: 'admin.sign_in_failed', details: { email } });
       return loginPage(res, { status: 401, error: 'Invalid email or password, or this account is not a Skyfly administrator.', next: req.body.next, email });
     }
+    if (config.authThrottle) await clear(pool, 'admin_login_failed', email);
     const to = safeAdminNext(req.body.next);
     req.session.regenerate((err) => {
       if (err) return next(err);
@@ -219,7 +227,7 @@ export function adminRoutes({ pool, config, load = null }) {
 
   async function renderBusiness(req, res, b, { error = null, notice = null, link = null, status = 200 } = {}) {
     const [{ rows: members }, { rows: invites }, { rows: history }] = await Promise.all([
-      pool.query(`SELECT u.id, u.name, u.email, m.role FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 ORDER BY m.role = 'owner' DESC, u.email`, [b.id]),
+      pool.query(`SELECT u.id, u.name, u.email, u.disabled_at, m.role FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 ORDER BY m.role = 'owner' DESC, u.email`, [b.id]),
       pool.query(`SELECT id, email, role, expires_at FROM business_invites WHERE business_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() ORDER BY id DESC`, [b.id]),
       pool.query(`SELECT a.action, a.details, a.created_at, u.email AS by_email FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
                    WHERE a.business_id = $1 AND (a.action LIKE 'subscription.%' OR a.action LIKE 'admin.%') ORDER BY a.id DESC LIMIT 30`, [b.id]),
@@ -561,6 +569,47 @@ export function adminRoutes({ pool, config, load = null }) {
     const { rows: [me] } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
     return Boolean(me && (await verifyPassword(String(req.body.password || ''), me.password_hash)));
   };
+  // ---- Accounts: find any account; disable it (signs it out everywhere, blocks sign-in) or reactivate it.
+  // Needs the acting Super Admin's password; recorded in the audit log. Business data is never touched.
+  const ACCOUNT_NOTICES = { disabled: 'Account disabled. It is signed out everywhere and cannot sign in.', enabled: 'Account reactivated. The person can sign in again.' };
+  const accountsPage = async (req, res, { error = null, status = 200 } = {}) => {
+    const q = String(req.query.q ?? req.body?.q ?? '').trim().slice(0, 200);
+    const { rows: accounts } = await pool.query(
+      `SELECT u.id, u.name, u.email, u.is_platform_admin, u.created_at, u.disabled_at, u.disabled_reason, u.terms_accepted_at, u.terms_version,
+              d.email AS disabled_by_email,
+              (SELECT string_agg(b.name || ' (' || m.role || ')', ', ' ORDER BY b.name) FROM business_members m JOIN businesses b ON b.id = m.business_id WHERE m.user_id = u.id) AS businesses
+         FROM users u LEFT JOIN users d ON d.id = u.disabled_by
+        WHERE u.email NOT LIKE $1 AND ($2 = '' OR u.email ILIKE '%' || $2 || '%' OR u.name ILIKE '%' || $2 || '%')
+        ORDER BY u.disabled_at IS NULL, u.created_at DESC LIMIT 100`, [E2E_EMAIL_LIKE, q]);
+    res.status(status).render('admin/accounts', { accounts, q, me: req.session.userId, error, notice: ACCOUNT_NOTICES[req.query.done] ?? null });
+  };
+  router.get('/admin/accounts', asyncHandler((req, res) => accountsPage(req, res)));
+  router.post('/admin/accounts/:userId/disable', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return accountsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    const id = /^\d+$/.test(req.params.userId) ? Number(req.params.userId) : 0;
+    if (id === Number(req.session.userId)) return accountsPage(req, res, { error: 'You cannot disable your own account.', status: 400 });
+    const reason = String(req.body.reason ?? '').trim().slice(0, 300);
+    if (!reason) return accountsPage(req, res, { error: 'Give a short reason (kept in the audit log and shown to other Super Admins).', status: 400 });
+    // A Super Admin can be disabled only while another active Super Admin remains.
+    const { rowCount } = await pool.query(
+      `UPDATE users SET disabled_at = now(), disabled_reason = $2, disabled_by = $3
+        WHERE id = $1 AND disabled_at IS NULL AND email NOT LIKE $4
+          AND (NOT is_platform_admin OR (SELECT count(*) FROM users WHERE is_platform_admin AND disabled_at IS NULL AND id <> $1) > 0)`,
+      [id, reason, req.session.userId, E2E_EMAIL_LIKE]);
+    if (!rowCount) return accountsPage(req, res, { error: 'That account was not found, is already disabled, or is the last active Super Admin.', status: 400 });
+    await pool.query("DELETE FROM user_sessions WHERE sess->>'userId' = $1", [String(id)]);
+    await audit(pool, req, { action: 'admin.account_disabled', entityType: 'user', entityId: id, details: { reason } });
+    res.redirect('/admin/accounts?done=disabled');
+  }));
+  router.post('/admin/accounts/:userId/enable', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return accountsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    const id = /^\d+$/.test(req.params.userId) ? Number(req.params.userId) : 0;
+    const { rowCount } = await pool.query('UPDATE users SET disabled_at = NULL, disabled_reason = NULL, disabled_by = NULL WHERE id = $1 AND disabled_at IS NOT NULL', [id]);
+    if (!rowCount) return accountsPage(req, res, { error: 'That account was not found or is not disabled.', status: 400 });
+    await audit(pool, req, { action: 'admin.account_reactivated', entityType: 'user', entityId: id });
+    res.redirect('/admin/accounts?done=enabled');
+  }));
+
   router.get('/admin/admins', asyncHandler((req, res) => adminsPage(req, res)));
   router.post('/admin/admins', asyncHandler(async (req, res) => {
     if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
@@ -585,15 +634,19 @@ export function adminRoutes({ pool, config, load = null }) {
   }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
-    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null });
+    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null, signupNeedsSender: signupNeedsSender(config) });
   }));
 
   router.post('/admin/settings', asyncHandler(async (req, res) => {
     const trialDays = Number(req.body.trial_days);
     if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 90) {
-      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, error: 'Trial days must be a whole number from 0 to 90.' });
+      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, error: 'Trial days must be a whole number from 0 to 90.', signupNeedsSender: signupNeedsSender(config) });
     }
     const signup = req.body.client_signup === 'open' ? 'open' : 'invite_only';
+    if (signup === 'open' && signupNeedsSender(config)) {
+      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, signupNeedsSender: true,
+        error: 'Public registration stays closed until Skyfly can send verification emails (set up the email sender first: SKYFLY_NOTIFY_* on Render).' });
+    }
     await savePlatformSetting(pool, 'client_signup', signup);
     await savePlatformSetting(pool, 'trial_days', trialDays);
     await savePlatformSetting(pool, 'renewal_instructions', String(req.body.renewal_instructions ?? '').trim().slice(0, 2000));

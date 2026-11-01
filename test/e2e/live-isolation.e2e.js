@@ -100,7 +100,7 @@ async function register(who, tag) {
   const email = `e2e-iso-${tag.toLowerCase()}@skyfly.invalid`;
   // Also tries to become Super Admin through extra form fields (must be ignored).
   const r = await s.post('/signup', { name: `${tag} Owner`, business_name: `Isolation ${tag} (test)`, email, phone: tag === TAG.A ? `+23480${RUN.slice(-8)}` : '+234 800 000 0002',
-    password: PASSWORD, confirm: PASSWORD, is_platform_admin: 'true', role: 'admin', isAdmin: '1' });
+    password: PASSWORD, confirm: PASSWORD, accept_terms: 'on', is_platform_admin: 'true', role: 'admin', isAdmin: '1' });
   assert(r.status === 302 && /^\/businesses\/\d+$|\/verify-email$/.test(r.location), `registration: HTTP ${r.status} → ${r.location} ${r.text.match(/role="alert">([^<]+)/)?.[1] ?? ''}`);
   assert(!r.location.endsWith('/verify-email'), 'email confirmation required: this run cannot open the emailed link');
   who.business = Number(r.location.match(/(\d+)$/)[1]);

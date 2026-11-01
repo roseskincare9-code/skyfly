@@ -1,0 +1,24 @@
+# Read-only: prints the latest order-by-order reconciliation of waiting orders against the business's
+# Google spreadsheet (written by the app at start-up; customer details masked). Reads Render logs only.
+name: Sheet reconciliation report (read-only)
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: How far back to look in the logs (hours)
+        default: '12'
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/sheet-evidence.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          HOURS: ${{ inputs.hours }}

@@ -4,6 +4,7 @@
 // Orders are saved in Skyfly first; the server then copies each one to its sheet, with a
 // visible status, retries with back-off, and a search before every write so a row is
 // never added twice.
+import { logSheetEvidence } from './sheetEvidence.js';
 import { singleRunner, JOB_LOCKS } from '../lib/singleRunner.js';
 import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from '../lib/secrets.js';
@@ -451,7 +452,12 @@ export async function compareHeldGoogleConnections(pool, key) {
   const { rows } = await pool.query(
     "SELECT id, business_id FROM sheet_connections WHERE provider = 'google_api' AND check_status = 'ok' AND backlog_released_at IS NULL");
   for (const r of rows) {
-    try { await reconcileWaiting(pool, await loadConnection(pool, key, r.business_id, r.id)); } catch (err) { console.log(`Google Sheets: reconciliation for connection ${r.id} failed: ${err.message}`); }
+    try {
+      const conn = await loadConnection(pool, key, r.business_id, r.id);
+      await reconcileWaiting(pool, conn);
+      // Order-by-order evidence (ID, phone, time, name), masked; read-only like the comparison above.
+      await logSheetEvidence(pool, conn, sheetIdOf(conn)).catch((err) => console.log(`Sheet evidence for connection ${r.id} failed: ${err.message}`));
+    } catch (err) { console.log(`Google Sheets: reconciliation for connection ${r.id} failed: ${err.message}`); }
   }
   return rows.length;
 }

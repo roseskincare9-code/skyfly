@@ -26,6 +26,8 @@ export function makeConfig(overrides = {}) {
     publicBaseUrl: 'http://skyfly.test',
     pagesBaseUrl: 'http://pages.test',
     orderRateLimit: 1000,
+    // Per-account sign-in/registration limits are tested on their own (test/account-security.test.js).
+    authThrottle: false,
     ...overrides,
   };
   const hostOf = (u) => (u ? new URL(u).hostname : null);
@@ -82,7 +84,7 @@ export async function signUp(app, { name = 'Owner', email, password = 'correct-h
     return agent;
   }
   const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password, ...(business ? { business_name: business, phone: '+234 803 000 0000' } : {}) });
+  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password, ...(business ? { business_name: business, phone: '+234 803 000 0000', accept_terms: 'on' } : {}) });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
   // With an email sender configured the new account must confirm its email: tests stand in for the click.
   if (res.headers.location === '/verify-email') await confirmEmail(email);

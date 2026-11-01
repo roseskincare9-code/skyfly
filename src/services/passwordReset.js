@@ -55,7 +55,7 @@ export async function completeReset(pool, token, password) {
 export async function requestResetEmail(pool, config, email, base) {
   const sender = config.notifyEmail;
   if (!sender || isE2eEmail(email)) return { sent: false, reason: sender ? 'no account' : 'no sender' };
-  const { rows: [u] } = await pool.query('SELECT id, name, email FROM users WHERE email = $1', [email]);
+  const { rows: [u] } = await pool.query('SELECT id, name, email FROM users WHERE email = $1 AND disabled_at IS NULL', [email]);
   if (!u) return { sent: false, reason: 'no account' };
   const token = await createResetLink(pool, u.id);
   const link = `${base}/reset-password/${token}`;
