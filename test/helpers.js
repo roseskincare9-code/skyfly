@@ -82,7 +82,7 @@ export async function signUp(app, { name = 'Owner', email, password = 'correct-h
     return agent;
   }
   const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password, ...(business ? { business_name: business } : {}) });
+  const res = await agent.post('/signup').type('form').send({ _csrf, name, email, password, confirm: password, ...(business ? { business_name: business, phone: '+234 803 000 0000' } : {}) });
   if (res.status !== 302) throw new Error(`Sign-up failed with ${res.status}`);
   // With an email sender configured the new account must confirm its email: tests stand in for the click.
   if (res.headers.location === '/verify-email') await confirmEmail(email);

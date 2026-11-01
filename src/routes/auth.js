@@ -21,7 +21,7 @@ export function authRoutes({ pool, config }) {
   }
 
   // Creates an account. The first account ever becomes the platform owner.
-  async function createUser({ name, email, password }) {
+  async function createUser({ name, email, password, phone = null }) {
     const passwordHash = await hashPassword(password);
     const client = await pool.connect();
     try {
@@ -31,11 +31,11 @@ export function authRoutes({ pool, config }) {
       // The automated live-test account (created at start-up, never a person) does not count.
       const { rows: [{ any }] } = await client.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
       const { rows } = await client.query(
-        `INSERT INTO users (email, password_hash, name, is_platform_admin) VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (email, password_hash, name, is_platform_admin, phone) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (email) DO NOTHING RETURNING id`,
         // Production never makes anyone a Super Admin by signing up (see scripts/grant-admin.mjs);
         // local development and tests keep "the first account is the owner".
-        [email, passwordHash, name, !any && (config.adminBootstrapFirstAccount ?? !config.isProduction)]);
+        [email, passwordHash, name, !any && (config.adminBootstrapFirstAccount ?? !config.isProduction), phone]);
       await client.query('COMMIT');
       return rows[0] ?? null;
     } catch (err) {
@@ -52,6 +52,12 @@ export function authRoutes({ pool, config }) {
     return any || !(config.adminBootstrapFirstAccount ?? !config.isProduction);
   }
   const base = (req) => config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
+  // A phone number as people type it: digits with optional +, spaces, dashes, dots, brackets; 7–15 digits.
+  const cleanPhone = (v) => {
+    const t = String(v || '').trim().slice(0, 40);
+    const digits = t.replace(/\D/g, '');
+    return /^\+?[0-9 ()./-]+$/.test(t) && digits.length >= 7 && digits.length <= 15 ? t.replace(/\s+/g, ' ') : null;
+  };
   const validSignup = ({ name, email, password }) => name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && password.length >= 10;
   const startSession = (req, res, next, userId, to = '/') => req.session.regenerate((err) => {
     if (err) return next(err);
@@ -168,13 +174,16 @@ export function authRoutes({ pool, config }) {
       const email = String(req.body.email || '').trim().toLowerCase();
       const password = String(req.body.password || '');
       const businessName = String(req.body.business_name || '').trim().slice(0, 100);
+      const phoneInput = String(req.body.phone || '').trim().slice(0, 40);
+      const phone = cleanPhone(phoneInput);
       const askBusiness = await businessWithSignup();
-      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, business_name: businessName }, askBusiness });
+      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, phone: phoneInput, business_name: businessName }, askBusiness });
       if (!validSignup({ name, email, password })) return again(400, 'Enter your full name, a valid email and a password of at least 10 characters.');
       if (password !== String(req.body.confirm || '')) return again(400, 'The two passwords are not the same.');
       if (askBusiness && !slugify(businessName)) return again(400, 'Enter your business name (letters or numbers).');
+      if (askBusiness && !phone) return again(400, 'Enter a valid phone number (7 to 15 digits, for example +234 803 123 4567).');
       // Re-checked inside: the first-account rule must hold even with two sign-ups at once.
-      const user = await createUser({ name, email, password });
+      const user = await createUser({ name, email, password, phone: askBusiness ? phone : null });
       if (!user) return again(409, 'An account with that email already exists. Log in instead, or use "Forgot your password?".');
       await audit(pool, { session: { userId: user.id }, ip: req.ip }, { action: 'signup' });
       await ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message));
