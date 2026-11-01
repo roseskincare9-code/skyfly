@@ -1,0 +1,30 @@
+# Live check of public business registration with real email verification (Resend test inbox
+# delivered+<run>@resend.dev: nothing reaches a person). Reads the Resend key from the Skyfly service's
+# Render settings (masked, never printed) to read the test email back. Creates one "(test)" business.
+name: Live signup and email verification
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Skyfly address
+        required: true
+        default: https://getskyfly.com
+permissions:
+  contents: read
+jobs:
+  signup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resend key from the service settings (masked)
+        run: node scripts/resend-key-env.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Registration, verification email, login, workspace
+        run: node test/e2e/live-signup-verify.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}

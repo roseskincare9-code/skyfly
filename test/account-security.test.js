@@ -240,9 +240,27 @@ describe('public registration needs email verification (production rule)', () =>
     const srv = prod.app.listen(0); servers.push(srv);
     await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
     assert.equal((await request(srv).get('/signup')).status, 200);
-    const { res } = await register(srv, { email: 'verified@x.test', business_name: 'Verified Shop', accept_terms: 'on' });
+    // The sign-in page now shows the prominent sign-up button.
+    const loginPage = await request(srv).get('/login').expect(200);
+    assert.match(loginPage.text, /data-signup-cta[\s\S]*href="\/signup"[^>]*>Create Your Business Account</);
+    // This test's mail server is unreachable: the account is saved, but the page must not claim the email was sent.
+    const { agent, res } = await register(srv, { email: 'verified@x.test', business_name: 'Verified Shop', accept_terms: 'on' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.location, '/verify-email');
+    assert.equal(res.headers.location, '/verify-email?failed=1');
+    const page = await agent.get('/verify-email?failed=1').expect(200);
+    assert.match(page.text, /could not be sent just now/);
+    assert.doesNotMatch(page.text, /We sent a confirmation link/);
+    assert.equal((await agent.get('/')).headers.location, '/verify-email', 'no dashboard before confirming');
+    await prod.pool.end();
+  });
+
+  test('while registration is closed, the sign-in page shows no sign-up button (it would lead nowhere)', async () => {
+    const prod = setup({ adminBootstrapFirstAccount: false, allowSignup: true, signupFirstOnly: true, allowedOrigins: [], requireEmailForSignup: true });
+    const srv = prod.app.listen(0); servers.push(srv);
+    await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
+    const page = await request(srv).get('/login').expect(200);
+    assert.doesNotMatch(page.text, /data-signup-cta/);
+    assert.doesNotMatch(page.text, /href="\/signup"/);
     await prod.pool.end();
   });
 });

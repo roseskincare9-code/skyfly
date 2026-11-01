@@ -1,3 +1,4 @@
+import { platformSettings } from './services/tenancy.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
@@ -61,6 +62,12 @@ googleRetry.unref();
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);
+  // Public registration as it really is (setting + email sender), for the logs and live checks.
+  platformSettings(pool).then((st) => {
+    const sender = config.notifyEmail ? `${config.notifyEmail.provider} from ${config.notifyEmail.fromEmail}` : null;
+    const open = st.clientSignup === 'open' && (!config.requireEmailForSignup || sender);
+    console.log(`Public registration: ${open ? `OPEN, email confirmation required (${sender ?? 'no sender: confirmation off outside production'})` : st.clientSignup === 'open' ? 'CLOSED until an email sender is set (SKYFLY_NOTIFY_PROVIDER, SKYFLY_NOTIFY_API_KEY, SKYFLY_NOTIFY_FROM)' : 'CLOSED (Platform settings: by invitation only)'}`);
+  }).catch(() => {});
   ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message))
     .then(() => ensureDemoSite(pool, config)).then(() => (config.demoSite ? ensureDemoUpsell(pool) : null)).catch((err) => console.error('Demo site setup failed:', err.message))
     .then(() => ensureLaroseHostedPage(pool, config)).catch((err) => console.error('Larose hosted page setup failed:', err.message))

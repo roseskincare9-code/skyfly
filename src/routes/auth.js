@@ -238,8 +238,9 @@ export function authRoutes({ pool, config }) {
       const { rows: [u] } = await pool.query('SELECT id, name, email, email_verified_at, is_platform_admin FROM users WHERE id = $1', [user.id]);
       if (u.is_platform_admin) await markVerified(pool, u.id);
       else if (needsVerification(config, u)) {
-        await sendVerification(pool, config, u, base(req)).catch((err) => console.error('Verification email failed:', err.message));
-        to = '/verify-email';
+        // Never claim the email was sent when it was not: the page then offers "Send the link again".
+        const sent = await sendVerification(pool, config, u, base(req)).then(() => true, (err) => { console.error('Verification email failed:', err.message); return false; });
+        to = sent ? '/verify-email' : '/verify-email?failed=1';
       }
       startSession(req, res, next, user.id, to);
     } catch (err) {
@@ -300,7 +301,8 @@ export function authRoutes({ pool, config }) {
       if (!req.session.userId) return res.redirect('/login');
       const { rows: [u] } = await pool.query('SELECT email, email_verified_at FROM users WHERE id = $1', [req.session.userId]);
       if (!u || !needsVerification(config, u)) return res.redirect('/');
-      res.render('verify-email', { email: u.email, sent: req.query.sent === '1', error: null });
+      res.render('verify-email', { email: u.email, sent: req.query.sent === '1', failed: req.query.failed === '1',
+        error: req.query.failed === '1' ? 'The confirmation email could not be sent just now. Wait a minute, then press "Send the link again".' : null });
     } catch (err) { next(err); }
   });
   router.post('/verify-email/resend', async (req, res, next) => {
