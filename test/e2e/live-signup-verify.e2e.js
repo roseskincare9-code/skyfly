@@ -130,9 +130,42 @@ try {
     assert(wrong.status === 401, `wrong password → ${wrong.status}`);
     return `${SKYFLY}/login → /businesses/${biz}`;
   });
+
+  if (biz) await step('reset', 'Password recovery: the reset email arrives, its link sets a new password once; the old password stops working', async () => {
+    const r0 = session();
+    const page = await r0.req('GET', '/forgot-password');
+    assert(page.status === 200 && !/data-reset-unavailable/.test(page.text), 'the page says reset by email is not available');
+    const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
+    const sent = await r0.req('POST', '/forgot-password', { _csrf, email: EMAIL });
+    assert(sent.status === 200, `forgot-password → ${sent.status}`);
+    const sentOther = await r0.req('POST', '/forgot-password', { _csrf, email: `nobody-${RUN}@skyfly.invalid` });
+    assert(sentOther.text.replace(/name="_csrf" value="[^"]+"/, '') === sent.text.replace(/name="_csrf" value="[^"]+"/, ''), 'the page answers differently for an unknown email');
+    let resetLink = null;
+    for (let i = 0; i < 12 && !resetLink; i += 1) {
+      const hit = ((await resend('/emails?limit=50')).data || []).find((e) => (e.to || []).includes(EMAIL) && /Reset your Skyfly password/.test(e.subject || ''));
+      if (hit) {
+        const full = await resend(`/emails/${hit.id}`);
+        resetLink = (`${full.html || ''} ${full.text || ''}`.match(/https?:\/\/[^\s"'<>]+\/reset-password\/[A-Za-z0-9_-]{20,}/) || [])[0];
+      } else await new Promise((res) => setTimeout(res, 5000));
+    }
+    assert(resetLink, 'no reset email with a link arrived in 60 s');
+    assert(resetLink.startsWith(`${SKYFLY}/reset-password/`), `link points to ${new URL(resetLink).origin}`);
+    const path = new URL(resetLink).pathname;
+    const form = await r0.req('GET', path);
+    assert(form.status === 200, `reset link → ${form.status}`);
+    const NEW = `${PASSWORD}-new`;
+    const done = await r0.req('POST', path, { _csrf: form.text.match(/name="_csrf" value="([^"]+)"/)[1], password: NEW, confirm: NEW });
+    assert(done.status === 200 && /password has been changed/i.test(done.text), `reset → ${done.status}`);
+    assert((await r0.req('GET', path)).status === 404, 'the reset link works twice');
+    const oldTry = session(); const o1 = await oldTry.req('POST', '/login', { _csrf: await oldTry.csrf('/login'), email: EMAIL, password: PASSWORD });
+    assert(o1.status === 401, `old password → ${o1.status}`);
+    const newTry = session(); const n1 = await newTry.req('POST', '/login', { _csrf: await newTry.csrf('/login'), email: EMAIL, password: NEW });
+    assert(n1.status === 302, `new password → ${n1.status}`);
+    return 'reset email delivered; link works once; old password refused, new one signs in; unknown emails get the same page';
+  });
 } catch (err) {
   if (err.message !== 'registration closed') { failed += 1; console.log(`FAIL  ${err.message}`); }
 }
-console.log(`\nREPORT  Signup button: ${results.button ?? 'NOT TESTED'} | Public registration: ${results.registration ?? 'NOT TESTED'} | Email verification: ${results.verification ?? 'NOT TESTED'} | Workspace creation: ${results.workspace ?? 'NOT TESTED'} | Login: ${results.login ?? 'NOT TESTED'}`);
+console.log(`\nREPORT  Signup button: ${results.button ?? 'NOT TESTED'} | Public registration: ${results.registration ?? 'NOT TESTED'} | Email verification: ${results.verification ?? 'NOT TESTED'} | Workspace creation: ${results.workspace ?? 'NOT TESTED'} | Login: ${results.login ?? 'NOT TESTED'} | Password recovery: ${results.reset ?? 'NOT TESTED'}`);
 console.log(failed ? `${failed} check(s) failed` : `All checks passed (test business "${BUSINESS}" was created; no order)`);
 process.exit(failed ? 1 : 0);
