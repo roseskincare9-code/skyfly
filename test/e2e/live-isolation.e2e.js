@@ -155,7 +155,7 @@ async function seed(who, tag) {
     product_0: who.productId ?? '', quantity_0: 1, price_0: '5,000', status: 'pending', payment_status: 'unpaid' });
   who.orderId = ok('order (marked test)', idFrom(r, /orders\/(\d+)/));
   if (who.orderId) {
-    await s.post(`${base}/orders/${who.orderId}/test`, { is_test: '1' });
+    await s.post(`${base}/orders/${who.orderId}/test`, { is_test: 'true' });
     const o = await s.get(`${base}/orders/${who.orderId}`);
     who.orderRef = (o.text.match(/\b([A-Z]{2,4}-[A-Z0-9]{6,8})\b/) || [])[1];
   }
