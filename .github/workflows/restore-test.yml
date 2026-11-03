@@ -1,0 +1,66 @@
+# Isolated restoration test of a STORED backup: downloads the encrypted artifact of a backup run (the
+# latest successful one by default), decrypts it, restores it into an empty throwaway PostgreSQL 16 on this
+# runner and checks every table's row count against the file. Never touches the production database.
+# Logs show only dates, sizes and row counts. Manual only.
+name: Backup restore test (isolated)
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Backup run ID to restore (empty = latest successful backup)
+        required: false
+        default: ''
+permissions:
+  contents: read
+  actions: read
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore
+          POSTGRES_DB: restore_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Which backup
+        id: pick
+        run: |
+          id="${{ inputs.run_id }}"
+          if [ -z "$id" ]; then id=$(gh run list -R "$GITHUB_REPOSITORY" -w backup.yml -s success -L 1 --json databaseId -q '.[0].databaseId'); fi
+          echo "run_id=$id" >> "$GITHUB_OUTPUT"
+          echo "Backup run $id, made $(gh run view "$id" -R "$GITHUB_REPOSITORY" --json createdAt -q .createdAt)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: skyfly-backup-encrypted
+          run-id: ${{ steps.pick.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Read the backup key from Render (masked; never printed; only needed when no passphrase secret is set)
+        run: node scripts/render-backup-key.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Decrypt
+        run: |
+          echo "Encrypted file: $(stat -c %s skyfly-backup.json.enc) bytes, SHA-256 $(sha256sum skyfly-backup.json.enc | cut -d' ' -f1)"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 -in skyfly-backup.json.enc -out backup.json -pass env:PASS
+          echo "Decrypted: $(stat -c %s backup.json) bytes"
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD || env.SKYFLY_BACKUP_KEY }}
+      - name: Restore into the empty throwaway database and compare every table
+        run: node scripts/restore-backup.mjs backup.json
+        env:
+          DATABASE_URL: postgres://restore:restore@localhost:5432/restore_test
+      - name: Remove the plain file
+        if: always()
+        run: shred -u backup.json 2>/dev/null || true

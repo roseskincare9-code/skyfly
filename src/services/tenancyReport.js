@@ -29,6 +29,8 @@ export async function logTenancyMap(pool) {
     `SELECT u.id, u.email, u.is_platform_admin AS admin, u.disabled_at IS NOT NULL AS disabled, u.email LIKE $1 AS automated,
             (SELECT count(*)::int FROM business_members m WHERE m.user_id = u.id) AS memberships
        FROM users u ORDER BY u.id`, [E2E_EMAIL_LIKE]);
+  const { rows: [size] } = await pool.query('SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty, pg_database_size(current_database()) AS bytes');
+  console.log(`${P} DATABASE size ${size.pretty} (${size.bytes} bytes)`);
   console.log(`${P} BEGIN ${businesses.length} businesses, ${users.length} accounts (${users.filter((u) => u.admin).length} Super Admin, ${users.filter((u) => u.automated).length} automated test account)`);
   for (const b of businesses) {
     const m = b.members.map((x) => `${x.role}:${maskEmail(x.email)}#${x.id}${x.admin ? '(SUPER ADMIN)' : ''}${x.disabled ? '(disabled)' : ''}`).join(', ');
