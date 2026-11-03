@@ -2,7 +2,9 @@
 // owner confirms payment; there is no payment gateway), setup progress, team invites and
 // platform settings. Only users with is_platform_admin may open it.
 import { Router } from 'express';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
+import { hashPassword } from '../lib/passwords.js';
+import { sendEmail } from '../services/emailProviders.js';
 import { createResetLink, ADMIN_LINK_HOURS } from '../services/passwordReset.js';
 import { E2E_EMAIL_LIKE } from '../services/setup.js';
 import { setupChecklist } from '../services/onboarding.js';
@@ -12,7 +14,7 @@ import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminS
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
-import { signupNeedsSender } from './auth.js';
+import { signupNeedsSender, signupBlockers } from './auth.js';
 import { audit } from '../lib/audit.js';
 import {
   ROLES, ROLE_LABELS, SUBSCRIPTION_STATUSES, SUBSCRIPTION_LABELS, platformSettings, savePlatformSetting,
@@ -93,10 +95,11 @@ export function adminLoginRoutes({ pool, config = {} }) {
   const isAdmin = async (userId) => Boolean(userId && (await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [userId])).rows[0]?.is_platform_admin);
   const loginPage = (res, { status = 200, error = null, next = '/admin', email = '' } = {}) => {
     res.set('Cache-Control', 'no-store');
-    res.status(status).render('admin/login', { error, next: safeAdminNext(next), email, hours: ADMIN_SESSION_HOURS });
+    res.status(status).render('admin/login', { error, next: safeAdminNext(next), email, hours: ADMIN_SESSION_HOURS, notice: res.locals.adminNotice ?? null });
   };
   router.get('/admin/login', asyncHandler(async (req, res) => {
     if (req.session.userId && !(await isAdmin(req.session.userId))) return res.status(404).render('error', { message: 'Page not found.' });
+    if (req.query.created === '1') res.locals.adminNotice = 'Your Super Admin account was created. Sign in with it below.';
     loginPage(res, { next: req.query.next });
   }));
   router.post('/admin/login', asyncHandler(async (req, res, next) => {
@@ -123,6 +126,49 @@ export function adminLoginRoutes({ pool, config = {} }) {
       audit(pool, req, { action: 'admin.signed_in' }).then(() => res.redirect(to), next);
     });
   }));
+  // Accepting a Super Admin invitation: creates a NEW admin-only account (it belongs to no business).
+  const findAdminInvite = async (token) => {
+    if (!/^[A-Za-z0-9_-]{40,60}$/.test(String(token))) return null;
+    const { rows: [i] } = await pool.query(
+      'SELECT id, email FROM admin_invites WHERE token_hash = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()',
+      [createHash('sha256').update(String(token)).digest('hex')]);
+    return i ?? null;
+  };
+  const invitePage = (res, { invite, token, error = null, status = 200 }) => res.status(status).render('admin/invite-accept', { invite, token, error });
+  router.get('/admin-invite/:token', asyncHandler(async (req, res) => {
+    const invite = await findAdminInvite(req.params.token);
+    if (!invite) return res.status(410).render('error', { message: 'This Super Admin invitation is not valid any more (it works once, for 48 hours). Ask a Super Admin for a new one.' });
+    if (req.session.userId) return res.status(409).render('error', { message: 'You are signed in to Skyfly. Sign out first, then open this invitation link again.' });
+    res.set('Cache-Control', 'no-store');
+    invitePage(res, { invite, token: req.params.token });
+  }));
+  router.post('/admin-invite/:token', asyncHandler(async (req, res) => {
+    const invite = await findAdminInvite(req.params.token);
+    if (!invite) return res.status(410).render('error', { message: 'This Super Admin invitation is not valid any more (it works once, for 48 hours). Ask a Super Admin for a new one.' });
+    if (req.session.userId) return res.status(409).render('error', { message: 'You are signed in to Skyfly. Sign out first, then open this invitation link again.' });
+    const name = String(req.body.name || '').trim().slice(0, 200);
+    const password = String(req.body.password || '');
+    if (!name || password.length < 12) return invitePage(res, { invite, token: req.params.token, error: 'Enter your name and a password of at least 12 characters.', status: 400 });
+    if (password !== String(req.body.confirm || '')) return invitePage(res, { invite, token: req.params.token, error: 'The two passwords are not the same.', status: 400 });
+    const client = await pool.connect();
+    let userId = null;
+    try {
+      await client.query('BEGIN');
+      const { rows: [claim] } = await client.query(
+        'UPDATE admin_invites SET accepted_at = now() WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() RETURNING id', [invite.id]);
+      if (!claim) { await client.query('ROLLBACK'); return res.status(410).render('error', { message: 'This invitation was just used.' }); }
+      const { rows: [u] } = await client.query(
+        `INSERT INTO users (email, password_hash, name, is_platform_admin, email_verified_at) VALUES ($1, $2, $3, true, now())
+         ON CONFLICT (email) DO NOTHING RETURNING id`, [invite.email, await hashPassword(password), name]);
+      if (!u) { await client.query('ROLLBACK'); return res.status(409).render('error', { message: 'That email already has a Skyfly account. Ask a Super Admin to give that account access instead.' }); }
+      userId = u.id;
+      await client.query('UPDATE admin_invites SET accepted_user_id = $2 WHERE id = $1', [invite.id, userId]);
+      await client.query('COMMIT');
+    } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+    await audit(pool, { session: { userId }, ip: req.ip }, { action: 'admin.access_granted', entityType: 'user', entityId: userId, details: { email: invite.email, via: 'invitation' } });
+    res.redirect('/admin/login?created=1');
+  }));
+
   // Leaves the Super Admin area on this device (the normal sign-in stays).
   router.post('/admin/logout', (req, res) => {
     delete req.session.adminUserId;
@@ -577,11 +623,14 @@ export function adminRoutes({ pool, config, load = null }) {
 
   // ---- Super Admins: who may sign in to this area. Granting or removing needs the acting Super Admin's
   // password again; the last Super Admin cannot be removed, and nobody removes themselves.
-  const ADMIN_NOTICES = { granted: 'Super Admin access granted.', revoked: 'Super Admin access removed.' };
-  const adminsPage = async (req, res, { error = null, status = 200 } = {}) => {
-    const { rows: admins } = await pool.query('SELECT id, name, email, created_at FROM users WHERE is_platform_admin ORDER BY id');
+  const ADMIN_NOTICES = { granted: 'Super Admin access granted.', revoked: 'Super Admin access removed.', invite_revoked: 'Invitation cancelled; its link no longer works.' };
+  const adminsPage = async (req, res, { error = null, status = 200, notice = null, link = null } = {}) => {
+    const { rows: admins } = await pool.query('SELECT id, name, email, created_at, disabled_at FROM users WHERE is_platform_admin ORDER BY id');
+    const { rows: invites } = await pool.query(
+      `SELECT i.id, i.email, i.expires_at, u.email AS by_email FROM admin_invites i LEFT JOIN users u ON u.id = i.created_by
+        WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now() ORDER BY i.id DESC`);
     res.set('Cache-Control', 'no-store');
-    res.status(status).render('admin/admins', { admins, me: req.session.userId, error, notice: ADMIN_NOTICES[req.query.done] ?? null });
+    res.status(status).render('admin/admins', { admins, invites, link, me: req.session.userId, error, notice: notice ?? ADMIN_NOTICES[req.query.done] ?? null });
   };
   const confirmPassword = async (req) => {
     const { rows: [me] } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
@@ -640,6 +689,43 @@ export function adminRoutes({ pool, config, load = null }) {
     }
     res.redirect('/admin/admins?done=granted');
   }));
+  // A NEW, admin-only account (no business), by a one-time link: a separate Super Admin identity.
+  router.post('/admin/admins/invite', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) return adminsPage(req, res, { error: 'Enter a valid email address.', status: 400 });
+    const { rows: [existing] } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing) return adminsPage(req, res, { error: 'That email already has a Skyfly account. Use "Give an existing account Super Admin access" instead.', status: 409 });
+    await pool.query('UPDATE admin_invites SET revoked_at = now() WHERE lower(email) = $1 AND accepted_at IS NULL AND revoked_at IS NULL', [email]);
+    const token = randomBytes(32).toString('base64url');
+    const { rows: [inv] } = await pool.query(
+      "INSERT INTO admin_invites (email, token_hash, created_by, expires_at) VALUES ($1, $2, $3, now() + interval '48 hours') RETURNING id",
+      [email, createHash('sha256').update(token).digest('hex'), req.session.userId]);
+    const base = config.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
+    const link = `${base}/admin-invite/${token}`;
+    await audit(pool, req, { action: 'admin.invite_created', entityType: 'admin_invite', entityId: inv.id, details: { email } });
+    if (config.notifyEmail) {
+      const sender = config.notifyEmail;
+      try {
+        await sendEmail({ provider: sender.provider, apiKey: sender.apiKey, baseOverride: config.emailApiBase || null }, {
+          to: email, fromEmail: sender.fromEmail, fromName: sender.fromName || 'Skyfly', replyTo: null, headers: {}, idempotencyKey: `admin-invite:${inv.id}`,
+          subject: 'Your Skyfly Super Admin account',
+          text: `You were invited to administer the Skyfly platform. Create your Super Admin account (the link works once, for 48 hours):\n\n${link}\n\nIf you did not expect this, ignore this email.`,
+          html: `<p>You were invited to administer the Skyfly platform.</p><p><a href="${link}">Create your Super Admin account</a> (the link works once, for 48 hours).</p><p>If you did not expect this, ignore this email.</p>`,
+        });
+        return adminsPage(req, res, { notice: `Invitation emailed to ${email} (valid 48 hours).` });
+      } catch (err) {
+        return adminsPage(req, res, { notice: `The email could not be sent (${String(err.message).slice(0, 80)}). Send this link to ${email} personally (works once, 48 hours, shown once):`, link });
+      }
+    }
+    return adminsPage(req, res, { notice: `Super Admin invitation for ${email}. Send this link to them personally (works once, 48 hours, shown once):`, link });
+  }));
+  router.post('/admin/admins/invites/:inviteId/revoke', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.inviteId)) return adminsPage(req, res, { error: 'Invitation not found.', status: 404 });
+    await pool.query('UPDATE admin_invites SET revoked_at = now() WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL', [req.params.inviteId]);
+    await audit(pool, req, { action: 'admin.invite_revoked', entityType: 'admin_invite', entityId: req.params.inviteId });
+    res.redirect('/admin/admins?done=invite_revoked');
+  }));
   router.post('/admin/admins/:userId/revoke', asyncHandler(async (req, res) => {
     if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
     const id = Number(req.params.userId);
@@ -652,7 +738,7 @@ export function adminRoutes({ pool, config, load = null }) {
   }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
-    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null, signupNeedsSender: signupNeedsSender(config) });
+    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null, signupNeedsSender: signupNeedsSender(config), signupBlockers: signupBlockers(config) });
   }));
 
   router.post('/admin/settings', asyncHandler(async (req, res) => {
@@ -661,9 +747,9 @@ export function adminRoutes({ pool, config, load = null }) {
       return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, error: 'Trial days must be a whole number from 0 to 90.', signupNeedsSender: signupNeedsSender(config) });
     }
     const signup = req.body.client_signup === 'open' ? 'open' : 'invite_only';
-    if (signup === 'open' && signupNeedsSender(config)) {
-      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, signupNeedsSender: true,
-        error: 'Public registration stays closed until Skyfly can send verification emails (set up the email sender first: SKYFLY_NOTIFY_* on Render).' });
+    if (signup === 'open' && signupBlockers(config).length) {
+      return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, signupNeedsSender: signupNeedsSender(config), signupBlockers: signupBlockers(config),
+        error: `Public registration stays closed until Skyfly can send verification emails and check for bots. Missing on Render: ${signupBlockers(config).join('; ')}.` });
     }
     await savePlatformSetting(pool, 'client_signup', signup);
     await savePlatformSetting(pool, 'trial_days', trialDays);

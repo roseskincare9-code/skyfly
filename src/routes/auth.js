@@ -7,11 +7,19 @@ import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBL
 import { slugify } from '../lib/auth.js';
 import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
+import { verifyTurnstile, allowTurnstile } from '../lib/turnstile.js';
 
 // The version of the Terms of Service and Privacy Policy a new account accepts (shown on /terms and /privacy).
 export const TERMS_VERSION = '2026-11-01';
 // Public registration needs working email verification where the configuration says so (production).
 export const signupNeedsSender = (config) => Boolean(config.requireEmailForSignup) && !senderReady(config);
+// Registration in production also needs the bot check (Cloudflare Turnstile).
+export const signupNeedsCaptcha = (config) => Boolean(config.requireCaptchaForSignup) && !config.turnstile;
+// What keeps public registration closed, apart from Platform settings (for messages and logs).
+export const signupBlockers = (config) => [
+  ...(signupNeedsSender(config) ? ['email sender (SKYFLY_NOTIFY_PROVIDER, SKYFLY_NOTIFY_API_KEY, SKYFLY_NOTIFY_FROM)'] : []),
+  ...(signupNeedsCaptcha(config) ? ['bot check (TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY)'] : []),
+];
 
 export function authRoutes({ pool, config }) {
   const router = Router();
@@ -22,8 +30,8 @@ export function authRoutes({ pool, config }) {
     if (!config.allowSignup) return false;
     const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users WHERE email NOT LIKE $1) AS any', [E2E_EMAIL_LIKE]);
     if (!rows[0].any) return true;
-    if (!config.signupFirstOnly) return !signupNeedsSender(config);
-    return (await platformSettings(pool)).clientSignup === 'open' && !signupNeedsSender(config);
+    if (!config.signupFirstOnly) return !signupBlockers(config).length;
+    return (await platformSettings(pool)).clientSignup === 'open' && !signupBlockers(config).length;
   }
 
   // Creates an account. The first account ever becomes the platform owner.
@@ -186,7 +194,8 @@ export function authRoutes({ pool, config }) {
     try {
       if (req.session.userId && await signedIn(req, res, 'signup')) return;
       if (!(await signupOpen())) return res.status(404).render('signup-closed');
-      res.render('signup', { error: null, values: {}, askBusiness: await businessWithSignup() });
+      if (config.turnstile) allowTurnstile(res);
+      res.render('signup', { error: null, values: {}, askBusiness: await businessWithSignup(), turnstileSiteKey: config.turnstile?.siteKey ?? null });
     } catch (err) {
       next(err);
     }
@@ -203,7 +212,8 @@ export function authRoutes({ pool, config }) {
       const phoneInput = String(req.body.phone || '').trim().slice(0, 40);
       const phone = cleanPhone(phoneInput);
       const askBusiness = await businessWithSignup();
-      const again = (status, error) => res.status(status).render('signup', { error, values: { name, email, phone: phoneInput, business_name: businessName, accept_terms: req.body.accept_terms === 'on' }, askBusiness });
+      if (config.turnstile) allowTurnstile(res);
+      const again = (status, error) => res.status(status).render('signup', { turnstileSiteKey: config.turnstile?.siteKey ?? null, error, values: { name, email, phone: phoneInput, business_name: businessName, accept_terms: req.body.accept_terms === 'on' }, askBusiness });
       if (!validSignup({ name, email, password })) return again(400, 'Enter your full name, a valid email and a password of at least 10 characters.');
       if (password !== String(req.body.confirm || '')) return again(400, 'The two passwords are not the same.');
       if (askBusiness && !slugify(businessName)) return again(400, 'Enter your business name (letters or numbers).');
@@ -215,6 +225,14 @@ export function authRoutes({ pool, config }) {
       if (String(req.body.website ?? '').trim()) {
         await audit(pool, req, { action: 'signup.blocked', details: { reason: 'honeypot' } });
         return again(400, 'Your registration could not be completed. Please try again.');
+      }
+      // Bot check (Cloudflare Turnstile), verified with Cloudflare before anything is created.
+      if (config.turnstile) {
+        const human = await verifyTurnstile(config, req.body['cf-turnstile-response'], req.ip);
+        if (!human.ok) {
+          await audit(pool, req, { action: 'signup.blocked', details: { reason: 'turnstile', codes: human.codes.slice(0, 3) } });
+          return again(400, 'Please complete the security check ("Verify you are human") and try again.');
+        }
       }
       if (config.authThrottle && await tooMany(pool, 'signup_ip', req.ip)) {
         await audit(pool, req, { action: 'signup.blocked', details: { reason: 'ip limit' } });

@@ -57,6 +57,11 @@ export function loadConfig() {
     // Public registration needs working email verification in production: without an email sender it stays
     // closed whatever Platform settings say.
     requireEmailForSignup: isProduction,
+    // Cloudflare Turnstile (bot check) on registration. In production registration opens only with it set up.
+    turnstile: process.env.TURNSTILE_SITE_KEY && process.env.TURNSTILE_SECRET_KEY
+      ? { siteKey: process.env.TURNSTILE_SITE_KEY, secretKey: process.env.TURNSTILE_SECRET_KEY } : null,
+    requireCaptchaForSignup: isProduction,
+    turnstileVerifyUrl: isProduction ? null : (process.env.TURNSTILE_VERIFY_URL || null),
     // Per-account limits for sign-in, registration and password reset (src/lib/authThrottle.js).
     authThrottle: true,
     // Owner-only deployments set up the Larose business automatically (AUTO_SETUP_LAROSE=false turns it off).

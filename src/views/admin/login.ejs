@@ -4,6 +4,7 @@
   <div class="card" data-admin-login>
     <h1>Super Admin sign-in</h1>
     <p class="muted" style="margin-top:0">For the Skyfly team only. Enter your password again to open platform administration (valid <%= hours %> hours on this device). Business owners sign in at <a href="/login">the normal login</a>.</p>
+    <% if (typeof notice !== 'undefined' && notice) { %><p class="notice" role="status"><%= notice %></p><% } %>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <form method="post" action="/admin/login">
       <%- include('../partials/csrf') %>

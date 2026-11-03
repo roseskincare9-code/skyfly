@@ -118,6 +118,15 @@ export async function logSheetEvidence(pool, conn, sheetId) {
     const where = r.row ? ` | sheet "${r.row.tab}" row ${r.row.row}, time "${r.row.time}"${r.diffMin != null ? ` (Δ ${r.diffMin} min)` : ''}, name ${maskName(r.row.name)}${r.nameMatch === undefined ? '' : r.nameMatch ? ' (same first name)' : ' (different first name)'}, product "${String(r.row.product).slice(0, 60)}", qty "${r.row.quantity}", total "${r.row.total}"${r.samePhoneRows > 1 ? `, ${r.samePhoneRows} rows with this phone` : ''}` : '';
     console.log(`${P} ${o.reference} | ${new Date(o.created_at).toISOString()} | ${naira(o.total_minor, o.currency)} | ${o.items ?? '-'} | ${o.source} | status ${o.status} | copy ${o.sheet_sync_status} | customer ${maskName(o.customer_name)} ${maskPhone(o.phone)} | ${r.verdict}${where}`);
   }
+  // Possible duplicates among the waiting real orders: same phone, with the time gap and whether the items match.
+  const byPhone = new Map();
+  for (const o of real) { const k = String(o.phone ?? '').replace(/\D/g, '').slice(-10); if (k) byPhone.set(k, [...(byPhone.get(k) ?? []), o]); }
+  for (const group of byPhone.values()) {
+    if (group.length < 2) continue;
+    const gaps = group.slice(1).map((o, i) => Math.round((new Date(o.created_at) - new Date(group[i].created_at)) / 60000));
+    const sameItems = new Set(group.map((o) => o.items)).size === 1;
+    console.log(`${P} SAME CUSTOMER ${maskPhone(group[0].phone)}: ${group.map((o) => `${o.reference} (${new Date(o.created_at).toISOString().slice(0, 16)}Z, ${o.items})`).join(' / ')} | gaps ${gaps.map((g) => (g >= 120 ? `${Math.round(g / 60)} h` : `${g} min`)).join(', ')} | ${sameItems ? 'SAME items: possible duplicate, check with the customer' : 'different items: likely separate orders'}`);
+  }
   const count = (v) => results.filter((r) => r.verdict === v).length;
   console.log(`${P} SUMMARY real waiting ${real.length}: by Skyfly ID ${count('IN_SHEET_BY_SKYFLY_ID')}, likely in sheet (same phone, within 3 h) ${count('LIKELY_IN_SHEET_SAME_PHONE_AND_TIME')}, same phone other time ${count('SAME_PHONE_DIFFERENT_TIME')}, possible (same name and time) ${count('POSSIBLE_SAME_NAME_AND_TIME_DIFFERENT_PHONE')}, not found ${count('NOT_FOUND_IN_SHEET')}; sheet rows matching no Skyfly order ${sheetOnly.length}`);
   for (const r of sheetOnly.slice(0, 60)) console.log(`${P} SHEET-ONLY "${r.tab}" row ${r.row} | time "${r.time}" | name ${maskName(r.name)} | phone ${maskPhone(r.phone)} | product "${String(r.product).slice(0, 60)}" | total "${r.total}"`);

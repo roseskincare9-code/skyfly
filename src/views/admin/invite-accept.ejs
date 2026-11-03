@@ -1,0 +1,20 @@
+<%- include('../partials/head', { title: 'Create your Super Admin account' }) %>
+<main class="narrow auth">
+  <a class="auth-brand" href="/admin/login"><span class="logo-mark"><%- include('../partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>Platform administration</small></span></a>
+  <div class="card" data-admin-invite-accept>
+    <h1>Create your Super Admin account</h1>
+    <p class="muted" style="margin-top:0">For <strong><%= invite.email %></strong>. This account administers the Skyfly platform and belongs to no business.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form method="post" action="/admin-invite/<%= token %>">
+      <%- include('../partials/csrf') %>
+      <label for="name">Full name</label>
+      <input id="name" name="name" required maxlength="200" autocomplete="name">
+      <label for="password">Password (at least 12 characters)</label>
+      <input id="password" name="password" type="password" minlength="12" required autocomplete="new-password">
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" name="confirm" type="password" minlength="12" required autocomplete="new-password">
+      <button type="submit">Create Super Admin account</button>
+    </form>
+  </div>
+</main>
+</body></html>

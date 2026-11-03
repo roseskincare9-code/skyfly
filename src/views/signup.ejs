@@ -33,6 +33,10 @@
       <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden">
         <label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off" value="">
       </div>
+      <% if (typeof turnstileSiteKey !== 'undefined' && turnstileSiteKey) { %>
+      <div class="cf-turnstile" data-turnstile data-sitekey="<%= turnstileSiteKey %>" data-theme="light" style="margin-top:12px"></div>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+      <% } %>
       <button type="submit"><%= askBusiness ? 'Create Business Account' : 'Create account' %></button>
     </form>
     <p class="muted">Already registered? <a href="/login">Sign in</a></p>
