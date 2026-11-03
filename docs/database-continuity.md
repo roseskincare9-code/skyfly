@@ -13,7 +13,9 @@ and no new database.
 | Render logical exports | None |
 | Skyfly backups | Daily at 02:17 UTC (GitHub Actions "Database backup"), plus on demand |
 | Backup contents | Every data table, through `/admin/backup.json` and the server's backup key. `test/backup.test.js` fails if a new table is missing from the backup |
-| Backup check | Every backup is restored into an empty throwaway PostgreSQL 16 database, and the row counts are compared before the file is kept |
+| Backup check | Every backup is restored into an empty throwaway PostgreSQL 16 database, and the row counts are compared before the file is kept. The encrypted file is then decrypted again and must match exactly (round trip) |
+| Isolated restore test | Actions → "Backup restore test (isolated)": downloads a **stored encrypted** backup, decrypts it, restores it into a throwaway database and compares every table. It never touches production |
+| Database size | Shown at each start-up in the read-only tenancy report ("Tenancy map" → `DATABASE size`) |
 | Backup storage | GitHub Actions artifact `skyfly-backup-encrypted`, AES-256 (`openssl -pbkdf2 -iter 250000`), kept **30 days** |
 | Passphrase | GitHub secret `BACKUP_PASSPHRASE` if set; otherwise the owner sign-in secret; otherwise Render → skyfly → Environment → `SKYFLY_BACKUP_KEY` |
 

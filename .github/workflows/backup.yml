@@ -51,8 +51,14 @@ jobs:
       - name: Encrypt (the plain file never leaves this machine)
         run: |
           openssl enc -aes-256-cbc -pbkdf2 -iter 250000 -salt -in backup.json -out skyfly-backup.json.enc -pass env:PASS
-          shred -u backup.json
-          ls -l skyfly-backup.json.enc
+          # Round trip: the encrypted file must decrypt back to exactly the checked backup.
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 -in skyfly-backup.json.enc -out roundtrip.json -pass env:PASS
+          plain=$(sha256sum backup.json | cut -d' ' -f1); back=$(sha256sum roundtrip.json | cut -d' ' -f1)
+          echo "Plain backup: $(stat -c %s backup.json) bytes; encrypted: $(stat -c %s skyfly-backup.json.enc) bytes"
+          echo "Encrypted file SHA-256 (to check an offline copy): $(sha256sum skyfly-backup.json.enc | cut -d' ' -f1)"
+          if [ "$plain" != "$back" ]; then echo "::error::The encrypted backup does not decrypt to the same file"; exit 1; fi
+          echo "Round trip OK: the encrypted file decrypts to the identical backup."
+          shred -u backup.json roundtrip.json
         env:
           # Your BACKUP_PASSPHRASE secret if set; otherwise the backup key itself (Render → skyfly → Environment).
           PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD || env.SKYFLY_BACKUP_KEY }}
