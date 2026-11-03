@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
 import { ensureLaroseForOwner, E2E_EMAIL_LIKE } from '../services/setup.js';
-import { requestResetEmail, findReset, completeReset } from '../services/passwordReset.js';
+import { requestResetEmail, findReset, completeReset, sendPasswordChanged } from '../services/passwordReset.js';
 import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS, createBusiness } from '../services/tenancy.js';
 import { slugify } from '../lib/auth.js';
 import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
@@ -175,6 +175,7 @@ export function authRoutes({ pool, config }) {
       const userId = await completeReset(pool, req.params.token, password);
       if (!userId) return res.status(404).render('reset-password', { valid: false, error: null, token: null, email: null });
       await audit(pool, { session: { userId }, ip: req.ip }, { action: 'password_reset.completed' });
+      await sendPasswordChanged(pool, config, userId, base(req)).catch((err) => console.error('Password-changed email failed:', err.message));
       // A reset link works only from the account's mailbox or from the platform owner; emailed ones confirm it.
       if (senderReady(config)) await markVerified(pool, userId);
       req.session.regenerate((err) => {
@@ -184,6 +185,57 @@ export function authRoutes({ pool, config }) {
     } catch (err) {
       next(err);
     }
+  });
+
+  // ---- Account: change password; ask for a copy of one's data or for account deletion (handled by a Super Admin).
+  const accountPage = async (req, res, { error = null, notice = null, status = 200 } = {}) => {
+    const { rows: [me] } = await pool.query('SELECT id, name, email, phone, created_at, terms_version, terms_accepted_at FROM users WHERE id = $1', [req.session.userId]);
+    const { rows: requests } = await pool.query('SELECT kind, status, created_at, handled_at, response FROM account_requests WHERE user_id = $1 ORDER BY id DESC LIMIT 10', [req.session.userId]);
+    res.set('Cache-Control', 'no-store');
+    res.status(status).render('account', { me, requests, error, notice });
+  };
+  const checkPassword = async (req) => {
+    const { rows: [u] } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
+    return Boolean(u && (await verifyPassword(String(req.body.current_password || ''), u.password_hash)));
+  };
+  router.get('/account', async (req, res, next) => {
+    if (!req.session.userId) return res.redirect('/login');
+    try { await accountPage(req, res, { notice: { password: 'Password changed. Other devices were signed out.', request: 'Request sent to the Skyfly team.' }[req.query.done] ?? null }); } catch (err) { next(err); }
+  });
+  router.post('/account/password', async (req, res, next) => {
+    if (!req.session.userId) return res.redirect('/login');
+    try {
+      if (!(await checkPassword(req))) return accountPage(req, res, { error: 'Your current password was not correct.', status: 403 });
+      const password = String(req.body.password || '');
+      if (password.length < 10) return accountPage(req, res, { error: 'Use at least 10 characters for the new password.', status: 400 });
+      if (password !== String(req.body.confirm || '')) return accountPage(req, res, { error: 'The two new passwords are not the same.', status: 400 });
+      const userId = req.session.userId;
+      await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, await hashPassword(password)]);
+      await pool.query("UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL", [userId]);
+      // Other devices are signed out; this one gets a fresh session.
+      await pool.query("DELETE FROM user_sessions WHERE sess->>'userId' = $1 AND sid <> $2", [String(userId), req.sessionID]);
+      await audit(pool, req, { action: 'password.changed' });
+      await sendPasswordChanged(pool, config, userId, base(req)).catch((err) => console.error('Password-changed email failed:', err.message));
+      req.session.regenerate((err) => {
+        if (err) return next(err);
+        req.session.userId = userId;
+        res.redirect('/account?done=password');
+      });
+    } catch (err) { next(err); }
+  });
+  router.post('/account/requests', async (req, res, next) => {
+    if (!req.session.userId) return res.redirect('/login');
+    try {
+      const kind = req.body.kind === 'deletion' ? 'deletion' : req.body.kind === 'export' ? 'export' : null;
+      if (!kind) return accountPage(req, res, { error: 'Choose what you are asking for.', status: 400 });
+      if (!(await checkPassword(req))) return accountPage(req, res, { error: 'Your current password was not correct.', status: 403 });
+      const { rows: [open] } = await pool.query("SELECT 1 FROM account_requests WHERE user_id = $1 AND kind = $2 AND status = 'open'", [req.session.userId, kind]);
+      if (open) return accountPage(req, res, { error: 'You already have an open request of this kind. The Skyfly team will reply.', status: 409 });
+      const note = String(req.body.note || '').trim().slice(0, 500) || null;
+      await pool.query('INSERT INTO account_requests (user_id, kind, note) VALUES ($1, $2, $3)', [req.session.userId, kind, note]);
+      await audit(pool, req, { action: `account.${kind}_requested` });
+      res.redirect('/account?done=request');
+    } catch (err) { next(err); }
   });
 
   // The Terms of Service and Privacy Policy accepted at registration (public pages).

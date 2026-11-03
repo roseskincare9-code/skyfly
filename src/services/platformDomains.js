@@ -104,6 +104,13 @@ export function domainSummary(d, now = new Date()) {
   if (statuses.some((s) => DANGER.test(s))) level = 'act';
   if (d.registered === false) { level = 'watch'; headline = 'Not registered yet'; }
   if (!expires && d.registered !== false) level = 'watch';
+  // Auto-renew that has not happened: the registry's expiry date has not moved although the date is close.
+  // Registrars usually renew well before expiry, so this means the renewal (often the payment) failed.
+  if (verified && daysLeft !== null && daysLeft <= 14) {
+    const why = d.manual_auto_renew === true ? 'Auto-renew is on, but the registry still shows the old expiry date: the renewal has not happened' : 'Auto-renew is not confirmed as on';
+    facts.push({ kind: 'error', text: `${why}. Check auto-renew and the payment method at the registrar, or renew by hand now.` });
+    level = 'act';
+  }
   return { expiresOn: expires ? expires.toISOString().slice(0, 10) : null, source, daysLeft, level, headline, facts };
 }
 
@@ -133,7 +140,8 @@ export async function remindDomains(pool, config, { now = new Date() } = {}) {
     else if (!admins.length) detail = 'No platform admin email address to send to.';
     else {
       const when = s.daysLeft < 0 ? `expired on ${s.expiresOn}` : `expires on ${s.expiresOn} (in ${s.daysLeft} day${s.daysLeft === 1 ? '' : 's'})`;
-      const subject = `${d.domain} ${s.daysLeft < 0 ? 'has expired' : `expires in ${s.daysLeft} days`}: check its renewal`;
+      const renewalStuck = s.source === 'verified' && s.daysLeft <= 14 && d.manual_auto_renew === true;
+      const subject = `${d.domain} ${s.daysLeft < 0 ? 'has expired' : `expires in ${s.daysLeft} days`}: ${renewalStuck ? 'auto-renew has not renewed it' : 'check its renewal'}`;
       const source = s.source === 'verified' ? 'read from the domain registry' : 'entered by you in Skyfly (not read from the registry)';
       const text = `${d.domain} ${when}. Expiry date ${source}.\n\nIf auto-renew is on at the registrar, check that the payment method there is valid. `
         + 'Skyfly confirms the renewal once the registry shows a later expiry date.\n'

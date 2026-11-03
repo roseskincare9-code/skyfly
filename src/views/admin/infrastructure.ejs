@@ -1,0 +1,83 @@
+<%- include('../partials/head', { title: 'Infrastructure' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main>
+  <p><a href="/admin">← Client businesses</a></p>
+  <div class="page-head"><div><h1>Infrastructure &amp; subscriptions</h1>
+    <p>What the platform runs on and pays for. Entered by you (not read from the providers, except domain registry dates on <a href="/admin/domains">Domains</a>). Skyfly does not pay or renew anything: each provider's own billing does. Never put passwords or API keys here.</p></div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+  <div class="grid" data-infra-totals>
+    <% if (!totals.length) { %><div class="stat"><div class="n">—</div><div class="l">Monthly spend (add services below)</div></div><% } %>
+    <% totals.forEach((t) => { %>
+      <div class="stat"><div class="n"><%= formatMoney(t.monthly, t.currency) %></div><div class="l">Monthly (<%= t.currency %>)</div></div>
+      <div class="stat"><div class="n"><%= formatMoney(t.yearly, t.currency) %></div><div class="l">Annualised (<%= t.currency %>)</div></div>
+    <% }) %>
+    <div class="stat"><div class="n"><%= services.filter((s) => s.summary.level === 'act').length %></div><div class="l">Need action</div></div>
+    <div class="stat"><div class="n"><%= services.filter((s) => s.summary.daysLeft !== null && s.summary.daysLeft >= 0 && s.summary.daysLeft <= 30).length %></div><div class="l">Renewing within 30 days</div></div>
+  </div>
+
+  <% services.filter((s) => s.summary.level !== 'ok').forEach((s) => { %>
+    <div class="<%= s.summary.level === 'act' ? 'error' : 'warn-box' %>" role="status" data-infra-alert><strong><%= s.name %>:</strong> <%= s.summary.alerts.map((a) => a.text).join(' ') %><% if (s.manage_url) { %> <a href="<%= s.manage_url %>" rel="noopener" target="_blank">Manage at <%= s.provider %></a><% } %></div>
+  <% }) %>
+
+  <div class="card">
+    <div class="table-wrap"><table class="stack" data-infra><thead><tr><th>Service</th><th>Plan &amp; price</th><th>Renewal</th><th>Payment</th><th></th></tr></thead><tbody>
+    <% services.forEach((s) => { %>
+      <tr data-service="<%= s.id %>">
+        <td><strong><%= s.name %></strong><br><span class="muted"><%= s.provider %> · <%= CATEGORIES[s.category] %></span><span class="pill" title="Entered by a Super Admin, not read from the provider">entered by you</span></td>
+        <td><%= s.plan || '—' %><br><span class="muted"><%= s.price_minor == null ? (s.billing_frequency === 'free' ? 'Free' : 'Price not set') : `${formatMoney(s.price_minor, s.currency)} · ${FREQUENCIES[s.billing_frequency]}` %></span></td>
+        <td><%= s.summary.date || '—' %><% if (s.summary.daysLeft !== null) { %><br><span class="muted"><%= s.summary.daysLeft < 0 ? `${-s.summary.daysLeft} days ago` : `in ${s.summary.daysLeft} days` %> · auto-renew <%= s.auto_renew === true ? 'on' : s.auto_renew === false ? 'OFF' : 'not confirmed' %></span><% } %></td>
+        <td><span class="pill <%= ['failed','overdue'].includes(s.payment_status) ? 'cancelled' : s.payment_status === 'paid' ? 'delivered' : '' %>"><%= PAYMENT_STATUSES[s.payment_status] %></span><% if (s.last_paid_on) { %><br><span class="muted">Last paid <%= String(s.last_paid_on).slice(0, 10) %><%= s.invoice_ref ? ` · ${s.invoice_ref}` : '' %></span><% } %></td>
+        <td><% if (s.manage_url) { %><a href="<%= s.manage_url %>" rel="noopener" target="_blank">Billing</a><br><% } %><a href="/admin/infrastructure?edit=<%= s.id %>#form">Edit</a></td>
+      </tr>
+    <% }) %>
+    <% if (!services.length) { %><tr><td colspan="5" class="muted">No services yet. Add Render (web service and database), Cloudflare (domain), Resend and any monitoring below.</td></tr><% } %>
+    </tbody></table></div>
+  </div>
+
+  <% const e = editId ? services.find((s) => s.id === editId) : null; const v = values || (e ? { ...e, price: e.price_minor == null ? '' : e.price_minor / 100, auto_renew: e.auto_renew === true ? 'yes' : e.auto_renew === false ? 'no' : '', last_paid_on: e.last_paid_on ? String(e.last_paid_on).slice(0, 10) : '', next_payment_on: e.next_payment_on ? String(e.next_payment_on).slice(0, 10) : '', expires_on: e.expires_on ? String(e.expires_on).slice(0, 10) : '' } : { currency: 'USD', billing_frequency: 'monthly', payment_status: 'unknown' }); %>
+  <form class="card" id="form" method="post" action="/admin/infrastructure<%= e ? `/${e.id}` : '' %>" data-infra-form>
+    <%- include('../partials/csrf') %>
+    <h2><%= e ? `Edit ${e.name}` : 'Add a service' %></h2>
+    <div class="two">
+      <div><label for="name">Service</label><input id="name" name="name" required maxlength="120" value="<%= v.name || '' %>" placeholder="e.g. Skyfly database"></div>
+      <div><label for="provider">Provider</label><input id="provider" name="provider" required maxlength="80" value="<%= v.provider || '' %>" placeholder="e.g. Render"></div>
+    </div>
+    <div class="two">
+      <div><label for="category">Category</label><select id="category" name="category"><% Object.entries(CATEGORIES).forEach(([k, l]) => { %><option value="<%= k %>" <%= v.category === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
+      <div><label for="plan">Plan</label><input id="plan" name="plan" maxlength="80" value="<%= v.plan || '' %>" placeholder="e.g. Basic-256mb"></div>
+    </div>
+    <div class="two">
+      <div><label for="price">Price</label><div class="row" style="flex-wrap:nowrap"><input name="currency" aria-label="Currency" maxlength="3" style="width:70px" value="<%= v.currency || 'USD' %>"><input id="price" name="price" inputmode="decimal" value="<%= v.price ?? '' %>"></div></div>
+      <div><label for="billing_frequency">Billing</label><select id="billing_frequency" name="billing_frequency"><% Object.entries(FREQUENCIES).forEach(([k, l]) => { %><option value="<%= k %>" <%= v.billing_frequency === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
+    </div>
+    <div class="two">
+      <div><label for="next_payment_on">Next payment</label><input id="next_payment_on" name="next_payment_on" type="date" value="<%= v.next_payment_on || '' %>"></div>
+      <div><label for="expires_on">Expiry (e.g. free plan end, domain)</label><input id="expires_on" name="expires_on" type="date" value="<%= v.expires_on || '' %>"></div>
+    </div>
+    <div class="two">
+      <div><label for="last_paid_on">Last payment</label><input id="last_paid_on" name="last_paid_on" type="date" value="<%= v.last_paid_on || '' %>"></div>
+      <div><label for="invoice_ref">Invoice reference</label><input id="invoice_ref" name="invoice_ref" maxlength="120" value="<%= v.invoice_ref || '' %>"></div>
+    </div>
+    <div class="two">
+      <div><label for="payment_status">Payment status</label><select id="payment_status" name="payment_status"><% Object.entries(PAYMENT_STATUSES).forEach(([k, l]) => { %><option value="<%= k %>" <%= v.payment_status === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
+      <div><label for="auto_renew">Auto-renew at the provider</label><select id="auto_renew" name="auto_renew"><option value="" <%= !v.auto_renew ? 'selected' : '' %>>Not confirmed</option><option value="yes" <%= v.auto_renew === 'yes' ? 'selected' : '' %>>On</option><option value="no" <%= v.auto_renew === 'no' ? 'selected' : '' %>>Off</option></select></div>
+    </div>
+    <label for="manage_url">Official billing / management link</label><input id="manage_url" name="manage_url" type="url" placeholder="https://dashboard.render.com/billing" value="<%= v.manage_url || '' %>">
+    <label for="notes">Notes (never passwords or keys)</label><textarea id="notes" name="notes" maxlength="1000"><%= v.notes || '' %></textarea>
+    <p class="row"><button type="submit"><%= e ? 'Save changes' : 'Add service' %></button><% if (e) { %><a class="btn secondary" href="/admin/infrastructure">Cancel</a><% } %></p>
+  </form>
+  <% if (e) { %><form method="post" action="/admin/infrastructure/<%= e.id %>/archive" style="margin-top:-8px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Archive this service</button></form><% } %>
+
+  <div class="card"><h2>Domains (registry dates read automatically)</h2>
+    <% if (!domains.length) { %><p class="muted">No domains added yet. <a href="/admin/domains">Add getskyfly.com on Domains</a> to have its expiry read from the registry.</p><% } %>
+    <% domains.forEach((d) => { %><p><strong><%= d.domain %></strong>: <%= d.headline %><%= d.expiresOn ? ` (${d.expiresOn}, ${d.source === 'verified' ? 'verified from the registry' : 'entered by you'})` : '' %></p><% }) %>
+  </div>
+
+  <% if (reminders.length) { %><div class="card"><h2>Recent renewal alerts</h2>
+    <% reminders.forEach((r) => { %><p class="muted" style="margin:4px 0"><%= formatDate(r.created_at) %> · <%= r.name %> · <%= r.threshold === 'failed' ? 'payment failed' : r.threshold === '0d' ? 'renewal date' : `${r.threshold.replace('d', '')} days before` %> (<%= String(r.due_on).slice(0, 10) %>) · <%= r.status === 'sent' ? 'emailed' : 'shown here only' %><%= r.detail ? ` — ${r.detail}` : '' %></p><% }) %></div><% } %>
+
+  <% if (archived.length) { %><div class="card"><h2>Archived</h2><% archived.forEach((s) => { %><div class="row" style="margin:4px 0"><span><%= s.name %> · <%= s.provider %></span><form method="post" action="/admin/infrastructure/<%= s.id %>/restore" style="margin:0"><%- include('../partials/csrf') %><button class="secondary" type="submit">Restore</button></form></div><% }) %></div><% } %>
+</main>
+</body></html>

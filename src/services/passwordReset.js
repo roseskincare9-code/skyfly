@@ -67,3 +67,21 @@ export async function requestResetEmail(pool, config, email, base) {
   });
   return { sent: true };
 }
+
+// "Your password was changed": sent after a reset or a change from the Account page (when Skyfly has an
+// email sender), so the owner of the mailbox notices a change they did not make. Never includes the password.
+export async function sendPasswordChanged(pool, config, userId, base) {
+  const sender = config.notifyEmail;
+  if (!sender) return { sent: false, reason: 'no sender' };
+  const { rows: [u] } = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [userId]);
+  if (!u || isE2eEmail(u.email)) return { sent: false, reason: 'no account' };
+  const help = `${base}/forgot-password`;
+  await sendEmail({ provider: sender.provider, apiKey: sender.apiKey, baseOverride: config.emailApiBase || null }, {
+    to: u.email, fromEmail: sender.fromEmail, fromName: sender.fromName || 'Skyfly', replyTo: null, headers: {},
+    idempotencyKey: `password-changed:${u.id}:${Date.now()}`,
+    subject: 'Your Skyfly password was changed',
+    text: `Hi ${u.name},\n\nThe password of your Skyfly account (${u.email}) was just changed, and other signed-in devices were signed out.\n\nIf this was not you, reset your password now: ${help}\nand contact Skyfly support.`,
+    html: `<p>Hi ${esc(u.name)},</p><p>The password of your Skyfly account (${esc(u.email)}) was just changed, and other signed-in devices were signed out.</p><p>If this was not you, <a href="${esc(help)}">reset your password now</a> and contact Skyfly support.</p>`,
+  });
+  return { sent: true };
+}
