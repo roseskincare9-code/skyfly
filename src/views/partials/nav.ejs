@@ -70,6 +70,6 @@
     </form>
     <a class="icon-btn bell" href="<%= base %>/orders?status=pending" title="<%= pend %> pending orders" aria-label="<%= pend %> pending orders"><%- include('icon', { name: 'bell' }) %><% if (pend) { %><span class="dot"><%= pend > 99 ? '99+' : pend %></span><% } %></a>
   <% } else { %><span class="top-title">Skyfly</span><% } %>
-  <span class="avatar" title="<%= user ? user.name + ' · ' + user.email : '' %>"><%= initials(user ? user.name : '') %></span>
+  <a class="avatar" href="/account" title="Your account<%= user ? ' · ' + user.name + ' · ' + user.email : '' %>" aria-label="Your account"><%= initials(user ? user.name : '') %></a>
   <form class="logout" method="post" action="/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link" type="submit"><%- include('icon', { name: 'logout', size: 16 }) %> Log out</button></form>
 </header>

@@ -14,6 +14,7 @@ import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminS
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
+import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, listServices, serviceSummary, totals as infraTotals, monthlyMinor } from '../services/infra.js';
 import { signupNeedsSender, signupBlockers } from './auth.js';
 import { audit } from '../lib/audit.js';
 import {
@@ -231,7 +232,15 @@ export function adminRoutes({ pool, config, load = null }) {
               (SELECT count(*)::int FROM orders WHERE NOT is_test AND created_at > now() - interval '30 days') AS orders_30d,
               (SELECT coalesce(sum(total_minor), 0)::bigint FROM orders WHERE NOT is_test AND currency = 'NGN' AND created_at > now() - interval '30 days') AS order_value_30d`, [E2E_EMAIL_LIKE]);
     const plans = businesses.reduce((acc, b) => { acc[b.plan ?? 'none'] = (acc[b.plan ?? 'none'] || 0) + 1; return acc; }, {});
-    res.render('admin/index', { businesses, counts, plans, platform, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+    // Subscription revenue: monthly value of open client subscriptions (internal accounts excluded), and overdue ones.
+    const paying = businesses.filter((b) => b.sub.open && b.subscription_status !== 'internal' && b.subscription_price_minor != null);
+    const mrr = paying.reduce((acc, b) => { acc[b.subscription_currency || 'NGN'] = (acc[b.subscription_currency || 'NGN'] || 0) + Number(b.subscription_price_minor); return acc; }, {});
+    const overdue = businesses.filter((b) => b.subscription_status === 'expired' || (b.subscription_status !== 'internal' && !b.sub.open));
+    // Infrastructure alerts and the age of the newest backup (taken through /admin/backup.json).
+    const infraAlerts = (await listServices(pool)).map((x) => ({ name: x.name, ...serviceSummary(x) })).filter((x) => x.level !== 'ok');
+    const { rows: [lastBackup] } = await pool.query("SELECT max(created_at) AS at FROM audit_log WHERE action = 'admin.backup_downloaded'");
+    const backupAgeHours = lastBackup?.at ? Math.round((Date.now() - new Date(lastBackup.at)) / 36e5) : null;
+    res.render('admin/index', { businesses, counts, plans, platform, mrr, overdue, infraAlerts, lastBackupAt: lastBackup?.at ?? null, backupAgeHours, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
   }));
 
   router.get('/admin/businesses/new', (req, res) => {
@@ -636,9 +645,91 @@ export function adminRoutes({ pool, config, load = null }) {
     const { rows: [me] } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
     return Boolean(me && (await verifyPassword(String(req.body.password || ''), me.password_hash)));
   };
+  // ---- Infrastructure: the platform's own services, renewals and spending (entered by a Super Admin).
+  const readService = (b) => {
+    const errors = [];
+    const name = String(b.name ?? '').trim().slice(0, 120);
+    const provider = String(b.provider ?? '').trim().slice(0, 80);
+    if (!name) errors.push('Name the service.');
+    if (!provider) errors.push('Name the provider.');
+    const priceText = String(b.price ?? '').replace(/[,\s₦$€£]/g, '');
+    const price = priceText === '' ? null : Number(priceText);
+    if (price !== null && (!Number.isFinite(price) || price < 0 || price > 1e9)) errors.push('Enter the price as a number.');
+    const date = (k) => { const v = String(b[k] ?? '').trim(); if (v && !validDate(v)) errors.push(`${k.replace(/_/g, ' ')} must be a date.`); return v || null; };
+    const url = String(b.manage_url ?? '').trim();
+    if (url && !/^https:\/\/[^\s]+$/.test(url)) errors.push('The management link must start with https://');
+    // Never store credentials here: refuse values that look like keys or passwords in the notes.
+    const notes = String(b.notes ?? '').trim().slice(0, 1000);
+    if (/\b(re_[A-Za-z0-9_]{10,}|sk_[A-Za-z0-9]{10,}|rnd_[A-Za-z0-9]{10,}|password\s*[:=])/i.test(notes)) errors.push('Do not put API keys or passwords in the notes. Keep them in Render → Environment or a password manager.');
+    return {
+      errors,
+      v: {
+        name, provider, category: CATEGORIES[b.category] ? b.category : 'other', plan: String(b.plan ?? '').trim().slice(0, 80) || null,
+        price_minor: price === null ? null : Math.round(price * 100), currency: /^[A-Z]{3}$/.test(String(b.currency ?? '')) ? b.currency : 'USD',
+        billing_frequency: FREQUENCIES[b.billing_frequency] ? b.billing_frequency : 'monthly', last_paid_on: date('last_paid_on'), next_payment_on: date('next_payment_on'), expires_on: date('expires_on'),
+        auto_renew: b.auto_renew === 'yes' ? true : b.auto_renew === 'no' ? false : null, manage_url: url || null,
+        payment_status: PAYMENT_STATUSES[b.payment_status] ? b.payment_status : 'unknown', invoice_ref: String(b.invoice_ref ?? '').trim().slice(0, 120) || null, notes: notes || null,
+      },
+    };
+  };
+  const infraPage = async (req, res, { error = null, status = 200, values = null } = {}) => {
+    const services = (await listServices(pool)).map((x) => ({ ...x, summary: serviceSummary(x), monthly: monthlyMinor(x) }));
+    const archived = await listServices(pool, { archived: true });
+    const { rows: reminders } = await pool.query(
+      'SELECT r.threshold, r.due_on, r.status, r.detail, r.created_at, s.name FROM infra_service_reminders r JOIN infra_services s ON s.id = r.service_id ORDER BY r.id DESC LIMIT 20');
+    const domains = (await listDomains(pool)).map((d) => ({ domain: d.domain, ...domainSummary(d) }));
+    res.status(status).render('admin/infrastructure', {
+      services, archived, reminders, domains, totals: infraTotals(services), CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, error, values,
+      editId: /^\d+$/.test(String(req.query.edit ?? '')) ? Number(req.query.edit) : null,
+      notice: { saved: 'Saved.', archived: 'Archived (kept for the record).', restored: 'Restored.' }[req.query.done] ?? null,
+    });
+  };
+  router.get('/admin/infrastructure', asyncHandler((req, res) => infraPage(req, res)));
+  router.post('/admin/infrastructure', asyncHandler(async (req, res) => {
+    const { errors, v } = readService(req.body);
+    if (errors.length) return infraPage(req, res, { error: errors.join(' '), status: 400, values: req.body });
+    const { rows: [row] } = await pool.query(
+      `INSERT INTO infra_services (name, provider, category, plan, price_minor, currency, billing_frequency, last_paid_on, next_payment_on, expires_on, auto_renew, manage_url, payment_status, invoice_ref, notes, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16) RETURNING id`,
+      [v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId]);
+    await audit(pool, req, { action: 'admin.infra_added', entityType: 'infra_service', entityId: row.id, details: { name: v.name, provider: v.provider, price: v.price_minor, currency: v.currency } });
+    res.redirect('/admin/infrastructure?done=saved');
+  }));
+  router.post('/admin/infrastructure/:id', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).render('error', { message: 'Service not found.' });
+    const { errors, v } = readService(req.body);
+    if (errors.length) return infraPage(req, res, { error: errors.join(' '), status: 400, values: req.body });
+    const { rows: [before] } = await pool.query('SELECT payment_status, next_payment_on, price_minor FROM infra_services WHERE id = $1', [req.params.id]);
+    if (!before) return res.status(404).render('error', { message: 'Service not found.' });
+    await pool.query(
+      `UPDATE infra_services SET name = $2, provider = $3, category = $4, plan = $5, price_minor = $6, currency = $7, billing_frequency = $8, last_paid_on = $9,
+              next_payment_on = $10, expires_on = $11, auto_renew = $12, manage_url = $13, payment_status = $14, invoice_ref = $15, notes = $16, updated_by = $17, updated_at = now() WHERE id = $1`,
+      [req.params.id, v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId]);
+    await audit(pool, req, { action: 'admin.infra_updated', entityType: 'infra_service', entityId: req.params.id, details: { before, after: { payment_status: v.payment_status, next_payment_on: v.next_payment_on, price: v.price_minor } } });
+    res.redirect('/admin/infrastructure?done=saved');
+  }));
+  router.post('/admin/infrastructure/:id/:action(archive|restore)', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).render('error', { message: 'Service not found.' });
+    await pool.query(`UPDATE infra_services SET archived_at = ${req.params.action === 'archive' ? 'now()' : 'NULL'}, updated_at = now() WHERE id = $1`, [req.params.id]);
+    await audit(pool, req, { action: `admin.infra_${req.params.action}d`, entityType: 'infra_service', entityId: req.params.id });
+    res.redirect(`/admin/infrastructure?done=${req.params.action}d`);
+  }));
+
+  // ---- Account requests (data export / deletion) sent by users from their Account page.
+  router.post('/admin/account-requests/:id/:action(done|declined)', asyncHandler(async (req, res) => {
+    if (!(await confirmPassword(req))) return accountsPage(req, res, { error: 'Your password was not correct.', status: 403 });
+    if (!/^\d+$/.test(req.params.id)) return accountsPage(req, res, { error: 'Request not found.', status: 404 });
+    const response = String(req.body.response ?? '').trim().slice(0, 500) || null;
+    const { rowCount } = await pool.query("UPDATE account_requests SET status = $2, response = $3, handled_by = $4, handled_at = now() WHERE id = $1 AND status = 'open'",
+      [req.params.id, req.params.action, response, req.session.userId]);
+    if (!rowCount) return accountsPage(req, res, { error: 'That request is not open.', status: 400 });
+    await audit(pool, req, { action: `admin.account_request_${req.params.action}`, entityType: 'account_request', entityId: req.params.id, details: { response } });
+    res.redirect('/admin/accounts?done=request');
+  }));
+
   // ---- Accounts: find any account; disable it (signs it out everywhere, blocks sign-in) or reactivate it.
   // Needs the acting Super Admin's password; recorded in the audit log. Business data is never touched.
-  const ACCOUNT_NOTICES = { disabled: 'Account disabled. It is signed out everywhere and cannot sign in.', enabled: 'Account reactivated. The person can sign in again.' };
+  const ACCOUNT_NOTICES = { request: 'Request updated.', disabled: 'Account disabled. It is signed out everywhere and cannot sign in.', enabled: 'Account reactivated. The person can sign in again.' };
   const accountsPage = async (req, res, { error = null, status = 200 } = {}) => {
     const q = String(req.query.q ?? req.body?.q ?? '').trim().slice(0, 200);
     const { rows: accounts } = await pool.query(
@@ -648,7 +739,11 @@ export function adminRoutes({ pool, config, load = null }) {
          FROM users u LEFT JOIN users d ON d.id = u.disabled_by
         WHERE u.email NOT LIKE $1 AND ($2 = '' OR u.email ILIKE '%' || $2 || '%' OR u.name ILIKE '%' || $2 || '%')
         ORDER BY u.disabled_at IS NULL, u.created_at DESC LIMIT 100`, [E2E_EMAIL_LIKE, q]);
-    res.status(status).render('admin/accounts', { accounts, q, me: req.session.userId, error, notice: ACCOUNT_NOTICES[req.query.done] ?? null });
+    const { rows: requests } = await pool.query(
+      `SELECT r.id, r.kind, r.note, r.created_at, u.id AS user_id, u.email, u.name,
+              (SELECT string_agg(b.name || ' (' || m.role || ')', ', ' ORDER BY b.name) FROM business_members m JOIN businesses b ON b.id = m.business_id WHERE m.user_id = u.id) AS businesses
+         FROM account_requests r JOIN users u ON u.id = r.user_id WHERE r.status = 'open' ORDER BY r.id`);
+    res.status(status).render('admin/accounts', { accounts, requests, q, me: req.session.userId, error, notice: ACCOUNT_NOTICES[req.query.done] ?? null });
   };
   router.get('/admin/accounts', asyncHandler((req, res) => accountsPage(req, res)));
   router.post('/admin/accounts/:userId/disable', asyncHandler(async (req, res) => {

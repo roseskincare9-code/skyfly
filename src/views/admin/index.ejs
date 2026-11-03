@@ -2,13 +2,22 @@
 <%- include('../partials/nav', { active: 'admin' }) %>
 <main>
   <div class="page-head"><div><h1>Client businesses</h1><p>Every workspace on this Skyfly platform, its subscription and setup.</p></div>
-    <div class="row"><a class="btn secondary" href="/admin/system">System status &amp; backup</a><a class="btn secondary" href="/admin/capacity">Capacity</a><a class="btn secondary" href="/admin/domains">Domains</a><a class="btn secondary" href="/admin/accounts">Accounts</a><a class="btn secondary" href="/admin/admins">Super Admins</a><a class="btn secondary" href="/admin/settings">Platform settings</a><a class="btn secondary" href="/admin/google">Google key</a><a class="btn" href="/admin/businesses/new">New client business</a></div></div>
+    <div class="row"><a class="btn secondary" href="/admin/system">System status &amp; backup</a><a class="btn secondary" href="/admin/capacity">Capacity</a><a class="btn secondary" href="/admin/domains">Domains</a><a class="btn secondary" href="/admin/infrastructure">Infrastructure</a><a class="btn secondary" href="/admin/accounts">Accounts</a><a class="btn secondary" href="/admin/admins">Super Admins</a><a class="btn secondary" href="/admin/settings">Platform settings</a><a class="btn secondary" href="/admin/google">Google key</a><a class="btn" href="/admin/businesses/new">New client business</a></div></div>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <div class="grid">
     <% [['active', 'Active'], ['trial', 'Trial'], ['expired', 'Expired'], ['locked', 'Locked'], ['internal', 'Internal']].forEach(([k, l]) => { %>
       <div class="stat"><div class="n"><%= counts[k] || 0 %></div><div class="l"><%= l %></div></div>
     <% }) %>
   </div>
+  <div class="grid" data-subscription-revenue>
+    <% const mrrEntries = Object.entries(mrr); %>
+    <div class="stat"><div class="n"><%= mrrEntries.length ? mrrEntries.map(([c, v]) => formatMoney(v, c)).join(' + ') : formatMoney(0, 'NGN') %></div><div class="l">Monthly subscription revenue (open client subscriptions)</div></div>
+    <div class="stat"><div class="n"><%= overdue.length %></div><div class="l">Expired / overdue subscriptions</div></div>
+    <div class="stat" data-backup-age><div class="n"><%= backupAgeHours === null ? '—' : backupAgeHours + ' h' %></div><div class="l">Since the last backup<%= lastBackupAt ? ` (${formatDate(lastBackupAt)})` : '' %></div></div>
+  </div>
+  <% if (backupAgeHours === null || backupAgeHours > 36) { %><div class="error" role="status" data-backup-alert><strong>Backups:</strong> <%= backupAgeHours === null ? 'no backup has been taken yet' : `the last backup is ${backupAgeHours} hours old` %>. The daily "Database backup" job (GitHub Actions) should run every day; check it.</div><% } %>
+  <% infraAlerts.forEach((x) => { %><div class="<%= x.level === 'act' ? 'error' : 'warn-box' %>" role="status" data-infra-alert><strong><%= x.name %>:</strong> <%= x.alerts.map((a) => a.text).join(' ') %> <a href="/admin/infrastructure">Infrastructure</a></div><% }) %>
+  <% if (overdue.length) { %><div class="warn-box" role="status"><strong>Expired subscriptions:</strong> <%= overdue.map((b) => b.name).join(', ') %></div><% } %>
   <div class="grid" data-platform-analytics>
     <div class="stat"><div class="n"><%= businesses.length %></div><div class="l">Businesses (<%= platform.new_businesses_30d %> new in 30 days)</div></div>
     <% Object.entries(PLANS).forEach(([k, p]) => { %><div class="stat"><div class="n"><%= plans[k] || 0 %></div><div class="l"><%= p.label %></div></div><% }) %>

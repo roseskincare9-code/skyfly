@@ -6,6 +6,12 @@
   <p class="muted" style="margin-top:0">Every Skyfly account (business owners, their teams and Super Admins). Disabling an account signs it out everywhere at once and blocks sign-in and password reset; its businesses, orders and records stay exactly as they are. Reactivate it any time. Both need your password and are kept in the audit log.</p>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (requests.length) { %><div class="card" data-account-requests><h2>Open requests from users</h2>
+    <p class="muted" style="margin-top:0">Data export: send the person their data (their business owners can also export orders and contacts themselves). Deletion: Skyfly never deletes automatically; disable the account below, then remove data as the retention policy allows, and record what was done.</p>
+    <% requests.forEach((r) => { %><div style="margin:8px 0;padding:8px 0;border-top:1px solid #eee">
+      <strong><%= r.kind === 'deletion' ? 'Account deletion' : 'Data export' %></strong> · <%= r.name %> &lt;<%= r.email %>&gt; · <%= formatDate(r.created_at) %><br><span class="muted"><%= r.businesses || 'no business' %><%= r.note ? ` · “${r.note}”` : '' %></span>
+      <form method="post" action="/admin/account-requests/<%= r.id %>/done" class="row" style="margin-top:6px"><%- include('../partials/csrf') %><input name="response" placeholder="What was done" maxlength="500"><input name="password" type="password" placeholder="Your password" required autocomplete="current-password" aria-label="Your password"><button class="secondary" type="submit">Mark done</button><button class="secondary" type="submit" formaction="/admin/account-requests/<%= r.id %>/declined">Decline</button></form>
+    </div><% }) %></div><% } %>
   <form method="get" action="/admin/accounts" class="row" style="margin-bottom:12px">
     <input name="q" value="<%= q %>" placeholder="Search by email or name" aria-label="Search accounts" style="flex:1;min-width:200px">
     <button class="secondary" type="submit">Search</button>
