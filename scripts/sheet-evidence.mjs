@@ -20,7 +20,7 @@ if (!svc) throw new Error('skyfly service not found');
 const hours = Number(process.env.HOURS || 12);
 // Which report: the sheet evidence (default) or the tenancy map (MATCH='Tenancy map').
 const MATCH = process.env.MATCH || 'Sheet evidence';
-const HEADER = MATCH === 'Sheet evidence' ? / tabs \(/ : / BEGIN /;
+const HEADER = MATCH === 'Sheet evidence' ? / tabs \(/ : /DATABASE size| BEGIN /;
 const start = new Date(Date.now() - hours * 3600000).toISOString();
 const logs = [];
 for (let page = 0, end = ''; page < 20; page += 1) {
@@ -30,7 +30,9 @@ for (let page = 0, end = ''; page < 20; page += 1) {
   end = `&endTime=${encodeURIComponent(r.nextEndTime)}`;
 }
 const lines = logs.map((l) => ({ at: l.timestamp, m: String(l.message || '') })).filter((l) => l.m.includes(MATCH)).sort((a, b) => a.at.localeCompare(b.at));
-const lastHeader = lines.map((l) => HEADER.test(l.m)).lastIndexOf(true);
+// The report's first line (DATABASE size for the tenancy map); BEGIN follows it.
+const firstOf = MATCH === 'Sheet evidence' ? HEADER : /DATABASE size/;
+const lastHeader = lines.map((l) => firstOf.test(l.m)).lastIndexOf(true);
 const run = lastHeader >= 0 ? lines.slice(lastHeader) : lines;
 console.log(`${lines.length} "${MATCH}" lines in the last ${hours} h; latest report (${run.length} lines) from ${run[0]?.at ?? '—'}:\n`);
 for (const l of run) console.log(l.m.replace(/^.*?(Sheet evidence \(read-only\) |Tenancy map \(read-only\): )/, ''));
