@@ -8,6 +8,7 @@ import { slugify } from '../lib/auth.js';
 import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { verifyTurnstile, allowTurnstile } from '../lib/turnstile.js';
+import { launchBlockers } from '../services/launchChecks.js';
 
 // The version of the Terms of Service and Privacy Policy a new account accepts (shown on /terms and /privacy).
 export const TERMS_VERSION = '2026-11-01';
@@ -19,6 +20,7 @@ export const signupNeedsCaptcha = (config) => Boolean(config.requireCaptchaForSi
 export const signupBlockers = (config) => [
   ...(signupNeedsSender(config) ? ['email sender (SKYFLY_NOTIFY_PROVIDER, SKYFLY_NOTIFY_API_KEY, SKYFLY_NOTIFY_FROM)'] : []),
   ...(signupNeedsCaptcha(config) ? ['bot check (TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY)'] : []),
+  ...(config.requireLaunchChecks ? launchBlockers(config) : []),
 ];
 
 export function authRoutes({ pool, config }) {

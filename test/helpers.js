@@ -37,6 +37,9 @@ export function makeConfig(overrides = {}) {
 export async function resetDatabase(pool) {
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(pool);
+  // Migration 049 records the production platform's own services and domain; tests start without them
+  // (each test that needs them adds its own).
+  await pool.query('DELETE FROM infra_services; DELETE FROM platform_domains;');
   // Tests start from "by invitation only" (migration 041 opens public registration in production);
   // each test that needs open registration opens it itself.
   await pool.query("UPDATE platform_settings SET value = '\"invite_only\"' WHERE key = 'client_signup'");

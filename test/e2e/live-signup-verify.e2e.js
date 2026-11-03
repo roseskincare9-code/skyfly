@@ -52,6 +52,11 @@ try {
     for (const f of ['name', 'business_name', 'email', 'phone', 'password', 'confirm', 'accept_terms']) assert(new RegExp(`name="${f}"`).test(r.text), `missing ${f}`);
   });
   if (!open) throw new Error('registration closed');
+  // With Cloudflare Turnstile on, only a person can complete registration: this script never bypasses it.
+  if (/data-turnstile/.test((await s.req('GET', '/signup')).text)) {
+    console.log('MANUAL  Registration has the Turnstile bot check: the rest of this test (verification email, login, password reset) must be done by a person once, using the checklist in docs/launch-checklist.md.');
+    throw new Error('registration closed');
+  }
 
   await step('registration', 'A new owner registers and is sent to "Confirm your email" (no dashboard before confirming)', async () => {
     const _csrf = await s.csrf('/signup');

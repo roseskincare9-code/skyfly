@@ -1,6 +1,7 @@
 import { platformSettings } from './services/tenancy.js';
 import { logTenancyMap } from './services/tenancyReport.js';
 import { signupBlockers } from './routes/auth.js';
+import { startLaunchChecks } from './services/launchChecks.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
@@ -64,8 +65,8 @@ googleRetry.unref();
 
 const server = app.listen(config.port, () => {
   console.log(`Skyfly listening on port ${config.port} (${config.env})`);
-  // Public registration as it really is (setting + email sender), for the logs and live checks.
-  platformSettings(pool).then((st) => {
+  // Public registration as it really is (settings + launch checks), for the logs and live checks.
+  startLaunchChecks(pool, config).then(() => platformSettings(pool)).then((st) => {
     const sender = config.notifyEmail ? `${config.notifyEmail.provider} from ${config.notifyEmail.fromEmail}` : null;
     const blockers = signupBlockers(config);
     const open = st.clientSignup === 'open' && !blockers.length;

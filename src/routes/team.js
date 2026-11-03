@@ -1,3 +1,4 @@
+import { platformSettings, planLimit } from '../services/tenancy.js';
 // Team members of one business: invite by email (a one-time link), change roles, remove.
 import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
@@ -73,6 +74,14 @@ export function teamRoutes({ pool, config }) {
   router.post('/invite', asyncHandler(async (req, res) => {
     const f = readInvite(req.body);
     if (f.errors.length) return render(req, res, { error: f.errors.join(' '), status: 400 });
+    // The plan's team size (members + pending invitations), when the Super Admin has set one.
+    const max = planLimit(await platformSettings(pool), req.business.plan, 'team_members');
+    if (max !== null) {
+      const { rows: [n] } = await pool.query(
+        `SELECT (SELECT count(*) FROM business_members WHERE business_id = $1)
+              + (SELECT count(*) FROM business_invites WHERE business_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()) AS used`, [req.business.id]);
+      if (Number(n.used) >= max) return render(req, res, { error: `Your plan includes up to ${max} team member${max === 1 ? '' : 's'} (including you and pending invitations). Remove someone or ask Skyfly about upgrading.`, status: 403 });
+    }
     const result = await inviteOrAdd(pool, req, config, { businessId: req.business.id, email: f.email, role: f.role });
     if (result.alreadyMember) return render(req, res, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
     if (result.error) return render(req, res, { error: result.error, status: 502 });

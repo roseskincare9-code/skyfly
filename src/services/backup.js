@@ -75,7 +75,8 @@ export async function restoreBackup(pool, backup) {
       const types = Object.fromEntries((await columnsOf(client, table)).map((c) => [c.column_name, c.udt_name]));
       const cols = data.columns.filter((c) => c in types);
       const late = LATE[table] ?? [];
-      if (table === 'platform_settings') await client.query('DELETE FROM platform_settings');
+      // Tables that migrations pre-fill (settings, the platform's own inventory) take the backup's rows instead.
+      if (['platform_settings', 'platform_domains', 'infra_services'].includes(table)) await client.query(`DELETE FROM ${table}`);
       for (const row of data.rows) {
         const values = cols.map((c) => (late.includes(c) ? null : decode(row[data.columns.indexOf(c)], types[c])));
         await client.query(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, values);

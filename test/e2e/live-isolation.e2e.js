@@ -19,7 +19,7 @@ const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^https:\/\/getskyfly\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY)) throw new Error('Set SKYFLY_URL');
 const RUN = String(process.env.GITHUB_RUN_ID || Date.now()).slice(-8);
 const PASSWORD = `Iso-${randomBytes(9).toString('base64url')}`;
-const TAG = { A: `Alpha${RUN}`, B: `Beta${RUN}` };
+const TAG = { A: `Alpha${RUN}`, B: `Beta${RUN}`, C: `Gamma${RUN}` };
 
 let failed = 0; let passed = 0;
 const stats = { requests: 0, crossTenant: 0, blocked: 0, leaks: 0, unauth: 0 };
@@ -90,9 +90,48 @@ const fill = (path, prefix, ids) => path.replace(/:(\w+)(\([^)]*\))?/g, (_, name
   return String((name === 'id' ? byId[prefix] : ids[name]) ?? PLACEHOLDER);
 });
 
-const A = { s: new Session() }; const B = { s: new Session() }; const staff = { s: new Session() }; const anon = new Session();
-const markers = () => [TAG.A, `${TAG.A.toLowerCase()}`, `+23480${RUN.slice(-8)}`].filter(Boolean);
-const leaks = (text) => markers().filter((m) => String(text ?? '').toLowerCase().includes(m.toLowerCase()));
+const A = { s: new Session() }; const B = { s: new Session() }; const C = { s: new Session() }; const staff = { s: new Session() }; const anon = new Session();
+const admin = new Session();
+const ADMIN_EMAIL = process.env.SKYFLY_ADMIN_EMAIL || '';
+const ADMIN_PASSWORD = process.env.SKYFLY_ADMIN_PASSWORD || '';
+// Test mailboxes: Resend's test inbox when the Resend key is available (invitations are then emailed and read
+// back through the Resend API), otherwise an address that can never receive mail.
+const testEmail = (label) => (process.env.RESEND_API_KEY ? `delivered+${label}-${RUN}@resend.dev` : `e2e-${label}-${RUN}@skyfly.invalid`);
+async function linkFromEmail(email, pathRe) {
+  for (let i = 0; i < 12; i += 1) {
+    const r = await fetch('https://api.resend.com/emails?limit=50', { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } });
+    if (r.status !== 200) throw new Error(`Resend API → HTTP ${r.status}`);
+    const hit = ((await r.json()).data || []).find((e) => (e.to || []).includes(email));
+    if (hit) {
+      const full = await (await fetch(`https://api.resend.com/emails/${hit.id}`, { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } })).json();
+      const m = `${full.html || ''} ${full.text || ''}`.match(pathRe);
+      if (m) return m[0];
+    }
+    await new Promise((res) => setTimeout(res, 5000));
+  }
+  throw new Error(`no email with a link reached ${email.replace(/\+.*@/, '+…@')} within 60 s`);
+}
+// A test business made the legitimate way when public registration needs a human (Turnstile): the Super Admin
+// creates it with an owner invitation, and the owner accepts it. No security check is bypassed.
+async function provisionViaAdmin(who, tag) {
+  const email = testEmail(`iso-${tag.toLowerCase()}`);
+  const r = await admin.post('/admin/businesses', { name: `Isolation ${tag} (test)`, currency: 'NGN', timezone: 'Africa/Lagos', subscription_status: 'internal', subscription_currency: 'NGN', price: '', owner_email: email }, '/admin/businesses/new');
+  assert(r.status === 200, `creating the business: HTTP ${r.status} ${r.text.match(/role="alert">([^<]+)/)?.[1] ?? ''}`);
+  let link = (r.text.match(/\/invite\/[A-Za-z0-9_-]{20,}/) || [])[0];
+  if (!link) link = new URL(await linkFromEmail(email, /https?:\/\/[^\s"'<>]+\/invite\/[A-Za-z0-9_-]{20,}/)).pathname;
+  const page = await who.s.get(link);
+  const _csrf = page.text.match(/name="_csrf" value="([^"]+)"/)?.[1];
+  const acc = await who.s.req('POST', link, { form: { _csrf, name: `${tag} Owner`, password: PASSWORD } });
+  assert(acc.status === 302, `accepting the invitation: HTTP ${acc.status}`);
+  const home = await who.s.get('/');
+  who.business = Number((home.location.match(/\/businesses\/(\d+)/) || acc.location.match(/\/businesses\/(\d+)/) || [])[1]);
+  assert(who.business, `no business after accepting (→ ${acc.location} / ${home.location})`);
+  who.base = `/businesses/${who.business}`;
+  who.email = email;
+  who.s.token = null; await who.s.csrf(who.base);
+}
+const markers = (tag = TAG.A) => [tag, tag.toLowerCase(), ...(tag === TAG.A ? [`+23480${RUN.slice(-8)}`] : [])];
+const leaks = (text, tag = TAG.A) => markers(tag).filter((m) => String(text ?? '').toLowerCase().includes(m.toLowerCase()));
 
 async function register(who, tag) {
   const s = who.s;
@@ -177,22 +216,31 @@ async function aView() {
 }
 
 try {
-  await step('Setup: Business A and Business B register through the public /signup (extra "admin" fields sent)', async () => {
-    await register(A, TAG.A); await register(B, TAG.B);
-    assert(A.business !== B.business, 'same business');
-    return `A = business #${A.business}, B = business #${B.business}`;
+  const viaAdmin = Boolean(ADMIN_EMAIL && ADMIN_PASSWORD);
+  await step(viaAdmin ? 'Setup: the Super Admin creates test businesses A, B and C with owner invitations; each owner accepts (no bot check bypassed)' : 'Setup: Business A, B and C register through the public /signup (extra "admin" fields sent)', async () => {
+    if (viaAdmin) {
+      const c = await admin.csrf('/admin/login');
+      const r = await admin.req('POST', '/admin/login', { form: { _csrf: c, email: ADMIN_EMAIL, password: ADMIN_PASSWORD, next: '/admin' } });
+      assert(r.status === 302, `Super Admin sign-in: HTTP ${r.status}`);
+      admin.token = null;
+      await provisionViaAdmin(A, TAG.A); await provisionViaAdmin(B, TAG.B); await provisionViaAdmin(C, TAG.C);
+    } else { await register(A, TAG.A); await register(B, TAG.B); await register(C, TAG.C); }
+    assert(new Set([A.business, B.business, C.business]).size === 3, 'businesses not distinct');
+    return `A = business #${A.business}, B = business #${B.business}, C = business #${C.business}`;
   });
-  if (!A.business || !B.business) throw new Error('setup failed');
+  if (!A.business || !B.business || !C.business) throw new Error('setup failed');
 
   await step('Setup: one of each record type in each business, through the dashboard', async () => {
-    const a = await seed(A, TAG.A); const b = await seed(B, TAG.B);
+    const a = await seed(A, TAG.A); const b = await seed(B, TAG.B); await seed(C, TAG.C);
     assert(A.productId && A.pageId && A.orderId && A.pixel, `A is missing core records (made: ${a.join(', ')}; ${A.pageError ?? ''})`);
     return `A: ${a.join(', ')} | B: ${b.length} record types`;
   });
 
   await step("Setup: A invites a staff member, who joins A as Staff", async () => {
-    const r = await A.s.post(`${A.base}/team/invite`, { email: `e2e-iso-staff-${RUN}@skyfly.invalid`, role: 'staff' });
-    const link = (r.text.match(/\/invite\/([A-Za-z0-9_-]+)/) || [])[1];
+    const staffEmail = testEmail('iso-staff');
+    const r = await A.s.post(`${A.base}/team/invite`, { email: staffEmail, role: 'staff' });
+    let link = (r.text.match(/\/invite\/([A-Za-z0-9_-]+)/) || [])[1];
+    if (!link && process.env.RESEND_API_KEY) link = (await linkFromEmail(staffEmail, /\/invite\/([A-Za-z0-9_-]{20,})/)).split('/invite/')[1];
     assert(link, `no invitation link (HTTP ${r.status})`);
     A.inviteId = idFrom(await A.s.get(`${A.base}/team`), /invites\/(\d+)\/revoke/);
     await staff.s.csrf(`/invite/${link}`);
@@ -235,6 +283,23 @@ try {
     assert(!bad.length, bad.slice(0, 5).join('; '));
     return `${routes.length} requests, all 404`;
   });
+
+  for (const [attacker, victim, an, vn] of [[C, B, 'C', 'B'], [A, C, 'A', 'C']]) {
+    await step(`${an} inside ${vn}'s workspace: all ${routes.length} routes (GET and POST, ${vn}'s real record IDs) → 404, nothing of ${vn} shown`, async () => {
+      const bad = [];
+      for (const [m, p, prefix] of routes) {
+        const url = victim.base + fill(p, prefix, victim);
+        const r = m === 'get' ? await attacker.s.get(url) : await attacker.s.req('POST', url, { form: { _csrf: attacker.s.token, ...BODY(victim) } });
+        stats.crossTenant += 1;
+        if (r.status === 404) stats.blocked += 1;
+        const l = leaks(r.text, TAG[vn]);
+        if (l.length) stats.leaks += 1;
+        if (r.status !== 404 || l.length) bad.push(`${m.toUpperCase()} ${url} → ${r.status}${l.length ? ' LEAK' : ''}`);
+      }
+      assert(!bad.length, bad.slice(0, 5).join('; '));
+      return `${routes.length} requests, all 404`;
+    });
+  }
 
   await step("B in its own workspace with A's record IDs in the URL (every ID route, GET and POST): nothing of A shown or changed", async () => {
     const bad = []; let n = 0;
@@ -368,6 +433,17 @@ try {
     assert(after === beforeA, `changed:\n before ${beforeA}\n after  ${after}`);
     assert(/\/products:200:[1-9]/.test(after) && /\/orders\/\d+:200:[1-9]/.test(after), `A cannot see its own records: ${after}`);
     return after;
+  });
+  if (viaAdmin) await step('Clean-up: the Super Admin disables the test owner and staff accounts (businesses and records kept, labelled test)', async () => {
+    const out = [];
+    for (const email of [A.email, B.email, C.email, testEmail('iso-staff')]) {
+      const page = await admin.get(`/admin/accounts?q=${encodeURIComponent(email)}`);
+      const id = (page.text.match(/data-account="(\d+)"/) || [])[1];
+      if (!id) continue;
+      const r = await admin.post(`/admin/accounts/${id}/disable`, { password: ADMIN_PASSWORD, reason: `Automated isolation test ${RUN} finished` }, '/admin/accounts');
+      out.push(r.status === 302 ? 'disabled' : `HTTP ${r.status}`);
+    }
+    return out.length ? out.join(', ') : 'nothing to disable here: the test accounts use automated e2e addresses, which Skyfly disables automatically after each run';
   });
 } finally {
   console.log(`\nSUMMARY  requests ${stats.requests}; cross-business attempts ${stats.crossTenant}; signed-out attempts ${stats.unauth}; blocked ${stats.blocked}; responses showing another business's data ${stats.leaks}`);
