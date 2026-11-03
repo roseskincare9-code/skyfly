@@ -14,7 +14,12 @@ for (const o of (await render('/owners?limit=20')).map((x) => x.owner ?? x)) {
 if (!svc) throw new Error('skyfly service not found');
 const vars = (await render(`/services/${svc.id}/env-vars?limit=100`)).map((x) => x.envVar ?? x);
 const key = vars.find((v) => v.key === 'SKYFLY_NOTIFY_API_KEY')?.value;
-if (!key) { console.error('SKYFLY_NOTIFY_API_KEY is not set on the skyfly service'); process.exit(0); }
+if (!key) {
+  // Names only (never values), on the skyfly service only, so a misnamed setting can be spotted.
+  console.log('SKYFLY_NOTIFY_API_KEY is not set on the skyfly service.');
+  console.log(`Setting names on the skyfly service: ${vars.map((v) => v.key).sort().join(', ')}`);
+  process.exit(0);
+}
 process.stderr.write('Resend key found on the service (masked).\n');
 console.log(`::add-mask::${key}`); // to the step log first, so the value never appears
 const { appendFileSync } = await import('node:fs');
