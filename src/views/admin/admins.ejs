@@ -6,6 +6,7 @@
   <p class="muted" style="margin-top:0">These accounts can open platform administration (after signing in to Super Admin) and, for support, any client's workspace; every such visit is logged. Business owners and their teams never appear here.</p>
   <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
   <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (typeof link !== 'undefined' && link) { %><div class="card" data-admin-invite-link><input readonly value="<%= link %>" aria-label="Invitation link" style="width:100%"></div><% } %>
   <div class="card">
     <div class="table-wrap"><table class="stack" data-admins><thead><tr><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
       <% admins.forEach((a) => { %><tr><td><%= a.name %></td><td><%= a.email %></td><td>
@@ -14,6 +15,19 @@
       </td></tr><% }) %>
     </tbody></table></div>
   </div>
+  <form class="card" method="post" action="/admin/admins/invite" data-admin-invite>
+    <%- include('../partials/csrf') %>
+    <h2>Create a separate Super Admin account</h2>
+    <p class="muted" style="margin-top:0">For an email that has no Skyfly account yet. The person gets a one-time link (48 hours) to set their name and password. The new account can administer the platform and belongs to no business, so platform administration stays separate from business ownership.</p>
+    <label for="invite_email">Their email</label>
+    <input id="invite_email" name="email" type="email" required>
+    <label for="invite_password">Your password (to confirm)</label>
+    <input id="invite_password" name="password" type="password" required autocomplete="current-password">
+    <p><button type="submit">Create invitation</button></p>
+  </form>
+  <% if (typeof invites !== 'undefined' && invites.length) { %><div class="card"><h2>Pending Super Admin invitations</h2>
+    <% invites.forEach((i) => { %><div class="row" style="margin:4px 0"><span><%= i.email %> <span class="muted">· until <%= formatDate(i.expires_at) %> · by <%= i.by_email %></span></span>
+      <form method="post" action="/admin/admins/invites/<%= i.id %>/revoke" style="margin:0"><%- include('../partials/csrf') %><button class="secondary" type="submit">Cancel</button></form></div><% }) %></div><% } %>
   <form class="card" method="post" action="/admin/admins">
     <%- include('../partials/csrf') %>
     <h2>Give an existing account Super Admin access</h2>

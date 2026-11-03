@@ -12,6 +12,16 @@ export async function logTenancyMap(pool) {
     `SELECT b.id, b.slug, b.name, b.subscription_status, b.plan, b.created_at,
             (SELECT count(*)::int FROM orders o WHERE o.business_id = b.id AND NOT o.is_test) AS real_orders,
             (SELECT count(*)::int FROM orders o WHERE o.business_id = b.id AND o.is_test) AS test_orders,
+            (SELECT max(o.created_at) FROM orders o WHERE o.business_id = b.id AND NOT o.is_test) AS last_real_order,
+            (SELECT count(*)::int FROM products x WHERE x.business_id = b.id) AS products,
+            (SELECT count(*)::int FROM landing_pages x WHERE x.business_id = b.id) AS pages,
+            (SELECT count(*)::int FROM email_contacts x WHERE x.business_id = b.id) AS contacts,
+            (SELECT count(DISTINCT x.phone)::int FROM orders x WHERE x.business_id = b.id AND NOT x.is_test) AS customers,
+            (SELECT count(*)::int FROM checkout_sessions x WHERE x.business_id = b.id) AS checkouts,
+            (SELECT count(*)::int FROM tracking_pixels x WHERE x.business_id = b.id) AS pixels,
+            (SELECT count(*)::int FROM sheet_connections x WHERE x.business_id = b.id) AS sheets,
+            (SELECT count(*)::int FROM api_keys x WHERE x.business_id = b.id AND x.revoked_at IS NULL) AS api_keys,
+            (SELECT count(*)::int FROM business_invites x WHERE x.business_id = b.id AND x.accepted_at IS NULL AND x.revoked_at IS NULL AND x.expires_at > now()) AS open_invites,
             coalesce((SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'role', m.role, 'admin', u.is_platform_admin, 'disabled', u.disabled_at IS NOT NULL) ORDER BY m.role, u.id)
                         FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = b.id), '[]') AS members
        FROM businesses b ORDER BY b.id`);
@@ -25,7 +35,7 @@ export async function logTenancyMap(pool) {
     const owners = b.members.filter((x) => x.role === 'owner').length;
     const testBusiness = /\(test\)$/.test(b.name);
     const noOwner = owners ? '' : testBusiness ? ' | no owner (labelled test business: its automated test accounts are disabled after each run)' : ' | WARNING: no owner';
-    console.log(`${P} business #${b.id} ${b.slug} "${b.name}" | ${b.subscription_status}${b.plan ? ` ${b.plan}` : ''} | orders ${b.real_orders} real + ${b.test_orders} test | members: ${m || 'none'}${noOwner}`);
+    console.log(`${P} business #${b.id} ${b.slug} "${b.name}" | ${b.subscription_status}${b.plan ? ` ${b.plan}` : ''} | created ${new Date(b.created_at).toISOString().slice(0, 10)} | orders ${b.real_orders} real + ${b.test_orders} test${b.last_real_order ? ` (last real ${new Date(b.last_real_order).toISOString().slice(0, 10)})` : ''} | customers ${b.customers}, contacts ${b.contacts}, products ${b.products}, pages ${b.pages}, checkouts ${b.checkouts}, pixels ${b.pixels}, sheets ${b.sheets}, API keys ${b.api_keys}, open invites ${b.open_invites} | members: ${m || 'none'}${noOwner}`);
   }
   // Orders not marked as test inside labelled test businesses: evidence for the owner (read-only).
   const { rows: odd } = await pool.query(

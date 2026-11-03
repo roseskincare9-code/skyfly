@@ -82,7 +82,7 @@ function workspaceRoutes() {
   list.push(['get', '', ''], ['get', '/activity', ''], ['get', '/subscription', ''], ['get', '/integrations', ''], ['get', '/sheet-backup', '']);
   return list;
 }
-const adminRoutes = () => routesOf('admin.js').filter(([, p]) => p.startsWith('/admin') && p !== '/admin/login' && p !== '/admin/logout');
+const adminRoutes = () => routesOf('admin.js').filter(([, p]) => (p === '/admin' || p.startsWith('/admin/')) && p !== '/admin/login' && p !== '/admin/logout');
 const PLACEHOLDER = 2147480000; // an ID no record has (for record types this run cannot create)
 const fill = (path, prefix, ids) => path.replace(/:(\w+)(\([^)]*\))?/g, (_, name, choice) => {
   if (choice) return choice.slice(1, -1).split('|')[0];

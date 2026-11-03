@@ -1,5 +1,6 @@
 import { platformSettings } from './services/tenancy.js';
 import { logTenancyMap } from './services/tenancyReport.js';
+import { signupBlockers } from './routes/auth.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
@@ -66,8 +67,9 @@ const server = app.listen(config.port, () => {
   // Public registration as it really is (setting + email sender), for the logs and live checks.
   platformSettings(pool).then((st) => {
     const sender = config.notifyEmail ? `${config.notifyEmail.provider} from ${config.notifyEmail.fromEmail}` : null;
-    const open = st.clientSignup === 'open' && (!config.requireEmailForSignup || sender);
-    console.log(`Public registration: ${open ? `OPEN, email confirmation required (${sender ?? 'no sender: confirmation off outside production'})` : st.clientSignup === 'open' ? 'CLOSED until an email sender is set (SKYFLY_NOTIFY_PROVIDER, SKYFLY_NOTIFY_API_KEY, SKYFLY_NOTIFY_FROM)' : 'CLOSED (Platform settings: by invitation only)'}`);
+    const blockers = signupBlockers(config);
+    const open = st.clientSignup === 'open' && !blockers.length;
+    console.log(`Public registration: ${open ? `OPEN, email confirmation required (${sender ?? 'no sender: confirmation off outside production'}), bot check ${config.turnstile ? 'Turnstile on' : 'off'}` : st.clientSignup === 'open' ? `CLOSED until set on Render: ${blockers.join('; ')}` : 'CLOSED (Platform settings: by invitation only)'}`);
   }).catch(() => {});
   logTenancyMap(pool).catch((err) => console.error('Tenancy map failed:', err.message));
   ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message))

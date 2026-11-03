@@ -200,7 +200,8 @@ describe('every workspace route', () => {
 
 describe('Super Admin area', () => {
   // "Leave Super Admin" only clears this session's own Super Admin sign-in, so it is harmless for anyone.
-  const adminRoutes = routesOf('admin.js').filter(([m, p]) => !(m === 'post' && p === '/admin/logout'));
+  // The public one-time Super Admin invitation link (/admin-invite/:token) is not an admin page; it has its own tests.
+  const adminRoutes = routesOf('admin.js').filter(([m, p]) => !(m === 'post' && p === '/admin/logout') && !p.startsWith('/admin-invite'));
 
   test('business owners get 404 for every Super Admin route, GET and POST', async () => {
     const before = await fingerprintA();
