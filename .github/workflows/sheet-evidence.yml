@@ -7,6 +7,11 @@ on:
       hours:
         description: How far back to look in the logs (hours)
         default: '12'
+      match:
+        description: Which start-up report
+        type: choice
+        default: Sheet evidence
+        options: [Sheet evidence, Tenancy map]
 permissions:
   contents: read
 jobs:
@@ -22,3 +27,4 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           HOURS: ${{ inputs.hours }}
+          MATCH: ${{ inputs.match }}

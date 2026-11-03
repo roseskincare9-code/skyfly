@@ -49,7 +49,7 @@
   <form class="card" method="post" action="/admin/businesses/<%= b.id %>/subscription">
     <%- include('../partials/csrf') %>
     <h2>Subscription details</h2>
-    <%- include('subscription-fields', { v: { subscription_status: b.subscription_status, subscription_currency: b.subscription_currency, price: b.subscription_price_minor == null ? '' : b.subscription_price_minor / 100, started_on: b.subscription_started_on, expires_on: b.subscription_expires_on, notes: b.subscription_notes } }) %>
+    <%- include('subscription-fields', { v: { plan: b.plan, subscription_status: b.subscription_status, subscription_currency: b.subscription_currency, price: b.subscription_price_minor == null ? '' : b.subscription_price_minor / 100, started_on: b.subscription_started_on, expires_on: b.subscription_expires_on, notes: b.subscription_notes } }) %>
     <div class="row"><button type="submit">Save</button></div>
   </form>
   <div class="row" style="margin-bottom:18px">

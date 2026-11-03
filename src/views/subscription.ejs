@@ -5,6 +5,7 @@
   <% const labels = { internal: 'Internal account', trial: 'Trial', active: 'Active', expired: 'Expired', locked: 'Locked' }; %>
   <div class="card">
     <dl class="kv">
+      <dt>Plan</dt><dd data-plan><%= business.plan && PLANS[business.plan] ? PLANS[business.plan].label : 'No plan chosen yet' %></dd>
       <dt>Status</dt><dd><span class="pill <%= subscription.open ? 'delivered' : 'cancelled' %>"><%= labels[subscription.status] %></span></dd>
       <% if (business.subscription_status !== 'internal') { %>
       <dt>Monthly price</dt><dd><%= business.subscription_price_minor == null ? '—' : formatMoney(business.subscription_price_minor, business.subscription_currency) %></dd>
