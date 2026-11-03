@@ -1,3 +1,9 @@
+<label for="plan">Plan</label>
+<select id="plan" name="plan">
+  <option value="" <%= !v.plan ? 'selected' : '' %>>No plan yet</option>
+  <% Object.entries(PLANS).forEach(([k, p]) => { %><option value="<%= k %>" <%= v.plan === k ? 'selected' : '' %>><%= p.label %> — <%= formatMoney(p.priceMinor, p.currency) %>/month</option><% }) %>
+</select>
+<p class="muted" style="font-size:13px;margin:4px 0 8px">Leave the monthly price empty to use the plan's price.</p>
 <div class="two">
   <div><label for="subscription_status">Status</label><select id="subscription_status" name="subscription_status">
     <% Object.entries(SUBSCRIPTION_LABELS).forEach(([k, l]) => { %><option value="<%= k %>" <%= (v.subscription_status || 'active') === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>

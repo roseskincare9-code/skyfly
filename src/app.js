@@ -1,3 +1,4 @@
+import { PLANS } from './lib/plans.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -69,6 +70,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   if (config.isProduction) app.set('trust proxy', 1);
 
   Object.assign(app.locals, {
+    PLANS,
     lineChart, donut, shortMoney,
     STATUS_COLORS: { pending: '#E9A23B', confirmed: '#8B7CF0', processing: '#5B8DEF', dispatched: '#3FB6C9', delivered: '#2FA77A', cancelled: '#E2667A', returned: '#B7A3AC' },
     greeting: () => { const h = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Africa/Lagos' }).format(new Date())); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; },

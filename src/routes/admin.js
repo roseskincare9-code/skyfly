@@ -11,6 +11,7 @@ import { verifyPassword } from '../lib/passwords.js';
 import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminSession.js';
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
+import { PLANS } from '../lib/plans.js';
 import { signupNeedsSender } from './auth.js';
 import { audit } from '../lib/audit.js';
 import {
@@ -157,7 +158,7 @@ export function adminRoutes({ pool, config, load = null }) {
   router.get('/admin', asyncHandler(async (req, res) => {
     await expireSubscriptions(pool);
     const { rows } = await pool.query(
-      `SELECT b.id, b.name, b.slug, b.currency, b.timezone, b.created_at, b.subscription_status, b.subscription_price_minor,
+      `SELECT b.id, b.name, b.slug, b.currency, b.timezone, b.created_at, b.subscription_status, b.subscription_price_minor, b.plan,
               b.subscription_currency, b.subscription_started_on, b.subscription_expires_on,
               (now() AT TIME ZONE b.timezone)::date::text AS local_today,
               (SELECT string_agg(u.email, ', ' ORDER BY u.email) FROM business_members m JOIN users u ON u.id = m.user_id
@@ -175,7 +176,16 @@ export function adminRoutes({ pool, config, load = null }) {
     const inAWeek = (b) => new Date(Date.parse(`${b.local_today}T00:00:00Z`) + 7 * 864e5).toISOString().slice(0, 10);
     const soon = businesses.filter((b) => b.sub.open && b.subscription_expires_on && b.subscription_expires_on <= inAWeek(b));
     const domainAlerts = (await listDomains(pool)).map((d) => ({ domain: d.domain, ...domainSummary(d) })).filter((d) => d.level !== 'ok');
-    res.render('admin/index', { businesses, counts, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+    // Platform-wide figures (real orders only; test orders excluded).
+    const { rows: [platform] } = await pool.query(
+      `SELECT (SELECT count(*)::int FROM users WHERE email NOT LIKE $1) AS accounts,
+              (SELECT count(*)::int FROM users WHERE is_platform_admin) AS admins,
+              (SELECT count(*)::int FROM users WHERE disabled_at IS NOT NULL) AS disabled,
+              (SELECT count(*)::int FROM businesses WHERE created_at > now() - interval '30 days') AS new_businesses_30d,
+              (SELECT count(*)::int FROM orders WHERE NOT is_test AND created_at > now() - interval '30 days') AS orders_30d,
+              (SELECT coalesce(sum(total_minor), 0)::bigint FROM orders WHERE NOT is_test AND currency = 'NGN' AND created_at > now() - interval '30 days') AS order_value_30d`, [E2E_EMAIL_LIKE]);
+    const plans = businesses.reduce((acc, b) => { acc[b.plan ?? 'none'] = (acc[b.plan ?? 'none'] || 0) + 1; return acc; }, {});
+    res.render('admin/index', { businesses, counts, plans, platform, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
   }));
 
   router.get('/admin/businesses/new', (req, res) => {
@@ -197,7 +207,13 @@ export function adminRoutes({ pool, config, load = null }) {
     if (started && expires && expires < started) errors.push('The expiry date is before the start date.');
     if (requireAll && ['trial', 'active'].includes(status) && !expires) errors.push('Set an expiry date for a client subscription.');
     const notes = String(body.notes ?? '').trim().slice(0, 1000) || null;
-    return { status, priceMinor: price === null ? null : Math.round(price * 100), currency, started: started || null, expires: expires || null, notes, errors };
+    // Plan: Business Pro or Agency VIP (or none). An empty price takes the plan's monthly price.
+    const plan = body.plan === undefined ? undefined : (PLANS[body.plan] ? body.plan : null);
+    if (body.plan && !PLANS[body.plan]) errors.push('Choose a plan from the list.');
+    let priceMinor = price === null ? null : Math.round(price * 100);
+    let cur = currency;
+    if (plan && priceMinor === null) { priceMinor = PLANS[plan].priceMinor; cur = PLANS[plan].currency; }
+    return { status, plan, priceMinor, currency: cur, started: started || null, expires: expires || null, notes, errors };
   }
 
   router.post('/admin/businesses', asyncHandler(async (req, res) => {
@@ -217,6 +233,7 @@ export function adminRoutes({ pool, config, load = null }) {
        VALUES ($1, $2, $3 || CASE WHEN EXISTS (SELECT 1 FROM businesses WHERE slug = $3) THEN '-' || substr(md5(random()::text), 1, 6) ELSE '' END,
                $4, $5, $6, $7, $8, $9, $10, $11, now()) RETURNING id`,
       [req.session.userId, name, slug || 'business', currency, timezone, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
+    if (sub.plan) await pool.query('UPDATE businesses SET plan = $2 WHERE id = $1', [b.id, sub.plan]);
     await audit(pool, req, { action: 'admin.business_created', businessId: b.id, details: { name, status: sub.status, expires: sub.expires, price: sub.priceMinor } });
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: invite.email, role: 'owner' });
     if (result.link || result.emailed || result.error) {
@@ -255,11 +272,12 @@ export function adminRoutes({ pool, config, load = null }) {
       `UPDATE businesses SET subscription_status = $2, subscription_price_minor = $3, subscription_currency = $4, subscription_started_on = $5,
               subscription_expires_on = $6, subscription_notes = $7, subscription_updated_at = now() WHERE id = $1`,
       [b.id, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
+    if (sub.plan !== undefined) await pool.query('UPDATE businesses SET plan = $2 WHERE id = $1', [b.id, sub.plan]);
     await audit(pool, req, {
       action, businessId: b.id, entityType: 'business', entityId: b.id,
       details: {
-        before: { status: b.subscription_status, expires: b.subscription_expires_on, price: b.subscription_price_minor },
-        after: { status: sub.status, expires: sub.expires, price: sub.priceMinor }, reference: sub.notes ?? undefined,
+        before: { status: b.subscription_status, expires: b.subscription_expires_on, price: b.subscription_price_minor, plan: b.plan },
+        after: { status: sub.status, expires: sub.expires, price: sub.priceMinor, ...(sub.plan !== undefined ? { plan: sub.plan } : {}) }, reference: sub.notes ?? undefined,
       },
     });
   }

@@ -9,6 +9,12 @@
       <div class="stat"><div class="n"><%= counts[k] || 0 %></div><div class="l"><%= l %></div></div>
     <% }) %>
   </div>
+  <div class="grid" data-platform-analytics>
+    <div class="stat"><div class="n"><%= businesses.length %></div><div class="l">Businesses (<%= platform.new_businesses_30d %> new in 30 days)</div></div>
+    <% Object.entries(PLANS).forEach(([k, p]) => { %><div class="stat"><div class="n"><%= plans[k] || 0 %></div><div class="l"><%= p.label %></div></div><% }) %>
+    <div class="stat"><div class="n"><%= platform.accounts %></div><div class="l">Accounts (<%= platform.admins %> Super Admin<%= platform.disabled ? `, ${platform.disabled} disabled` : '' %>)</div></div>
+    <div class="stat"><div class="n"><%= platform.orders_30d %></div><div class="l">Orders, last 30 days (<%= formatMoney(platform.order_value_30d, 'NGN') %>)</div></div>
+  </div>
   <% domainAlerts.forEach((d) => { %><div class="<%= d.level === 'act' ? 'error' : 'warn-box' %>" role="status" data-domain-alert><strong><%= d.domain %>:</strong> <%= d.headline %><%= d.expiresOn ? ` (${d.expiresOn}, ${d.source === 'verified' ? 'verified from the registry' : 'entered by you'})` : '' %>. <a href="/admin/domains">Domain details</a></div><% }) %>
   <% if (soon.length) { %><div class="warn-box" role="status"><strong>Expiring within 7 days:</strong> <%= soon.map((b) => `${b.name} (${b.subscription_expires_on})`).join(', ') %></div><% } %>
   <div class="card">
@@ -17,7 +23,7 @@
       <tr>
         <td><strong><%= b.name %></strong><br><span class="muted"><%= b.order_count %> orders<%= b.last_order_at ? ' · last ' + formatDate(b.last_order_at) : '' %></span></td>
         <td><%= b.owners || '—' %><% if (b.open_invites) { %><br><span class="muted"><%= b.open_invites %> invitation pending</span><% } %></td>
-        <td><span class="pill <%= b.sub.open ? 'delivered' : 'cancelled' %>"><%= SUBSCRIPTION_LABELS[b.sub.status] %></span><br><span class="muted"><%= b.subscription_price_minor == null ? '' : formatMoney(b.subscription_price_minor, b.subscription_currency) + '/month' %></span></td>
+        <td><span class="pill <%= b.sub.open ? 'delivered' : 'cancelled' %>"><%= SUBSCRIPTION_LABELS[b.sub.status] %></span><% if (b.plan && PLANS[b.plan]) { %> <span class="pill" data-plan><%= PLANS[b.plan].label %></span><% } %><br><span class="muted"><%= b.subscription_price_minor == null ? '' : formatMoney(b.subscription_price_minor, b.subscription_currency) + '/month' %></span></td>
         <td><%= b.subscription_status === 'internal' ? '—' : (b.subscription_expires_on || 'No date') %></td>
         <td><%= b.setup.done %>/<%= b.setup.total %><% if (b.setup.missing.length) { %><br><span class="muted">To do: <%= b.setup.missing.join(', ') %></span><% } %></td>
         <td><div class="row"><a class="btn secondary" href="/admin/businesses/<%= b.id %>">Manage</a><a class="btn secondary" href="/businesses/<%= b.id %>">Open</a></div></td>
