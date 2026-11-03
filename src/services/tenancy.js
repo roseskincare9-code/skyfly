@@ -65,6 +65,9 @@ export async function platformSettings(pool) {
     clientSignup: s.client_signup === 'open' ? 'open' : 'invite_only',
     trialDays: Number.isInteger(s.trial_days) ? s.trial_days : 7,
     renewalInstructions: typeof s.renewal_instructions === 'string' ? s.renewal_instructions : '',
+    // Per-plan limits set by the Super Admin ({ business_pro: { landing_pages, team_members }, agency_vip: {...} });
+    // a missing value means "no plan-specific limit" (the platform's usual limits apply).
+    planLimits: s.plan_limits && typeof s.plan_limits === 'object' ? s.plan_limits : {},
   };
 }
 
@@ -171,3 +174,9 @@ export async function createBusiness(db, { userId, name, slug, asAdmin = false, 
   await db.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, userId]);
   return { id: b.id, status };
 }
+
+// A plan's limit (whole number) or null when the Super Admin has not set one.
+export const planLimit = (settings, plan, key) => {
+  const v = plan ? settings.planLimits?.[plan]?.[key] : null;
+  return Number.isInteger(v) && v >= 0 ? v : null;
+};

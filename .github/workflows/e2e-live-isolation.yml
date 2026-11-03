@@ -26,9 +26,19 @@ jobs:
         run: node test/e2e/live-abuse.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
-      - name: Isolation audit (needs registration open or test accounts; skipped while registration is closed)
+      - name: Resend key from the service settings (masked; only to read the test inbox)
         if: always()
+        run: node scripts/resend-key-env.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Three-business isolation audit (A, B, C)
+        if: always()
+        # Test businesses are created by the Super Admin test account (secrets SKYFLY_ADMIN_EMAIL and
+        # SKYFLY_ADMIN_PASSWORD) with owner invitations, so the public bot check is never bypassed.
+        # Without those secrets it uses public registration, which only works while no bot check is required.
         run: |
-          if curl -fsS -o /dev/null "${{ inputs.url }}/signup"; then node test/e2e/live-isolation.e2e.js; else echo "Registration is closed: the isolation audit needs open registration to create its two test businesses (last full run: 41318450903)."; fi
+          if [ -n "$SKYFLY_ADMIN_EMAIL" ] || curl -fsS -o /dev/null "${{ inputs.url }}/signup"; then node test/e2e/live-isolation.e2e.js; else echo "::warning::Not run: add the SKYFLY_ADMIN_EMAIL and SKYFLY_ADMIN_PASSWORD secrets (a Super Admin test account), or open registration. Last full run: 41318450903."; fi
         env:
           SKYFLY_URL: ${{ inputs.url }}
+          SKYFLY_ADMIN_EMAIL: ${{ secrets.SKYFLY_ADMIN_EMAIL }}
+          SKYFLY_ADMIN_PASSWORD: ${{ secrets.SKYFLY_ADMIN_PASSWORD }}

@@ -12,12 +12,26 @@
       <option value="invite_only" <%= settings.clientSignup === 'invite_only' ? 'selected' : '' %>>By invitation only (you create their business)</option>
       <option value="open" <%= settings.clientSignup === 'open' ? 'selected' : '' %><%= locals.signupBlockers && signupBlockers.length ? ' disabled' : '' %>>Anyone may sign up and create a business (starts as a trial)<%= locals.signupBlockers && signupBlockers.length ? ' — needs set-up first' : '' %></option>
     </select>
+    <% if (locals.launch) { %><div class="muted" data-launch-checks style="font-size:13px;margin:6px 0">
+      <strong>Launch checks</strong> (registration opens only when both pass):<br>
+      Email: <%= launch.email ? `${launch.email.ok ? 'PASS' : 'FAIL'} — ${launch.email.detail} (${formatDate(launch.email.at)})` : 'not run yet' %><br>
+      Bot check: <%= launch.captcha ? `${launch.captcha.ok ? 'PASS' : 'FAIL'} — ${launch.captcha.detail} (${formatDate(launch.captcha.at)})` : 'not run yet' %>
+    </div><% } %>
     <% if (locals.signupBlockers && signupBlockers.length) { %><p class="muted" data-signup-needs-sender>Public registration opens once these are set on Render: <%= signupBlockers.join('; ') %>.</p><% } %>
     <label for="trial_days">Trial length for self sign-ups (days; 0 = locked until you activate it)</label>
     <input id="trial_days" name="trial_days" type="number" min="0" max="90" value="<%= settings.trialDays %>">
+    <fieldset data-plan-limits style="border:1px solid var(--border);border-radius:10px;padding:10px;margin:12px 0">
+      <legend>Plan limits (blank = no plan-specific limit)</legend>
+      <% Object.entries(PLANS).forEach(([k, p]) => { const l = settings.planLimits[k] || {}; %>
+        <div class="two"><div><label for="limit_<%= k %>_landing_pages"><%= p.label %>: landing pages</label><input id="limit_<%= k %>_landing_pages" name="limit_<%= k %>_landing_pages" type="number" min="0" max="1000" value="<%= l.landing_pages ?? '' %>"></div>
+        <div><label for="limit_<%= k %>_team_members"><%= p.label %>: team members (incl. owner)</label><input id="limit_<%= k %>_team_members" name="limit_<%= k %>_team_members" type="number" min="0" max="1000" value="<%= l.team_members ?? '' %>"></div></div>
+      <% }) %>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">Choosing a plan for a business applies its landing-page limit (you can still change one business's limit after). Team invitations stop at the plan's team size.</p>
+    </fieldset>
     <label for="renewal_instructions">Renewal instructions shown to expired clients</label>
     <textarea id="renewal_instructions" name="renewal_instructions" maxlength="2000"><%= settings.renewalInstructions %></textarea>
     <p><button type="submit">Save</button></p>
   </form>
+  <form method="post" action="/admin/launch-checks" style="margin-top:8px" data-run-launch-checks><%- include('../partials/csrf') %><button class="secondary" type="submit">Run launch checks now</button></form>
 </main>
 </body></html>

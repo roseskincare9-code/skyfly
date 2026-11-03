@@ -14,8 +14,10 @@ import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminS
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
+import { planLimit } from '../services/tenancy.js';
 import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, listServices, serviceSummary, totals as infraTotals, monthlyMinor } from '../services/infra.js';
 import { signupNeedsSender, signupBlockers } from './auth.js';
+import { runLaunchChecks, launchState } from '../services/launchChecks.js';
 import { audit } from '../lib/audit.js';
 import {
   ROLES, ROLE_LABELS, SUBSCRIPTION_STATUSES, SUBSCRIPTION_LABELS, platformSettings, savePlatformSetting,
@@ -327,7 +329,12 @@ export function adminRoutes({ pool, config, load = null }) {
       `UPDATE businesses SET subscription_status = $2, subscription_price_minor = $3, subscription_currency = $4, subscription_started_on = $5,
               subscription_expires_on = $6, subscription_notes = $7, subscription_updated_at = now() WHERE id = $1`,
       [b.id, sub.status, sub.priceMinor, sub.currency, sub.started, sub.expires, sub.notes]);
-    if (sub.plan !== undefined) await pool.query('UPDATE businesses SET plan = $2 WHERE id = $1', [b.id, sub.plan]);
+    if (sub.plan !== undefined) {
+      await pool.query('UPDATE businesses SET plan = $2 WHERE id = $1', [b.id, sub.plan]);
+      // A newly chosen plan brings its landing page limit (the per-business limit can still be changed after).
+      const pages = planLimit(await platformSettings(pool), sub.plan, 'landing_pages');
+      if (sub.plan && sub.plan !== b.plan && pages !== null) await pool.query('UPDATE businesses SET max_landing_pages = $2 WHERE id = $1', [b.id, pages]);
+    }
     await audit(pool, req, {
       action, businessId: b.id, entityType: 'business', entityId: b.id,
       details: {
@@ -833,9 +840,14 @@ export function adminRoutes({ pool, config, load = null }) {
   }));
 
   router.get('/admin/settings', asyncHandler(async (req, res) => {
-    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null, signupNeedsSender: signupNeedsSender(config), signupBlockers: signupBlockers(config) });
+    res.render('admin/settings', { settings: await platformSettings(pool), notice: req.query.done ? 'Saved.' : null, error: null, signupNeedsSender: signupNeedsSender(config), signupBlockers: signupBlockers(config), launch: launchState() });
   }));
 
+  router.post('/admin/launch-checks', asyncHandler(async (req, res) => {
+    await runLaunchChecks(pool, config);
+    await audit(pool, req, { action: 'admin.launch_checks_run' });
+    res.redirect('/admin/settings?done=1');
+  }));
   router.post('/admin/settings', asyncHandler(async (req, res) => {
     const trialDays = Number(req.body.trial_days);
     if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 90) {
@@ -849,7 +861,22 @@ export function adminRoutes({ pool, config, load = null }) {
     await savePlatformSetting(pool, 'client_signup', signup);
     await savePlatformSetting(pool, 'trial_days', trialDays);
     await savePlatformSetting(pool, 'renewal_instructions', String(req.body.renewal_instructions ?? '').trim().slice(0, 2000));
-    await audit(pool, req, { action: 'admin.settings_updated', details: { clientSignup: signup, trialDays } });
+    // Plan entitlements: blank = no plan-specific limit.
+    const limits = {};
+    for (const plan of Object.keys(PLANS)) {
+      limits[plan] = {};
+      for (const key of ['landing_pages', 'team_members']) {
+        const raw = String(req.body[`limit_${plan}_${key}`] ?? '').trim();
+        if (raw === '') continue;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0 || n > 1000) {
+          return res.status(400).render('admin/settings', { settings: await platformSettings(pool), notice: null, error: 'Plan limits must be whole numbers from 0 to 1000 (or blank).', signupNeedsSender: signupNeedsSender(config), signupBlockers: signupBlockers(config), launch: launchState() });
+        }
+        limits[plan][key] = n;
+      }
+    }
+    await savePlatformSetting(pool, 'plan_limits', limits);
+    await audit(pool, req, { action: 'admin.settings_updated', details: { clientSignup: signup, trialDays, planLimits: limits } });
     res.redirect('/admin/settings?done=1');
   }));
 

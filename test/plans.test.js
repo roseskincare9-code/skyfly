@@ -76,3 +76,24 @@ test('the tenancy map lists every business with masked members and flags unusual
   assert.match(text, /END accounts with no workspace: \d+ \(.*lo…@x\.test/);
   assert.doesNotMatch(text, /a@shop-a\.test|admin@skyfly\.test/, 'emails are masked');
 });
+
+test('plan limits: set in Platform settings, applied when a plan is chosen, team invitations stop at the plan size', async () => {
+  let _csrf = await csrfToken(admin, '/admin/settings');
+  await admin.post('/admin/settings').type('form').send({ _csrf, client_signup: 'open', trial_days: '7', limit_business_pro_landing_pages: '6', limit_business_pro_team_members: '2', limit_agency_vip_landing_pages: '' }).expect(302);
+  _csrf = await csrfToken(admin, '/admin/settings');
+  assert.equal((await admin.post('/admin/settings').type('form').send({ _csrf, client_signup: 'open', trial_days: '7', limit_agency_vip_team_members: 'many' })).status, 400);
+  const { rows: [s] } = await pool.query("SELECT value FROM platform_settings WHERE key = 'plan_limits'");
+  assert.deepEqual(s.value.business_pro, { landing_pages: 6, team_members: 2 });
+  // Agency VIP has no limits set: choosing it changes nothing; Business Pro brings 6 pages.
+  await setPlan(bizB, { plan: 'agency_vip' });
+  await setPlan(bizA, { plan: '' });
+  await setPlan(bizA, { plan: 'business_pro' });
+  const { rows } = await pool.query('SELECT id, max_landing_pages FROM businesses WHERE id = ANY($1) ORDER BY id', [[bizA, bizB]]);
+  assert.deepEqual(rows.map((r) => r.max_landing_pages), [6, 4]);
+  // Team of 2 (owner + 1): one invitation fits, the next is refused.
+  const invite = async (email) => { const c = await csrfToken(ownerA, `/businesses/${bizA}/team`); return ownerA.post(`/businesses/${bizA}/team/invite`).type('form').send({ _csrf: c, email, role: 'staff' }); };
+  assert.equal((await invite('staff1@shop-a.test')).status, 200);
+  const refused = await invite('staff2@shop-a.test');
+  assert.equal(refused.status, 403);
+  assert.match(refused.text, /up to 2 team members/);
+});

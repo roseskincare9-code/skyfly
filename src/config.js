@@ -61,6 +61,8 @@ export function loadConfig() {
     turnstile: process.env.TURNSTILE_SITE_KEY && process.env.TURNSTILE_SECRET_KEY
       ? { siteKey: process.env.TURNSTILE_SITE_KEY, secretKey: process.env.TURNSTILE_SECRET_KEY } : null,
     requireCaptchaForSignup: isProduction,
+    // Production also requires the automatic launch checks to pass (src/services/launchChecks.js).
+    requireLaunchChecks: isProduction,
     turnstileVerifyUrl: isProduction ? null : (process.env.TURNSTILE_VERIFY_URL || null),
     // Per-account limits for sign-in, registration and password reset (src/lib/authThrottle.js).
     authThrottle: true,
