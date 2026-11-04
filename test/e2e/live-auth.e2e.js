@@ -61,7 +61,7 @@ try {
   let biz;
   regOpen = (await (await fetch(`${SKYFLY}/signup`)).text()).includes('data-owner-signup');
   if (!regOpen) {
-    console.log('INFO  Public registration is closed (by invitation only): steps 5–8 (test registration) not run; the page shows "Registration is by invitation".');
+    console.log('INFO  Public registration is closed: steps 5–8 (test registration) not run; the page shows the reason, e.g. "Registration is by invitation".');
     await anon.goto(`${SKYFLY}/signup`);
     await shot(anon, '2b-signup-closed');
   }

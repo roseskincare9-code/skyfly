@@ -36,6 +36,14 @@ export function authRoutes({ pool, config }) {
     return (await platformSettings(pool)).clientSignup === 'open' && !signupBlockers(config).length;
   }
 
+  // Why registration is closed, said truthfully: by the platform owner's choice (invitation only), or only
+  // because email verification / the bot check are not set up yet (then it opens by itself once they are).
+  async function closedPage(res) {
+    const setting = (await platformSettings(pool)).clientSignup;
+    const pending = setting === 'open' && config.allowSignup ? signupBlockers(config) : [];
+    return res.status(404).render('signup-closed', { reason: pending.length ? 'setup' : 'invite_only' });
+  }
+
   // Creates an account. The first account ever becomes the platform owner.
   async function createUser({ name, email, password, phone = null, termsVersion = null }) {
     const passwordHash = await hashPassword(password);
@@ -247,7 +255,7 @@ export function authRoutes({ pool, config }) {
   router.get('/signup', async (req, res, next) => {
     try {
       if (req.session.userId && await signedIn(req, res, 'signup')) return;
-      if (!(await signupOpen())) return res.status(404).render('signup-closed');
+      if (!(await signupOpen())) return closedPage(res);
       if (config.turnstile) allowTurnstile(res);
       res.render('signup', { error: null, values: {}, askBusiness: await businessWithSignup(), turnstileSiteKey: config.turnstile?.siteKey ?? null });
     } catch (err) {
@@ -257,7 +265,7 @@ export function authRoutes({ pool, config }) {
 
   router.post('/signup', async (req, res, next) => {
     try {
-      if (!(await signupOpen())) return res.status(404).render('signup-closed');
+      if (!(await signupOpen())) return closedPage(res);
       if (req.session.userId) return res.status(409).render('error', { message: 'You are signed in. Sign out first to create a new business account.' });
       const name = String(req.body.name || '').trim().slice(0, 200);
       const email = String(req.body.email || '').trim().toLowerCase();

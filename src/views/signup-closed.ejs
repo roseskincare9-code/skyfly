@@ -1,9 +1,15 @@
 <%- include('partials/head', { title: 'Registration' }) %>
 <main class="narrow auth">
   <a class="auth-brand" href="/login"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
-  <div class="card" data-signup-closed>
+  <div class="card" data-signup-closed data-reason="<%= typeof reason !== 'undefined' ? reason : 'invite_only' %>">
+    <% if (typeof reason !== 'undefined' && reason === 'setup') { %>
+    <h1>Business registration opens soon</h1>
+    <p>Anyone will be able to create their own Skyfly business account here, no invitation needed. We are finishing the email confirmation and security checks that protect every new account; this page opens automatically as soon as they are ready.</p>
+    <p class="muted">If you received an invitation, you can use its link now.</p>
+    <% } else { %>
     <h1>Registration is by invitation</h1>
     <p>New business accounts are set up by the Skyfly team at the moment. If you were invited, open the link in your invitation.</p>
+    <% } %>
     <p class="muted">Already registered? <a href="/login">Sign in</a></p>
   </div>
 </main>
