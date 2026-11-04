@@ -31,7 +31,7 @@ for (let page = 0, end = ''; page < 20; page += 1) {
 }
 const lines = logs.map((l) => ({ at: l.timestamp, m: String(l.message || '') })).filter((l) => l.m.includes(MATCH)).sort((a, b) => a.at.localeCompare(b.at));
 // The report's first line (DATABASE size for the tenancy map); BEGIN follows it.
-const firstOf = MATCH === 'Sheet evidence' ? HEADER : /DATABASE size/;
+const firstOf = MATCH === 'Sheet evidence' ? HEADER : MATCH === 'Tenancy map' ? /DATABASE size/ : /./; // single-line reports: the latest line
 const lastHeader = lines.map((l) => firstOf.test(l.m)).lastIndexOf(true);
 const run = lastHeader >= 0 ? lines.slice(lastHeader) : lines;
 console.log(`${lines.length} "${MATCH}" lines in the last ${hours} h; latest report (${run.length} lines) from ${run[0]?.at ?? '—'}:\n`);

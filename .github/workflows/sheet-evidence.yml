@@ -11,7 +11,7 @@ on:
         description: Which start-up report
         type: choice
         default: Sheet evidence
-        options: [Sheet evidence, Tenancy map]
+        options: [Sheet evidence, Tenancy map, Launch checks, Public registration]
 permissions:
   contents: read
 jobs:
