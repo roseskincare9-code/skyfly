@@ -30,7 +30,10 @@ await step('Terms of Service and Privacy Policy pages are public', async () => {
 });
 await step('Registration: closed while email verification is unavailable, or open with the Terms checkbox', async () => {
   const r = await fetch(`${SKYFLY}/signup`); const t = await r.text();
-  if (r.status === 404) return '/signup → 404 "by invitation" (no email sender yet)';
+  if (r.status === 404) {
+    const reason = (t.match(/data-reason="([a-z_]+)"/) || [])[1] ?? 'unknown';
+    return `/signup → 404, reason "${reason}"${reason === 'setup' ? ': "Business registration opens soon" (email and bot-check settings not ready yet)' : ''}`;
+  }
   assert(r.status === 200 && /name="accept_terms"[^>]*required/.test(t) && /name="website"/.test(t), `/signup → ${r.status} without the Terms checkbox`);
   return '/signup open with required Terms checkbox and bot trap';
 });

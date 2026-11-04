@@ -75,3 +75,20 @@ test('registration (and the Sign Up button) stay closed until both checks pass f
   assert.ok(s.value.email.ok && s.value.captcha.ok);
   assert.doesNotMatch(JSON.stringify(s.value), /re_test_not_real|secret-key/, 'no keys stored');
 });
+
+test('a closed /signup says the true reason: "opens soon" while only the set-up is missing, "by invitation" when chosen', async () => {
+  const pending = setup({ ...prodLike, notifyEmail: null, turnstile: null });
+  const srv = pending.app.listen(0);
+  try {
+    await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
+    let r = await request(srv).get('/signup');
+    assert.equal(r.status, 404);
+    assert.match(r.text, /data-reason="setup"/);
+    assert.match(r.text, /registration opens soon/i);
+    assert.doesNotMatch(r.text, /by invitation/);
+    await pool.query("UPDATE platform_settings SET value = '\"invite_only\"' WHERE key = 'client_signup'");
+    r = await request(srv).get('/signup');
+    assert.match(r.text, /data-reason="invite_only"/);
+    assert.match(r.text, /Registration is by invitation/);
+  } finally { srv.close(); await pending.pool.end(); await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'"); }
+});
