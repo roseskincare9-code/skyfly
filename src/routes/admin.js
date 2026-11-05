@@ -422,6 +422,23 @@ export function adminRoutes({ pool, config, load = null }) {
 
   // A one-time password reset link for a member of this business, to pass on personally (e.g. when
   // Skyfly has no email sender). Shown once; works for 24 hours; logged.
+  // Ownership correction: after a business's new owner has accepted their invitation, a Super Admin can
+  // remove another member (e.g. a shared founder account) from that business. Needs the Super Admin's
+  // password; never removes the last owner; logged. Business data is untouched.
+  router.post('/admin/businesses/:id/members/:userId/remove', asyncHandler(async (req, res) => {
+    const b = await loadBusiness(req.params.id);
+    if (!b) return res.status(404).render('error', { message: 'Business not found.' });
+    if (!(await confirmPassword(req))) return renderBusiness(req, res, b, { error: 'Your password was not correct.', status: 403 });
+    const uid = /^\d+$/.test(req.params.userId) ? req.params.userId : '0';
+    const { rows: [m] } = await pool.query(
+      'SELECT m.role, u.email FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 AND m.user_id = $2', [b.id, uid]);
+    if (!m) return renderBusiness(req, res, b, { error: 'That person is not a member of this business.', status: 404 });
+    const { rows: [o] } = await pool.query("SELECT count(*)::int AS n FROM business_members WHERE business_id = $1 AND role = 'owner'", [b.id]);
+    if (m.role === 'owner' && o.n < 2) return renderBusiness(req, res, b, { error: 'This is the business\'s only owner. Invite the new owner first; once they have accepted, remove this account.', status: 400 });
+    await pool.query('DELETE FROM business_members WHERE business_id = $1 AND user_id = $2', [b.id, uid]);
+    await audit(pool, req, { action: 'admin.member_removed', businessId: b.id, entityType: 'user', entityId: uid, details: { email: m.email, role: m.role } });
+    return renderBusiness(req, res, b, { notice: `${m.email} was removed from ${b.name}. Their account and the business's records are unchanged.` });
+  }));
   router.post('/admin/businesses/:id/members/:userId/reset-link', asyncHandler(async (req, res) => {
     const b = await loadBusiness(req.params.id);
     if (!b) return res.status(404).render('error', { message: 'Business not found.' });

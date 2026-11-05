@@ -34,6 +34,13 @@ Updated 3 Nov 2026. ✅ done and verified · ⛔ blocked by an outside setting �
 ## 3. Business ownership
 - ✅ Separate Super Admin sign-in; invitation for an admin-only account (Super Admins → "Create a separate Super Admin account")
 - 🟡 Mapping for businesses #1–#5 (all owned by the founder account, which is also the only Super Admin). See the launch report.
+- ✅ Tools to apply it, all in /admin, each needing the Super Admin's password and logged; nothing is deleted:
+  1. Super Admins → "Create a separate Super Admin account" (a new email that belongs to no business).
+  2. Business page → "Invite" the business's own owner (one email per business, e.g. the ScaleForge owner).
+  3. When they have accepted: business page → People → "Remove from this business" next to the shared founder account
+     (refused while it is the only owner). The new owner then sees only that business; the Super Admin keeps support access.
+  4. Super Admins → remove Super Admin from the founder account (done by the new Super Admin), if the founder
+     account should become an ordinary owner (e.g. of Larose).
 
 ## 4. Security
 - ✅ Every workspace route enforces membership on the server; same-business database guards; route sweeps in tests
