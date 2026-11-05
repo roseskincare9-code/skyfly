@@ -1,0 +1,32 @@
+# Upgrades the EXISTING database skyfly-db to a paid instance type through the Render API (same database,
+# same data, same connection string). Manual only, and only with the exact confirmation text; without it,
+# it is a dry run that shows the current plan. Needs a payment method on the Render workspace.
+name: Database plan upgrade (skyfly-db)
+on:
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: New instance type
+        type: choice
+        default: basic_256mb
+        options: [basic_256mb, basic_1gb]
+      confirm:
+        description: Type exactly "upgrade skyfly-db" to upgrade (anything else = dry run)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/db-upgrade.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          PLAN: ${{ inputs.plan }}
+          CONFIRM: ${{ inputs.confirm }}
