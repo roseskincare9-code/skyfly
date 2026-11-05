@@ -116,6 +116,30 @@ show('database CPU (cores used)', await metric('cpu', db.id));
 show('database memory (MB)', await metric('memory', db.id), (v) => (v / 1048576).toFixed(0));
 
 console.log('\n== Backups and recovery (Render API)');
+// ---- Upgrade preparation (read-only): which database production really uses, and where to upgrade/pay.
+console.log('\n== Upgrade preparation (read-only; nothing is changed)');
+const ownerOf = owners.find((o) => o.id === (detail.owner?.id ?? db.ownerId ?? detail.ownerId)) ?? null;
+line('database id', detail.id ?? db.id);
+line('workspace', ownerOf ? `${ownerOf.name} (${ownerOf.type ?? 'workspace'})` : 'unknown');
+line('dashboard page', detail.dashboardUrl ?? `https://dashboard.render.com/d/${db.id}`);
+line('billing page', 'https://dashboard.render.com/billing (choose the workspace above first)');
+line('disk size (GB)', JSON.stringify(detail.diskSizeGB ?? 'not reported'));
+// Does the skyfly web service connect to THIS database? Compare host names only (no credentials printed).
+try {
+  const ci = (await api(`/postgres/${db.id}/connection-info`)).json ?? {};
+  const host = (u) => { try { return new URL(u).hostname; } catch { return null; } };
+  const internal = host(ci.internalConnectionString); const external = host(ci.externalConnectionString);
+  let svcHost = null;
+  if (webService) {
+    const vars = ((await api(`/services/${webService.id}/env-vars?limit=100`)).json || []).map((x) => x.envVar ?? x);
+    const v = vars.find((x) => x.key === 'DATABASE_URL');
+    if (v?.value) { console.log(`::add-mask::${v.value}`); svcHost = host(v.value); }
+  }
+  const same = svcHost && (svcHost === internal || svcHost === external || svcHost.startsWith(`${db.id}`));
+  line('production connection', svcHost ? (same ? `the skyfly web service's DATABASE_URL points to skyfly-db (host ${svcHost})` : `MISMATCH: DATABASE_URL host ${svcHost} is not skyfly-db's host (${internal ?? '?'})`) : 'DATABASE_URL not readable');
+} catch (err) { line('production connection', `check failed: ${err.message}`); }
+line('upgrade keeps data', 'changing the instance type keeps the same database, data and connection string (Render instance-type change)');
+
 for (const [label, path] of [['point-in-time recovery', `/postgres/${db.id}/recovery`], ['exports (logical backups)', `/postgres/${db.id}/export`]]) {
   const r = await api(path);
   line(label, `HTTP ${r.status} ${r.json ? JSON.stringify(r.json).slice(0, 400) : r.text}`);
