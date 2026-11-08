@@ -95,7 +95,7 @@ export function backupReportRoute({ pool, config }) {
   router.post('/admin/backup-report', express.json({ limit: '8kb' }), asyncHandler(async (req, res) => {
     const sent = /^Bearer (.+)$/.exec(req.get('authorization') || '')?.[1];
     const digest = (v) => createHash('sha256').update(v).digest();
-    if (!sent || !config.backupKey || !timingSafeEqual(digest(sent), digest(config.backupKey))) return res.status(401).json({ error: 'Backup key required.' });
+    if (!sent || !config.backupKey || !timingSafeEqual(digest(sent), digest(config.backupKey))) return res.status(404).json({ error: 'Not found.' });
     const b = req.body ?? {};
     const int = (v) => (v === undefined || v === null || v === '' ? null : Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : NaN);
     const row = {

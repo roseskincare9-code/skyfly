@@ -103,8 +103,8 @@ describe('renewal manager', () => {
 
 describe('backup status', () => {
   test('the backup job reports with the backup key only; wrong or missing key refused; bad input refused', async () => {
-    assert.equal((await report({ kind: 'backup', status: 'success' }, 'wrong'.repeat(10))).status, 401);
-    assert.equal((await request(server).post('/admin/backup-report').send({ kind: 'backup', status: 'success' })).status, 401);
+    assert.equal((await report({ kind: 'backup', status: 'success' }, 'wrong'.repeat(10))).status, 404);
+    assert.equal((await request(server).post('/admin/backup-report').send({ kind: 'backup', status: 'success' })).status, 404);
     assert.equal((await report({ kind: 'nope', status: 'success' })).status, 400);
     assert.equal((await report({ kind: 'backup', status: 'success', tables: -1 })).status, 400);
     const ok = await report({ kind: 'backup', status: 'success', run_id: '42', run_url: 'https://github.com/o/r/actions/runs/42', size_bytes: 6344992, sha256: 'a'.repeat(64), tables: 37, total_rows: 2300 });
