@@ -1,0 +1,29 @@
+# Activates public registration: Cloudflare Turnstile widget, Resend sending domain (+ its DNS records on
+# Cloudflare) and the six settings on the Render "skyfly" service, then a redeploy. Skyfly's own launch
+# checks open registration only when a real test email and the Turnstile secret both work.
+# Dry run unless confirm is exactly "activate signup". Prints no keys.
+name: Activate public signup (Resend + Turnstile)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "activate signup" to apply (anything else is a dry run)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/activate-signup.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          APPLY: ${{ inputs.confirm == 'activate signup' && '1' || '' }}

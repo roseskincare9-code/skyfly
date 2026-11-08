@@ -19,7 +19,9 @@ const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
 if (!/^https:\/\/[a-z0-9-]+\.onrender\.com$|^https:\/\/getskyfly\.com$|^http:\/\/localhost:\d+$/.test(SKYFLY)) throw new Error('Set SKYFLY_URL');
 const RUN = String(process.env.GITHUB_RUN_ID || Date.now()).slice(-8);
 const PASSWORD = `Iso-${randomBytes(9).toString('base64url')}`;
-const TAG = { A: `Alpha${RUN}`, B: `Beta${RUN}`, C: `Gamma${RUN}` };
+const TAG = { A: `SkillForge${RUN}`, B: `Beta${RUN}`, C: `Gamma${RUN}` };
+// Business names: A is "Skill Forge", B and C separate test businesses. All labelled "(test)".
+const bizName = (tag) => (tag === TAG.A ? `Skill Forge ${tag} (test)` : `Isolation ${tag} (test)`);
 
 let failed = 0; let passed = 0;
 const stats = { requests: 0, crossTenant: 0, blocked: 0, leaks: 0, unauth: 0 };
@@ -115,7 +117,7 @@ async function linkFromEmail(email, pathRe) {
 // creates it with an owner invitation, and the owner accepts it. No security check is bypassed.
 async function provisionViaAdmin(who, tag) {
   const email = testEmail(`iso-${tag.toLowerCase()}`);
-  const r = await admin.post('/admin/businesses', { name: `Isolation ${tag} (test)`, currency: 'NGN', timezone: 'Africa/Lagos', subscription_status: 'internal', subscription_currency: 'NGN', price: '', owner_email: email }, '/admin/businesses/new');
+  const r = await admin.post('/admin/businesses', { name: bizName(tag), currency: 'NGN', timezone: 'Africa/Lagos', subscription_status: 'internal', subscription_currency: 'NGN', price: '', owner_email: email }, '/admin/businesses/new');
   assert(r.status === 200, `creating the business: HTTP ${r.status} ${r.text.match(/role="alert">([^<]+)/)?.[1] ?? ''}`);
   let link = (r.text.match(/\/invite\/[A-Za-z0-9_-]{20,}/) || [])[0];
   if (!link) link = new URL(await linkFromEmail(email, /https?:\/\/[^\s"'<>]+\/invite\/[A-Za-z0-9_-]{20,}/)).pathname;
@@ -138,7 +140,7 @@ async function register(who, tag) {
   await s.csrf('/signup');
   const email = `e2e-iso-${tag.toLowerCase()}@skyfly.invalid`;
   // Also tries to become Super Admin through extra form fields (must be ignored).
-  const r = await s.post('/signup', { name: `${tag} Owner`, business_name: `Isolation ${tag} (test)`, email, phone: tag === TAG.A ? `+23480${RUN.slice(-8)}` : '+234 800 000 0002',
+  const r = await s.post('/signup', { name: `${tag} Owner`, business_name: bizName(tag), email, phone: tag === TAG.A ? `+23480${RUN.slice(-8)}` : '+234 800 000 0002',
     password: PASSWORD, confirm: PASSWORD, accept_terms: 'on', is_platform_admin: 'true', role: 'admin', isAdmin: '1' });
   assert(r.status === 302 && /^\/businesses\/\d+$|\/verify-email$/.test(r.location), `registration: HTTP ${r.status} → ${r.location} ${r.text.match(/role="alert">([^<]+)/)?.[1] ?? ''}`);
   assert(!r.location.endsWith('/verify-email'), 'email confirmation required: this run cannot open the emailed link');
@@ -153,7 +155,7 @@ const idFrom = (r, re) => { const m = (r.location + r.text).match(re); return m 
 async function seed(who, tag) {
   const { s, base } = who; const made = [];
   const ok = (name, id) => { if (id) made.push(name); return id; };
-  let r = await s.post(`${base}/settings`, { name: `Isolation ${tag} (test)`, whatsapp_number: tag === TAG.A ? `+23480${RUN.slice(-8)}` : '+234 800 000 0002', order_prefix: tag.slice(0, 2).toUpperCase(), currency: 'NGN' });
+  let r = await s.post(`${base}/settings`, { name: bizName(tag), whatsapp_number: tag === TAG.A ? `+23480${RUN.slice(-8)}` : '+234 800 000 0002', order_prefix: tag.slice(0, 2).toUpperCase(), currency: 'NGN' });
   if (r.status === 302) made.push('settings+WhatsApp');
   r = await s.post(`${base}/products`, { code: `${tag.toLowerCase()}-cream`, name: `${tag} Cream`, price: '5,000', description: `${tag} secret description` });
   r = await s.get(`${base}/products`);
@@ -229,6 +231,18 @@ try {
     return `A = business #${A.business}, B = business #${B.business}, C = business #${C.business}`;
   });
   if (!A.business || !B.business || !C.business) throw new Error('setup failed');
+
+  if (viaAdmin) await step('Super Admin sees all three businesses (Skill Forge, B, C), each with its own ID and owner', async () => {
+    const r = await admin.get('/admin');
+    assert(r.status === 200, `/admin: HTTP ${r.status}`);
+    const missing = [[A, TAG.A], [B, TAG.B], [C, TAG.C]].filter(([w, t]) => !r.text.includes(`/admin/businesses/${w.business}`) || !r.text.includes(t));
+    assert(!missing.length, `not listed: ${missing.map(([, t]) => t).join(', ')}`);
+    for (const w of [A, B, C]) {
+      const d = await admin.get(`/admin/businesses/${w.business}`);
+      assert(d.status === 200 && d.text.includes(w.email), `business #${w.business}: HTTP ${d.status}, owner email ${d.text.includes(w.email) ? 'shown' : 'missing'}`);
+    }
+    return `#${A.business} "${bizName(TAG.A)}", #${B.business}, #${C.business} listed with their owners`;
+  });
 
   await step('Setup: one of each record type in each business, through the dashboard', async () => {
     const a = await seed(A, TAG.A); const b = await seed(B, TAG.B); await seed(C, TAG.C);
@@ -375,7 +389,7 @@ try {
       const r = await staff.s.req('POST', `${A.base}/team/members/${A.userId}/role`, { form: { _csrf: staff.s.token, role: 'owner' } });
       if (r.status !== 403) bad.push(`staff role change → ${r.status}`);
     }
-    await A.s.post(`${A.base}/settings`, { name: `Isolation ${TAG.A} (test)`, whatsapp_number: `+23480${RUN.slice(-8)}`, order_prefix: 'AL', currency: 'NGN', is_platform_admin: 'true', role: 'admin' });
+    await A.s.post(`${A.base}/settings`, { name: bizName(TAG.A), whatsapp_number: `+23480${RUN.slice(-8)}`, order_prefix: 'AL', currency: 'NGN', is_platform_admin: 'true', role: 'admin' });
     await A.s.post(`${A.base}/team/invite`, { email: `e2e-iso-x-${RUN}@skyfly.invalid`, role: 'admin' });
     if ((await A.s.get('/admin')).status !== 404) bad.push('A reached /admin');
     const team = await A.s.get(`${A.base}/team`);
@@ -447,7 +461,7 @@ try {
   });
 } finally {
   console.log(`\nSUMMARY  requests ${stats.requests}; cross-business attempts ${stats.crossTenant}; signed-out attempts ${stats.unauth}; blocked ${stats.blocked}; responses showing another business's data ${stats.leaks}`);
-  console.log(`SUMMARY  test businesses: A #${A.business ?? '?'} "Isolation ${TAG.A} (test)", B #${B.business ?? '?'} "Isolation ${TAG.B} (test)"; staff of A: e2e-iso-staff-${RUN}@skyfly.invalid`);
+  console.log(`SUMMARY  test businesses: A #${A.business ?? '?'} "${bizName(TAG.A)}", B #${B.business ?? '?'} "${bizName(TAG.B)}", C #${C.business ?? '?'} "${bizName(TAG.C)}"; staff of A: e2e-iso-staff-${RUN}@skyfly.invalid`);
   console.log(failed ? `\n${failed} check(s) failed, ${passed} passed` : `\nAll ${passed} isolation checks passed`);
 }
 process.exit(failed ? 1 : 0);
