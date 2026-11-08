@@ -37,7 +37,7 @@
     </summary>
     <div class="biz-menu">
       <% bizList.forEach((b) => { %><a href="/businesses/<%= b.id %>" class="<%= hasBiz && Number(business.id) === Number(b.id) ? 'on' : '' %>"><span class="biz-avatar sm"><%= initials(b.name) %></span><%= b.name %></a><% }) %>
-      <a href="/" class="muted-link"><%- include('icon', { name: 'store', size: 16 }) %> All businesses</a>
+      <a href="/?all=1" class="muted-link"><%- include('icon', { name: 'store', size: 16 }) %> All businesses</a>
     </div>
   </details>
 

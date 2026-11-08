@@ -18,10 +18,14 @@ export function businessRoutes({ pool }) {
           WHERE m.user_id = $1 ORDER BY b.created_at`,
         [req.session.userId],
       );
-      const { rows: [me] } = await pool.query('SELECT is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
+      const { rows: [me] } = await pool.query('SELECT is_platform_admin, last_business_id FROM users WHERE id = $1', [req.session.userId]);
       me.is_platform_admin = me.is_platform_admin && adminVerified(req);
       // A client with exactly one business goes straight to it.
       if (rows.length === 1 && !me.is_platform_admin && req.query.all !== '1') return res.redirect(`/businesses/${rows[0].id}`);
+      // An account with several businesses returns to the one it last opened (only if still a member);
+      // "Businesses" (/?all=1) lists them all to switch.
+      const last = rows.find((b) => Number(b.id) === Number(me.last_business_id));
+      if (last && req.query.all !== '1') return res.redirect(`/businesses/${last.id}`);
       // Offer one-click Larose setup until the Larose landing page is registered by anyone (platform owner only).
       const { rows: [larose] } = await pool.query("SELECT 1 FROM landing_pages WHERE slug = 'larosenigeria'");
       const settings = await platformSettings(pool);

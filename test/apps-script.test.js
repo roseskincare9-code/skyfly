@@ -132,7 +132,7 @@ describe('Apps Script spreadsheet connection', () => {
     assert.equal(script.rows.length, before, 'checking adds nothing');
     const stranger = await signUp(app, { email: 'stranger@other.test' });
     await stranger.get('/b/larose-nigeria/google-sheets').expect(404);
-    const sc = await csrfToken(stranger, '/');
+    const sc = await csrfToken(stranger, '/?all=1');
     const denied = await stranger.post(`${base}/orders/${row.id}/sheet-check`).type('form').send({ _csrf: sc });
     assert.ok([403, 404].includes(denied.status), `another account gets ${denied.status}`);
   });

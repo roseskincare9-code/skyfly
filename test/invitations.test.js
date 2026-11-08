@@ -28,7 +28,7 @@ before(async () => {
   await resetDatabase(pool);
   admin = await signUp(app, { email: 'admin@skyfly.test' });
   for (const name of ['Shop A', 'Shop B']) {
-    const _csrf = await csrfToken(admin, '/');
+    const _csrf = await csrfToken(admin, '/?all=1');
     await admin.post('/businesses').type('form').send({ _csrf, name }).expect(302);
   }
   [bizA, bizB] = (await pool.query("SELECT id FROM businesses WHERE name IN ('Shop A', 'Shop B') ORDER BY name")).rows.map((r) => r.id);

@@ -23,12 +23,12 @@ test('dashboard redirects to login when signed out', async () => {
 test('owner can sign up, create a business, log out and log back in', async () => {
   const agent = await signUp(app, { email: 'owner@example.com' });
 
-  let _csrf = await csrfToken(agent, '/');
+  let _csrf = await csrfToken(agent, '/?all=1');
   await agent.post('/businesses').type('form').send({ _csrf, name: 'Rose Skincare' }).expect(302);
   const dashboard = await agent.get('/').expect(200);
   assert.match(dashboard.text, /Rose Skincare/);
 
-  _csrf = await csrfToken(agent, '/');
+  _csrf = await csrfToken(agent, '/?all=1');
   await agent.post('/logout').type('form').send({ _csrf }).expect(302);
   await agent.get('/').expect(302);
 
@@ -75,7 +75,7 @@ test('one-click Larose setup creates the business, packages and landing page onc
   assert.doesNotMatch(home.text, /Set up Larose Natural Skincare Nigeria/, 'offer disappears once done');
   // Another account cannot take it over.
   const other = await signUp(app, { name: 'Other', email: 'not-larose@example.com' });
-  const otherCsrf = await csrfToken(other, '/');
+  const otherCsrf = await csrfToken(other, '/?all=1');
   await other.post('/setup/larose').type('form').send({ _csrf: otherCsrf }).expect(404);
 });
 

@@ -101,7 +101,7 @@ describe('import from an address in the dashboard', () => {
   });
 
   test('another account cannot import into this business, and a missing CSRF token is refused', async () => {
-    const _csrf = await csrfToken(other, '/');
+    const _csrf = await csrfToken(other, '/?all=1');
     await other.post(`/businesses/${shop}/landing-pages/import-url`).type('form').send({ _csrf, page_url: 'https://shop.example.com/promo/' }).expect(404);
     await owner.post(`/businesses/${shop}/landing-pages/import-url`).type('form').send({ page_url: 'https://shop.example.com/promo/' }).expect(403);
   });

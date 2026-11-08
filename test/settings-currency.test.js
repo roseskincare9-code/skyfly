@@ -15,7 +15,7 @@ async function saveSettings(fields) {
 before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@larose.test' });
-  const _csrf = await csrfToken(owner, '/');
+  const _csrf = await csrfToken(owner, '/?all=1');
   await owner.post('/businesses').type('form').send({ _csrf, name: 'Larose UK' }).expect(302);
   ({ rows: [{ id }] } = await pool.query("SELECT id FROM businesses WHERE name = 'Larose UK'"));
 });

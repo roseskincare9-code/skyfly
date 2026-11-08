@@ -33,7 +33,7 @@ const publish = async ({ base, versionId }) => {
 before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@second.test' });
-  const _csrf = await csrfToken(owner, '/');
+  const _csrf = await csrfToken(owner, '/?all=1');
   await owner.post('/businesses').type('form').send({ _csrf, name: 'Second Shop' }).expect(302);
   biz = (await pool.query("SELECT id FROM businesses WHERE name = 'Second Shop'")).rows[0].id;
   await pool.query("INSERT INTO products (business_id, code, name, price_minor) VALUES ($1, 'cream', 'Second Cream', 900000)", [biz]);

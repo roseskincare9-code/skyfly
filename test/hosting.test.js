@@ -223,14 +223,14 @@ describe('unsafe uploads are rejected', () => {
   test('uploads need a CSRF token and an owner', async () => {
     await owner.post(`/businesses/${businessId}/landing-pages/upload`).attach('file', Buffer.from('<html></html>'), 'a.html').expect(403);
     const other = await signUp(app, { name: 'Other', email: 'other@x.test' });
-    const _csrf = await csrfToken(other, '/');
+    const _csrf = await csrfToken(other, '/?all=1');
     await other.post(`/businesses/${businessId}/landing-pages/upload`).field('_csrf', _csrf)
       .attach('file', Buffer.from('<html></html>'), 'a.html').expect(404);
     await request(app).post(`/businesses/${businessId}/landing-pages/upload`).attach('file', Buffer.from('<html></html>'), 'a.html').expect(302).expect('Location', '/login');
   });
 
   test('other multipart posts are refused by CSRF protection', async () => {
-    const _csrf = await csrfToken(owner, '/');
+    const _csrf = await csrfToken(owner, '/?all=1');
     await owner.post(`/businesses/${businessId}/settings`).field('_csrf', _csrf).field('name', 'X').expect(403);
   });
 });

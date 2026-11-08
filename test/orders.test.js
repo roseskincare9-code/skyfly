@@ -275,7 +275,7 @@ describe('dashboard', () => {
     const intruder = await signUp(app, { name: 'Intruder', email: 'intruder@example.com' });
     const { rows: [order] } = await pool.query('SELECT id FROM orders LIMIT 1');
     await intruder.get(`/businesses/${businessId}/orders/${order.id}`).expect(404);
-    const _csrf = await csrfToken(intruder, '/');
+    const _csrf = await csrfToken(intruder, '/?all=1');
     await intruder.post(`/businesses/${businessId}/orders/${order.id}/status`).type('form').send({ _csrf, status: 'cancelled' }).expect(404);
   });
 

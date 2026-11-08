@@ -250,7 +250,7 @@ describe('subscriptions', () => {
   test('with open sign-up, a new client creates a business that starts as a trial', async () => {
     await form(admin, '/admin/settings', { client_signup: 'open', trial_days: '5', renewal_instructions: 'Pay to account 0123456789 and send the receipt on WhatsApp.' }, '/admin/settings');
     const newbie = await signUp(app, { name: 'New Client', email: 'new@client.test' });
-    const _csrf = await csrfToken(newbie, '/');
+    const _csrf = await csrfToken(newbie, '/?all=1');
     const res = await newbie.post('/businesses').type('form').send({ _csrf, name: 'Newbie Naturals' }).expect(302);
     const id = res.headers.location.match(/businesses\/(\d+)/)[1];
     const { rows: [b] } = await pool.query('SELECT subscription_status, subscription_expires_on, (now() AT TIME ZONE timezone)::date::text AS today FROM businesses WHERE id = $1', [id]);

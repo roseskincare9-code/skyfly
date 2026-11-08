@@ -43,7 +43,7 @@ describe('order API authentication', () => {
 
   test('another registered website cannot submit orders for this page', async () => {
     const other = await signUp(app, { name: 'Other', email: 'other@shop.test' });
-    let _csrf = await csrfToken(other, '/');
+    let _csrf = await csrfToken(other, '/?all=1');
     await other.post('/businesses').type('form').send({ _csrf, name: 'Other Shop' }).expect(302);
     await pool.query(
       `INSERT INTO landing_pages (business_id, slug, name, url, status)
