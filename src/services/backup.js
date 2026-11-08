@@ -14,7 +14,7 @@ export const TABLE_ORDER = [
   'audit_log',
 ];
 export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets', 'email_verifications', 'auth_attempts', 'admin_invites']; // sign-ins, migration bookkeeping, one-time links and short-lived sign-in attempt counts are not data
-const LATE = { businesses: ['default_sheet_connection_id'], landing_pages: ['published_version_id'] };
+const LATE = { users: ['last_business_id'], businesses: ['default_sheet_connection_id'], landing_pages: ['published_version_id'] };
 
 async function columnsOf(db, table) {
   const { rows } = await db.query(

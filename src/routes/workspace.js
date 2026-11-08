@@ -37,6 +37,8 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
       return res.redirect(`/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
     }
     const b = access.business;
+    // Remember the member's own workspace (never a Super Admin's visit to a client's).
+    if (!access.viaAdmin) await pool.query('UPDATE users SET last_business_id = $2 WHERE id = $1 AND last_business_id IS DISTINCT FROM $2', [req.session.userId, b.id]);
     req.business = b;
     req.role = access.role;
     res.locals.business = b;
