@@ -1,14 +1,17 @@
 # Skyfly launch checklist (live)
 
-Updated 3 Nov 2026. ✅ done and verified · ⛔ blocked by an outside setting · 🟡 needs the owner's approval · ⬜ to do after an unblock.
+Updated 8 Nov 2026. ✅ done and verified · ⛔ blocked by an outside setting · 🟡 needs the owner's approval · ⬜ to do after an unblock.
 
 ## 1. Database continuity
 - ✅ Daily encrypted backup (AES-256), restore-checked, round-trip checked; 30-day retention
 - ✅ Isolated restore of the **stored** encrypted backup into a throwaway database ("Backup restore test (isolated)")
 - ✅ Upgrade, downtime and rollback plan: `docs/database-continuity.md`, `docs/capacity-and-upgrade-plan.md`
-- 🟡 **Upgrade `skyfly-db` to Basic-256mb before 14 Nov 13:40 UTC.** Render → `skyfly-db` → Settings → Instance type.
-  About $7/month with 1 GB storage included; extra storage $0.30/GB/month; paid databases get point-in-time recovery.
-  Render's upgrade screen shows the exact price before you confirm.
+- ✅ **`skyfly-db` upgraded in place to Basic-1gb on 6 Nov 2026** (Render API: plan basic_1gb, available, no expiry;
+  same database and connection string; records verified against the backups before and after). About $19 + $0.30
+  storage a month. Render bills after use: confirm the first invoice (expected early December) at
+  https://dashboard.render.com/billing and record it in Platform admin → Infrastructure → "Record payment / renewal".
+- ✅ Backup results reported to Skyfly (System status), failures shown on the dashboard and emailed to Super Admins;
+  "no successful backup for 36 hours" alerts once a day
 - ⬜ Offline copy: Actions → "Database backup" → latest green run → download `skyfly-backup-encrypted`; compare
   its SHA-256 with the run log; keep it offline. Decrypt with the passphrase described in `docs/database-continuity.md`.
 

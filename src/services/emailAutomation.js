@@ -17,7 +17,7 @@ import { subscriptionState, expireSubscriptions } from './tenancy.js';
 import { classifyCheckouts } from './checkouts.js';
 import { planOrderNotifications, sendOrderNotifications } from './orderNotifications.js';
 import { runDomainJobs } from './platformDomains.js';
-import { remindInfra } from './infra.js';
+import { remindInfra, remindBackups } from './infra.js';
 
 const RETRY_MINUTES = [5, 30, 120];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -285,6 +285,7 @@ export async function runEmailJobs(pool, config) {
   // never stops the other jobs.
   const domains = await runDomainJobs(pool, config).catch((err) => ({ error: String(err.message).slice(0, 200) }));
   const infraReminders = await remindInfra(pool, config).catch((err) => ({ error: String(err.message).slice(0, 200) }));
+  await remindBackups(pool, config).catch(() => null);
   return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned, domainReminders: domains.reminders?.length ?? 0, infraReminders: Array.isArray(infraReminders) ? infraReminders.length : 0, ...(domains.error ? { domainError: domains.error } : {}) };
 }
 

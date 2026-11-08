@@ -58,9 +58,19 @@ jobs:
         env:
           PASS: ${{ secrets.BACKUP_PASSPHRASE || secrets.SKYFLY_OWNER_PASSWORD || env.SKYFLY_BACKUP_KEY }}
       - name: Restore into the empty throwaway database and compare every table
-        run: node scripts/restore-backup.mjs backup.json
+        run: |
+          node scripts/restore-backup.mjs backup.json
+          node -e "const b=JSON.parse(require('fs').readFileSync('backup.json','utf8'));const t=Object.values(b.tables);require('fs').writeFileSync('backup-facts.json',JSON.stringify({size_bytes:require('fs').statSync('skyfly-backup.json.enc').size,sha256:process.argv[1],tables:t.length,total_rows:t.reduce((n,x)=>n+x.rows.length,0)}))" "$(sha256sum skyfly-backup.json.enc | cut -d' ' -f1)"
         env:
           DATABASE_URL: postgres://restore:restore@localhost:5432/restore_test
       - name: Remove the plain file
         if: always()
         run: shred -u backup.json 2>/dev/null || true
+      - name: Report the result to Skyfly
+        if: always()
+        run: node scripts/report-backup.mjs
+        env:
+          SKYFLY_URL: https://skyfly-gybf.onrender.com
+          KIND: restore_test
+          STATUS: ${{ job.status }}
+          DETAIL: Restored backup run ${{ steps.pick.outputs.run_id }} into a throwaway database
