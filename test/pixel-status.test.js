@@ -15,7 +15,7 @@ const statusOf = async () => {
 before(async () => {
   await resetDatabase(pool);
   owner = await signUp(app, { email: 'owner@status.test' });
-  const _csrf = await csrfToken(owner, '/');
+  const _csrf = await csrfToken(owner, '/?all=1');
   await owner.post('/businesses').type('form').send({ _csrf, name: 'Status Shop' }).expect(302);
   biz = (await pool.query("SELECT id FROM businesses WHERE name = 'Status Shop'")).rows[0].id;
 });

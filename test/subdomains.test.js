@@ -36,7 +36,7 @@ before(async () => {
   await resetDatabase(pool);
   admin = await signUp(withDomain, { name: 'Platform Owner', email: 'owner@platform.test' });
   for (const name of ['Glow', 'Beauty']) {
-    const _csrf = await csrfToken(admin, '/');
+    const _csrf = await csrfToken(admin, '/?all=1');
     const res = await admin.post('/businesses').type('form').send({ _csrf, name }).expect(302);
     ids[name] = Number(res.headers.location.match(/businesses\/(\d+)/)[1]);
   }

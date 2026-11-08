@@ -401,7 +401,7 @@ describe('business isolation', () => {
   let other; let otherBiz;
   before(async () => {
     other = await signUp(app, { email: 'other@shop.test' });
-    const _csrf = await csrfToken(other, '/');
+    const _csrf = await csrfToken(other, '/?all=1');
     await other.post('/businesses').type('form').send({ _csrf, name: 'Other Shop' }).expect(302);
     otherBiz = (await pool.query("SELECT id FROM businesses WHERE name = 'Other Shop'")).rows[0].id;
   });

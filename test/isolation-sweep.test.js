@@ -82,7 +82,7 @@ async function fingerprintA() {
 }
 
 async function newBusiness(agent, name) {
-  const _csrf = await csrfToken(agent, '/');
+  const _csrf = await csrfToken(agent, '/?all=1');
   await agent.post('/businesses').type('form').send({ _csrf, name }).expect(302);
   return (await pool.query('SELECT id FROM businesses WHERE name = $1', [name])).rows[0].id;
 }
