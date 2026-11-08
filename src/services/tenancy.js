@@ -120,6 +120,18 @@ export const INVITE_PROBLEMS = {
   expired: 'This invitation has expired. Ask the business owner (or the Skyfly team) for a new one.',
 };
 
+// Only a Super Admin may belong to more than one business (database trigger, migration 052).
+export const ONE_BUSINESS_MESSAGE = 'This email address already belongs to another business on Skyfly. Each account is linked to one business only: use a different email address for this business.';
+export const isOneBusinessError = (err) => /skyfly_one_business/.test(String(err?.message));
+// Whether an email already belongs to an account that is a member of a business other than this one
+// (Super Admin accounts excepted).
+export async function belongsElsewhere(db, email, businessId) {
+  const { rows: [r] } = await db.query(
+    `SELECT 1 FROM users u JOIN business_members m ON m.user_id = u.id
+      WHERE u.email = $1 AND NOT u.is_platform_admin AND m.business_id <> $2 LIMIT 1`, [email, businessId]);
+  return Boolean(r);
+}
+
 // Adds the user to the invite's business (keeps a stronger existing role) and closes the invite, in one
 // transaction: the invite is claimed first, so a link can be used once only, even twice at the same time.
 // Returns false when the invite was no longer open.
@@ -141,6 +153,7 @@ export async function acceptInvite(pool, invite, userId) {
     return true;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    if (isOneBusinessError(err)) return 'other_business';
     throw err;
   } finally {
     client.release();

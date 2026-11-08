@@ -14,7 +14,7 @@ import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminS
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
-import { planLimit } from '../services/tenancy.js';
+import { planLimit, belongsElsewhere, ONE_BUSINESS_MESSAGE } from '../services/tenancy.js';
 import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, PAYMENT_METHODS, listServices, serviceSummary, serviceDomain, paymentProblem, remindInfra, recordBackupRun, backupHealth, totals as infraTotals, monthlyMinor } from '../services/infra.js';
 import { signupNeedsSender, signupBlockers } from './auth.js';
 import { runLaunchChecks, launchState } from '../services/launchChecks.js';
@@ -315,6 +315,8 @@ export function adminRoutes({ pool, config, load = null }) {
     const errors = [...(name ? [] : ['Enter the business name.']), ...(currency ? [] : ['Choose a currency.']), ...(timezone ? [] : ['Choose a valid time zone.']), ...sub.errors, ...invite.errors];
     const again = (error, status = 400) => res.status(status).render('admin/new-business', { error, values, CURRENCIES, SUBSCRIPTION_LABELS, link: null });
     if (errors.length) return again(errors.join(' '));
+    // The owner's email must not already run another business (an account belongs to one business only).
+    if (await belongsElsewhere(pool, invite.email, 0)) return again(ONE_BUSINESS_MESSAGE, 409);
     const slug = slugify(name);
     const { rows: [b] } = await pool.query(
       `INSERT INTO businesses (owner_id, name, slug, currency, timezone, subscription_status, subscription_price_minor, subscription_currency,
@@ -428,7 +430,7 @@ export function adminRoutes({ pool, config, load = null }) {
     if (f.errors.length) return renderBusiness(req, res, b, { error: f.errors.join(' '), status: 400 });
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: f.email, role: f.role });
     if (result.alreadyMember) return renderBusiness(req, res, b, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
-    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: 502 });
+    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: result.conflict ? 409 : 502 });
     if (result.emailed) return renderBusiness(req, res, b, { notice: `Invitation emailed to ${f.email} (valid 14 days). Only the person with that mailbox can accept it.` });
     return renderBusiness(req, res, b, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));
@@ -446,7 +448,7 @@ export function adminRoutes({ pool, config, load = null }) {
       return renderBusiness(req, res, b, { notice: `The invitation for ${i.email} was revoked; its link no longer works.` });
     }
     const result = await inviteOrAdd(pool, req, config, { businessId: b.id, email: i.email, role: i.role });
-    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: 502 });
+    if (result.error) return renderBusiness(req, res, b, { error: result.error, status: result.conflict ? 409 : 502 });
     if (result.alreadyMember) return renderBusiness(req, res, b, { error: `${i.email} has already joined.`, status: 409 });
     if (result.emailed) return renderBusiness(req, res, b, { notice: `A new invitation was emailed to ${i.email}; the previous link no longer works.` });
     return renderBusiness(req, res, b, { notice: `New invitation link for ${i.email} (valid 14 days, shown once; the previous link no longer works):`, link: result.link });
@@ -936,6 +938,8 @@ export function adminRoutes({ pool, config, load = null }) {
     if (!(await confirmPassword(req))) return adminsPage(req, res, { error: 'Your password was not correct.', status: 403 });
     const id = Number(req.params.userId);
     if (!Number.isInteger(id) || id === req.session.userId) return adminsPage(req, res, { error: 'You cannot remove your own Super Admin access.', status: 400 });
+    const { rows: [many] } = await pool.query('SELECT count(DISTINCT business_id)::int AS n FROM business_members WHERE user_id = $1', [id]);
+    if (many.n > 1) return adminsPage(req, res, { error: `That account still belongs to ${many.n} businesses. Only a Super Admin may belong to several: hand them over to their own owners first (business page → Invite, then "Remove from this business").`, status: 400 });
     const { rowCount } = await pool.query(
       'UPDATE users SET is_platform_admin = false WHERE id = $1 AND is_platform_admin AND (SELECT count(*) FROM users WHERE is_platform_admin) > 1', [id]);
     if (!rowCount) return adminsPage(req, res, { error: 'That account is not a Super Admin, or it is the last one.', status: 400 });

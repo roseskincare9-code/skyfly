@@ -31,7 +31,8 @@ export function businessRoutes({ pool }) {
       const settings = await platformSettings(pool);
       res.render('dashboard', {
         businesses: rows.map((b) => ({ ...b, sub: subscriptionState(b) })), offerLarose: !larose && me.is_platform_admin,
-        isPlatformAdmin: me.is_platform_admin, canCreate: me.is_platform_admin || settings.clientSignup === 'open', trialDays: settings.trialDays,
+        // Only a Super Admin manages several businesses; anyone else may create one only while they have none.
+        isPlatformAdmin: me.is_platform_admin, canCreate: me.is_platform_admin || (settings.clientSignup === 'open' && rows.length === 0), trialDays: settings.trialDays,
       });
     } catch (err) {
       next(err);
@@ -65,6 +66,10 @@ export function businessRoutes({ pool }) {
       me.is_platform_admin = me.is_platform_admin && adminVerified(req);
       const settings = await platformSettings(pool);
       if (!me.is_platform_admin && settings.clientSignup !== 'open') return res.status(403).render('error', { message: 'New businesses are set up by the Skyfly team. Ask them for an invitation.' });
+      // Each account manages one business; only a Super Admin manages several.
+      if (!me.is_platform_admin && (await pool.query('SELECT 1 FROM business_members WHERE user_id = $1 LIMIT 1', [req.session.userId])).rowCount) {
+        return res.status(403).render('error', { message: 'Each Skyfly account manages one business. To run another business, register it with a different email address.' });
+      }
       const b = await createBusiness(pool, { userId: req.session.userId, name, slug, asAdmin: me.is_platform_admin, trialDays: settings.trialDays });
       const { status } = b;
       await audit(pool, req, { action: 'business.created', businessId: b.id, details: { status } });

@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { createHash } from 'node:crypto';
-import { ROLES, ROLE_LABELS, createInvite, hashToken } from '../services/tenancy.js';
+import { ROLES, ROLE_LABELS, createInvite, hashToken, belongsElsewhere, ONE_BUSINESS_MESSAGE } from '../services/tenancy.js';
 import { sendEmail } from '../services/emailProviders.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,6 +16,8 @@ export async function inviteOrAdd(pool, req, config, { businessId, email, role }
   const { rows: [member] } = await pool.query(
     'SELECT m.role FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = $1 AND u.email = $2', [businessId, email]);
   if (member) return { alreadyMember: member.role };
+  // Each account belongs to one business (Super Admins excepted): no invitation that could never be accepted.
+  if (await belongsElsewhere(pool, email, businessId)) return { error: ONE_BUSINESS_MESSAGE, conflict: true };
   const token = await createInvite(pool, { businessId, email, role, createdBy: req.session.userId });
   const link = `${config.publicBaseUrl || `${req.protocol}://${req.get('host')}`}/invite/${token}`;
   // With Skyfly's email sender set up, the link goes only to the invited mailbox and is never shown here,
@@ -84,7 +86,7 @@ export function teamRoutes({ pool, config }) {
     }
     const result = await inviteOrAdd(pool, req, config, { businessId: req.business.id, email: f.email, role: f.role });
     if (result.alreadyMember) return render(req, res, { error: `${f.email} is already in this business as ${ROLE_LABELS[result.alreadyMember]}. Change their role under Team.`, status: 409 });
-    if (result.error) return render(req, res, { error: result.error, status: 502 });
+    if (result.error) return render(req, res, { error: result.error, status: result.conflict ? 409 : 502 });
     if (result.emailed) return render(req, res, { notice: `Invitation emailed to ${f.email} (valid 14 days). Only the person with that mailbox can accept it.` });
     return render(req, res, { notice: `Invite created for ${f.email}. Send them this link (valid 14 days, shown once):`, link: result.link });
   }));

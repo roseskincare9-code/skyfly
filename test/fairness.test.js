@@ -21,10 +21,13 @@ const { pool, app, load } = (() => {
   });
   return { ...s, load: s.load };
 })();
-let admin; let owner; const biz = []; const pages = [];
+let admin; let owner; let owner3; const biz = []; const pages = [];
 
 async function business(i) {
-  const { rows: [u] } = await pool.query("SELECT id FROM users WHERE email = 'owner@shops.test'");
+  // Each business has its own owner (an account belongs to one business only); same password as owner@shops.test.
+  const email = i === 1 ? 'owner@shops.test' : `owner${i}@shops.test`;
+  if (i !== 1) await pool.query("INSERT INTO users (email, password_hash, name, email_verified_at) SELECT $1, password_hash, 'Owner', now() FROM users WHERE email = 'owner@shops.test'", [email]);
+  const { rows: [u] } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
   const { rows: [b] } = await pool.query("INSERT INTO businesses (owner_id, name, slug, currency) VALUES ($1, $2, $3, 'NGN') RETURNING id", [u.id, `Shop ${i}`, `shop-${i}`]);
   await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, u.id]);
   const { rows: [lp] } = await pool.query("INSERT INTO landing_pages (business_id, slug, name, url, status, order_destination) VALUES ($1, $2, $3, $4, 'active', 'checkout') RETURNING id", [b.id, `shop-${i}-page`, `Page ${i}`, `${SITE(i)}/`]);
@@ -41,6 +44,9 @@ before(async () => {
   await openClientSignup(pool);
   owner = await signUp(app, { email: 'owner@shops.test' });
   for (const i of [1, 2, 3]) biz.push(await business(i));
+  owner3 = request.agent(app);
+  const _c = await csrfToken(owner3, '/login');
+  await owner3.post('/login').type('form').send({ _csrf: _c, email: 'owner3@shops.test', password: 'correct-horse-battery' }).expect(302);
   pages.push(...biz.map((b) => b.slug));
   clearOriginCache();
 });
@@ -119,8 +125,8 @@ describe('caching public data', () => {
     await pool.query("UPDATE tracking_pixels SET pixel_id = '2222222222222222' WHERE business_id = $1", [biz[2].id]);
     assert.deepEqual(await ids(), ['1111111111111111'], 'served from the cache');
     // Any change saved through the dashboard clears the cache.
-    const _csrf = await csrfToken(owner, `/businesses/${biz[2].id}/pixels/new?platform=meta`);
-    await owner.post(`/businesses/${biz[2].id}/pixels`).type('form')
+    const _csrf = await csrfToken(owner3, `/businesses/${biz[2].id}/pixels/new?platform=meta`);
+    await owner3.post(`/businesses/${biz[2].id}/pixels`).type('form')
       .send({ _csrf, platform: 'meta', name: 'Two', pixel_id: '3333333333333333', enabled: 'on', all_pages: 'on', events: ['PageView'] }).expect(302);
     assert.deepEqual(await ids(), ['2222222222222222', '3333333333333333']);
   });
