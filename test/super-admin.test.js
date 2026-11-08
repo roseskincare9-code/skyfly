@@ -76,9 +76,9 @@ describe('the Super Admin sign-in', () => {
     const owner = await signUpOn(devServer, 'owner@client.test');
     await pool.query("UPDATE users SET is_platform_admin = false WHERE email = 'owner@client.test'");
     await pool.query("UPDATE platform_settings SET value = '\"open\"' WHERE key = 'client_signup'");
-    const _csrf = await csrfToken(owner, '/?all=1');
-    const res = await owner.post('/businesses').type('form').send({ _csrf, name: 'Client Shop' }).expect(302);
-    bizId = Number(res.headers.location.match(/businesses\/(\d+)/)[1]);
+    // The client's own business, created by its registration (an account belongs to one business only).
+    bizId = Number((await pool.query("SELECT m.business_id FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email = 'owner@client.test'")).rows[0].business_id);
+    void owner;
     admin = await login(devServer, 'first@new.test');
   });
 

@@ -86,13 +86,15 @@ test('expired and replaced links are refused with a clear reason', async () => {
 });
 
 test("an existing account is not added until it accepts, and only while signed in with the invited email", async () => {
-  // An existing account: a member of Shop B first.
-  const { token: tB } = await invite('existing@shop-b.test', bizB, 'owner');
-  const { agent: existing } = await accept(tB);
-  const { res, token } = await invite('existing@shop-b.test', bizA, 'staff');
+  // An existing account that belongs to no business yet.
+  await pool.query("INSERT INTO users (email, password_hash, name, email_verified_at) SELECT 'existing@shop-b.test', password_hash, 'Existing', now() FROM users WHERE email = 'admin@skyfly.test'");
+  const existing = request.agent(app);
+  const _l = await csrfToken(existing, '/login');
+  await existing.post('/login').type('form').send({ _csrf: _l, email: 'existing@shop-b.test', password: PASSWORD }).expect(302);
+  const { res, token } = await invite('existing@shop-b.test', bizB, 'owner');
   assert.equal(res.status, 200);
   assert.match(res.text, /Invite created for existing@shop-b\.test/, 'same answer whether or not the email has an account');
-  assert.deepEqual((await members('existing@shop-b.test')).map((m) => m.business_id), [bizB], 'not added yet');
+  assert.deepEqual(await members('existing@shop-b.test'), [], 'not added yet');
   // Someone else signed in cannot use it.
   const { agent: other } = await accept((await invite('someone@shop-a.test')).token);
   const page = await other.get(`/invite/${token}`);
@@ -103,8 +105,34 @@ test("an existing account is not added until it accepts, and only while signed i
   // The invited person, signed in, joins.
   const page2 = await existing.get(`/invite/${token}`);
   const ok = await existing.post(`/invite/${token}`).type('form').send({ _csrf: page2.text.match(/name="_csrf" value="([^"]+)"/)[1] });
-  assert.equal(ok.headers.location, `/businesses/${bizA}`);
-  assert.deepEqual(await members('existing@shop-b.test'), [{ business_id: bizA, role: 'staff' }, { business_id: bizB, role: 'owner' }]);
+  assert.equal(ok.headers.location, `/businesses/${bizB}`);
+  assert.deepEqual(await members('existing@shop-b.test'), [{ business_id: bizB, role: 'owner' }]);
+});
+
+test('an account that belongs to one business cannot be invited into, or added to, another (Super Admins excepted)', async () => {
+  // Refused when inviting, from the Super Admin area and from a business's own Team page.
+  const { res } = await invite('existing@shop-b.test', bizA, 'staff');
+  assert.equal(res.status, 409);
+  assert.match(res.text, /already belongs to another business/);
+  // Refused by the database itself, even if application code forgot the check.
+  const { rows: [u] } = await pool.query("SELECT id FROM users WHERE email = 'existing@shop-b.test'");
+  await assert.rejects(pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'staff')", [bizA, u.id]), /skyfly_one_business/);
+  assert.deepEqual(await members('existing@shop-b.test'), [{ business_id: bizB, role: 'owner' }]);
+  // An invitation made before the account joined elsewhere cannot be used to join a second business.
+  await pool.query("INSERT INTO users (email, password_hash, name, email_verified_at) SELECT 'late@shop.test', password_hash, 'Late', now() FROM users WHERE email = 'admin@skyfly.test'");
+  const { token: tA } = await invite('late@shop.test', bizA, 'staff');
+  const { token: tB } = await invite('late@shop.test', bizB, 'staff');
+  const late = request.agent(app);
+  const _l = await csrfToken(late, '/login');
+  await late.post('/login').type('form').send({ _csrf: _l, email: 'late@shop.test', password: PASSWORD }).expect(302);
+  for (const [t, status] of [[tA, 302], [tB, 409]]) {
+    const p = await late.get(`/invite/${t}`);
+    const r = await late.post(`/invite/${t}`).type('form').send({ _csrf: p.text.match(/name="_csrf" value="([^"]+)"/)[1] });
+    assert.equal(r.status, status);
+  }
+  assert.deepEqual((await members('late@shop.test')).map((m) => m.business_id), [bizA]);
+  // The Super Admin (a member of both test shops) is the only account allowed several businesses.
+  assert.equal((await members('admin@skyfly.test')).length >= 2, true);
 });
 
 test('inviting someone already in the business changes nothing (their role stays)', async () => {

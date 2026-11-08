@@ -3,7 +3,7 @@ import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { audit } from '../lib/audit.js';
 import { ensureLaroseForOwner, E2E_EMAIL_LIKE } from '../services/setup.js';
 import { requestResetEmail, findReset, completeReset, sendPasswordChanged } from '../services/passwordReset.js';
-import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS, createBusiness } from '../services/tenancy.js';
+import { platformSettings, findInvite, acceptInvite, inviteProblem, INVITE_PROBLEMS, createBusiness, ONE_BUSINESS_MESSAGE } from '../services/tenancy.js';
 import { slugify } from '../lib/auth.js';
 import { senderReady, needsVerification, sendVerification, useVerification, markVerified } from '../services/emailVerification.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
@@ -363,7 +363,9 @@ export function authRoutes({ pool, config }) {
         if (!user) return res.status(409).render('invite', { invite, user: null, hasAccount: true, token: req.params.token, error: 'An account with this email already exists. Sign in first.' });
         userId = user.id;
       }
-      if (!(await acceptInvite(pool, invite, userId))) return res.status(410).render('error', { message: INVITE_PROBLEMS.used });
+      const accepted = await acceptInvite(pool, invite, userId);
+      if (accepted === 'other_business') return res.status(409).render('error', { message: ONE_BUSINESS_MESSAGE });
+      if (!accepted) return res.status(410).render('error', { message: INVITE_PROBLEMS.used });
       // The link was emailed to this address (sender set up), so using it confirms the address.
       if (senderReady(config)) await markVerified(pool, userId);
       await audit(pool, { session: { userId }, ip: req.ip }, { action: 'team.invite_accepted', businessId: invite.business_id, details: { role: invite.role } });

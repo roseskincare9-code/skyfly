@@ -229,7 +229,7 @@ export const E2E_OWNER_B = 'e2e-owner-b@skyfly.invalid';
 export const E2E_EMAIL_LIKE = 'e2e-%@skyfly.invalid';
 export const isE2eEmail = (email) => /^e2e-[a-z0-9.-]+@skyfly\.invalid$/.test(String(email || '').toLowerCase());
 const E2E_ACCOUNTS = [
-  { email: E2E_EMAIL, name: 'Automated live tests', role: 'manager', businesses: ['skyfly-import-test', 'skyfly-demo'] },
+  { email: E2E_EMAIL, name: 'Automated live tests', role: 'manager', businesses: ['skyfly-import-test'] }, // one business only (only a Super Admin may belong to several),
   { email: E2E_OWNER_A, name: 'Live test owner A', role: 'owner', businesses: ['skyfly-demo'] },
   { email: E2E_OWNER_B, name: 'Live test owner B', role: 'owner', businesses: ['skyfly-import-test'] },
 ];
