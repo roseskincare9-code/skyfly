@@ -11,7 +11,7 @@ import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
 import { senderReady } from './services/emailVerification.js';
-import { adminRoutes, adminLoginRoutes, backupKeyRoutes } from './routes/admin.js';
+import { adminRoutes, adminLoginRoutes, backupKeyRoutes, backupReportRoute } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
 import { readFileSync } from 'node:fs';
 import { pageServer, sandboxPreview, pathPages } from './hosting/server.js';
@@ -116,6 +116,8 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   // Public order API and confirmation page: no admin session involved.
   app.use(publicRoutes({ pool, config, onOrderSaved, load }));
+  // Backup job results (server's backup key; no session or form).
+  app.use(backupReportRoute({ pool, config }));
 
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(

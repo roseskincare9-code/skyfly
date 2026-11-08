@@ -58,6 +58,8 @@ jobs:
           echo "Encrypted file SHA-256 (to check an offline copy): $(sha256sum skyfly-backup.json.enc | cut -d' ' -f1)"
           if [ "$plain" != "$back" ]; then echo "::error::The encrypted backup does not decrypt to the same file"; exit 1; fi
           echo "Round trip OK: the encrypted file decrypts to the identical backup."
+          # Facts for the report to Skyfly (sizes and counts only).
+          node -e "const b=JSON.parse(require('fs').readFileSync('backup.json','utf8'));const t=Object.values(b.tables);require('fs').writeFileSync('backup-facts.json',JSON.stringify({size_bytes:require('fs').statSync('skyfly-backup.json.enc').size,sha256:process.argv[1],tables:t.length,total_rows:t.reduce((n,x)=>n+x.rows.length,0)}))" "$(sha256sum skyfly-backup.json.enc | cut -d' ' -f1)"
           shred -u backup.json roundtrip.json
         env:
           # Your BACKUP_PASSPHRASE secret if set; otherwise the backup key itself (Render → skyfly → Environment).
@@ -67,3 +69,11 @@ jobs:
           name: skyfly-backup-encrypted
           path: skyfly-backup.json.enc
           retention-days: 30
+      # The result goes to Skyfly (System status and dashboard; a failure is emailed to Super Admins).
+      - name: Report the result to Skyfly
+        if: always()
+        run: node scripts/report-backup.mjs
+        env:
+          SKYFLY_URL: https://skyfly-gybf.onrender.com
+          KIND: backup
+          STATUS: ${{ job.status }}

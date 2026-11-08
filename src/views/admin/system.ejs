@@ -11,6 +11,19 @@
     <p class="muted" style="margin-bottom:0">Last backup downloaded: <%= lastBackup ? formatDate(lastBackup.created_at) + ' by ' + lastBackup.email : 'never' %>. To restore into a new, empty database: <code>DATABASE_URL=… node scripts/restore-backup.mjs backup.json</code> (see docs/MIGRATIONS.md). Restoring never overwrites a database that already has data.</p>
     <% if (uncovered.length) { %><p class="error">Not in the backup yet: <%= uncovered.join(', ') %></p><% } %>
   </div>
+  <div class="card" data-backup-runs>
+    <h2>Automatic backups (GitHub Actions)</h2>
+    <p style="margin-top:0">Every day the "Database backup" job downloads a full backup, restores it into an empty throwaway database to check it, encrypts it and keeps it outside Render for 30 days. It reports each result here; a failure is shown on the dashboard and emailed to Super Admins (when an email sender is set up).</p>
+    <% backups.alerts.forEach((a) => { %><div class="error" role="status" data-backup-alert><%= a %></div><% }) %>
+    <dl class="kv"><dt>Newest successful backup</dt><dd><%= backups.lastOk ? `${formatDate(backups.lastOk.created_at)} (${backups.ageHours} h ago)` : 'none reported yet' %></dd>
+      <dt>Newest successful restore test</dt><dd><%= backups.lastRestoreOk ? formatDate(backups.lastRestoreOk.created_at) : 'none reported yet' %></dd></dl>
+    <% if (backups.recent.length) { %><div class="table-wrap"><table class="stack"><thead><tr><th>When</th><th>What</th><th>Result</th><th>Size · tables · rows</th><th>Run</th></tr></thead><tbody>
+      <% backups.recent.forEach((b) => { %><tr data-backup-run="<%= b.status %>"><td><%= formatDate(b.created_at) %></td><td><%= b.kind === 'backup' ? 'Backup' : 'Restore test' %></td>
+        <td><span class="pill <%= b.status === 'success' ? 'delivered' : 'cancelled' %>"><%= b.status === 'success' ? 'Success' : 'Failed' %></span><%= b.detail ? ` ${b.detail}` : '' %><%= b.notified ? ` (${b.notified})` : '' %></td>
+        <td><%= b.size_bytes ? `${Math.round(b.size_bytes / 1024)} KB` : '—' %> · <%= b.tables ?? '—' %> · <%= b.total_rows ?? '—' %><%= b.sha256 ? ` · SHA-256 ${b.sha256.slice(0, 12)}…` : '' %></td>
+        <td><%= b.run_url ? '' : '—' %><% if (b.run_url) { %><a href="<%= b.run_url %>" rel="noopener" target="_blank"><%= b.run_id %></a><% } %></td></tr><% }) %>
+    </tbody></table></div><% } %>
+  </div>
   <div class="card">
     <h2>Database</h2>
     <dl class="kv"><dt>Size</dt><dd><%= db.size %></dd><dt>Server</dt><dd><%= db.version.split(' on ')[0] %></dd>

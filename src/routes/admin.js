@@ -1,7 +1,7 @@
 // Platform owner area: all client businesses, their subscriptions (set by hand after the
 // owner confirms payment; there is no payment gateway), setup progress, team invites and
 // platform settings. Only users with is_platform_admin may open it.
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { hashPassword } from '../lib/passwords.js';
 import { sendEmail } from '../services/emailProviders.js';
@@ -15,7 +15,7 @@ import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
 import { planLimit } from '../services/tenancy.js';
-import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, listServices, serviceSummary, totals as infraTotals, monthlyMinor } from '../services/infra.js';
+import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, PAYMENT_METHODS, listServices, serviceSummary, serviceDomain, paymentProblem, remindInfra, recordBackupRun, backupHealth, totals as infraTotals, monthlyMinor } from '../services/infra.js';
 import { signupNeedsSender, signupBlockers } from './auth.js';
 import { runLaunchChecks, launchState } from '../services/launchChecks.js';
 import { audit } from '../lib/audit.js';
@@ -84,6 +84,33 @@ export function backupKeyRoutes({ pool, config }) {
       return res.status(401).json({ error: 'Wrong backup key.' });
     }
     await sendBackup(pool, req, res, { via: 'backup key' });
+  }));
+  return router;
+}
+
+// Backup and restore-test results from the GitHub Actions jobs, authorised by the server's backup key (no
+// session, no form: mounted before sessions and CSRF). Records times, sizes, checksums and counts only.
+export function backupReportRoute({ pool, config }) {
+  const router = Router();
+  router.post('/admin/backup-report', express.json({ limit: '8kb' }), asyncHandler(async (req, res) => {
+    const sent = /^Bearer (.+)$/.exec(req.get('authorization') || '')?.[1];
+    const digest = (v) => createHash('sha256').update(v).digest();
+    if (!sent || !config.backupKey || !timingSafeEqual(digest(sent), digest(config.backupKey))) return res.status(401).json({ error: 'Backup key required.' });
+    const b = req.body ?? {};
+    const int = (v) => (v === undefined || v === null || v === '' ? null : Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : NaN);
+    const row = {
+      kind: ['backup', 'restore_test'].includes(b.kind) ? b.kind : null,
+      status: ['success', 'failed'].includes(b.status) ? b.status : null,
+      run_id: /^\d{1,20}$/.test(String(b.run_id ?? '')) ? String(b.run_id) : null,
+      run_url: /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+$/.test(String(b.run_url ?? '')) ? b.run_url : null,
+      size_bytes: int(b.size_bytes), tables: int(b.tables), total_rows: int(b.total_rows),
+      sha256: /^[0-9a-f]{64}$/.test(String(b.sha256 ?? '')) ? b.sha256 : null,
+      detail: String(b.detail ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300) || null,
+    };
+    if (!row.kind || !row.status || [row.size_bytes, row.tables, row.total_rows].some(Number.isNaN)) return res.status(400).json({ error: 'Invalid report.' });
+    const saved = await recordBackupRun(pool, config, row);
+    await audit(pool, req, { action: `backup.${row.kind}_${row.status}`, entityType: 'backup_run', entityId: saved.id, details: { run_id: row.run_id, size_bytes: row.size_bytes, tables: row.tables, total_rows: row.total_rows } });
+    res.status(201).json({ id: saved.id, notified: saved.notified ?? null });
   }));
   return router;
 }
@@ -239,10 +266,15 @@ export function adminRoutes({ pool, config, load = null }) {
     const mrr = paying.reduce((acc, b) => { acc[b.subscription_currency || 'NGN'] = (acc[b.subscription_currency || 'NGN'] || 0) + Number(b.subscription_price_minor); return acc; }, {});
     const overdue = businesses.filter((b) => b.subscription_status === 'expired' || (b.subscription_status !== 'internal' && !b.sub.open));
     // Infrastructure alerts and the age of the newest backup (taken through /admin/backup.json).
-    const infraAlerts = (await listServices(pool)).map((x) => ({ name: x.name, ...serviceSummary(x) })).filter((x) => x.level !== 'ok');
-    const { rows: [lastBackup] } = await pool.query("SELECT max(created_at) AS at FROM audit_log WHERE action = 'admin.backup_downloaded'");
-    const backupAgeHours = lastBackup?.at ? Math.round((Date.now() - new Date(lastBackup.at)) / 36e5) : null;
-    res.render('admin/index', { businesses, counts, plans, platform, mrr, overdue, infraAlerts, lastBackupAt: lastBackup?.at ?? null, backupAgeHours, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+    const registry = await registryDates();
+    const infraAlerts = (await listServices(pool)).map((x) => ({ name: x.name, ...serviceSummary(x, new Date(), { registryExpiresOn: registry[serviceDomain(x)] }) })).filter((x) => x.level !== 'ok');
+    // Newest successful backup: reported by the backup job; else the newest download through /admin/backup.json.
+    const backups = await backupHealth(pool);
+    const { rows: [lastDownload] } = await pool.query("SELECT max(created_at) AS at FROM audit_log WHERE action = 'admin.backup_downloaded'");
+    const lastBackupAt = backups.lastOk?.created_at ?? lastDownload?.at ?? null;
+    const backupAgeHours = lastBackupAt ? Math.round((Date.now() - new Date(lastBackupAt)) / 36e5) : null;
+    const backupAlerts = backups.lastOk ? backups.alerts : backups.alerts.filter((a) => !a.startsWith('No successful backup'));
+    res.render('admin/index', { businesses, counts, plans, platform, mrr, overdue, infraAlerts, backupAlerts, lastBackupAt, backupAgeHours, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
   }));
 
   router.get('/admin/businesses/new', (req, res) => {
@@ -520,7 +552,9 @@ export function adminRoutes({ pool, config, load = null }) {
       pool.query("SELECT a.created_at, u.email FROM audit_log a LEFT JOIN users u ON u.id = a.user_id WHERE a.action = 'admin.backup_downloaded' ORDER BY a.id DESC LIMIT 1"),
     ]);
     res.set('Cache-Control', 'no-store');
-    res.render('admin/system', { counts, db, migrations, lastBackup: last[0] ?? null, uncovered: await uncoveredTables(pool), dbExpiresAt: config.databaseExpiresAt });
+    // The database's plan expiry, from the infrastructure record (empty once it is on a paid plan).
+    const { rows: [dbPlan] } = await pool.query("SELECT min(expires_on) AS expires_on FROM infra_services WHERE category = 'database' AND archived_at IS NULL");
+    res.render('admin/system', { counts, db, migrations, lastBackup: last[0] ?? null, uncovered: await uncoveredTables(pool), dbExpiresAt: dbPlan?.expires_on ?? null, backups: await backupHealth(pool) });
   }));
 
   router.get('/admin/backup.json', asyncHandler(async (req, res) => sendBackup(pool, req, res, { via: 'signed in' })));
@@ -670,6 +704,14 @@ export function adminRoutes({ pool, config, load = null }) {
     return Boolean(me && (await verifyPassword(String(req.body.password || ''), me.password_hash)));
   };
   // ---- Infrastructure: the platform's own services, renewals and spending (entered by a Super Admin).
+  // The registry's verified expiry date for each platform domain (read automatically every 12 hours).
+  async function registryDates() {
+    const out = {};
+    for (const d of await listDomains(pool)) { const sum = domainSummary(d); if (sum.source === 'verified') out[d.domain] = sum.expiresOn; }
+    return out;
+  }
+  // A payment problem alerts the Super Admins at once, not at the next scheduled run.
+  const alertNow = () => remindInfra(pool, config).catch(() => null);
   const readService = (b) => {
     const errors = [];
     const name = String(b.name ?? '').trim().slice(0, 120);
@@ -692,20 +734,26 @@ export function adminRoutes({ pool, config, load = null }) {
         price_minor: price === null ? null : Math.round(price * 100), currency: /^[A-Z]{3}$/.test(String(b.currency ?? '')) ? b.currency : 'USD',
         billing_frequency: FREQUENCIES[b.billing_frequency] ? b.billing_frequency : 'monthly', last_paid_on: date('last_paid_on'), next_payment_on: date('next_payment_on'), expires_on: date('expires_on'),
         auto_renew: b.auto_renew === 'yes' ? true : b.auto_renew === 'no' ? false : null, manage_url: url || null,
-        payment_status: PAYMENT_STATUSES[b.payment_status] ? b.payment_status : 'unknown', invoice_ref: String(b.invoice_ref ?? '').trim().slice(0, 120) || null, notes: notes || null,
+        payment_status: PAYMENT_STATUSES[b.payment_status] ? b.payment_status : 'unknown',
+        payment_method_status: PAYMENT_METHODS[b.payment_method_status] ? b.payment_method_status : 'unknown', invoice_ref: String(b.invoice_ref ?? '').trim().slice(0, 120) || null, notes: notes || null,
       },
     };
   };
   const infraPage = async (req, res, { error = null, status = 200, values = null } = {}) => {
-    const services = (await listServices(pool)).map((x) => ({ ...x, summary: serviceSummary(x), monthly: monthlyMinor(x) }));
+    const registry = await registryDates();
+    const services = (await listServices(pool)).map((x) => ({ ...x, summary: serviceSummary(x, new Date(), { registryExpiresOn: registry[serviceDomain(x)] }), monthly: monthlyMinor(x) }));
+    const { rows: renewals } = await pool.query(
+      `SELECT r.*, s.name, u.email AS by_email FROM infra_service_renewals r JOIN infra_services s ON s.id = r.service_id
+         LEFT JOIN users u ON u.id = r.created_by ORDER BY r.id DESC LIMIT 20`);
     const archived = await listServices(pool, { archived: true });
     const { rows: reminders } = await pool.query(
       'SELECT r.threshold, r.due_on, r.status, r.detail, r.created_at, s.name FROM infra_service_reminders r JOIN infra_services s ON s.id = r.service_id ORDER BY r.id DESC LIMIT 20');
     const domains = (await listDomains(pool)).map((d) => ({ domain: d.domain, ...domainSummary(d) }));
     res.status(status).render('admin/infrastructure', {
-      services, archived, reminders, domains, totals: infraTotals(services), CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, error, values,
+      services, archived, reminders, renewals, domains, totals: infraTotals(services), CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, PAYMENT_METHODS, error, values,
       editId: /^\d+$/.test(String(req.query.edit ?? '')) ? Number(req.query.edit) : null,
-      notice: { saved: 'Saved.', archived: 'Archived (kept for the record).', restored: 'Restored.' }[req.query.done] ?? null,
+      renewId: /^\d+$/.test(String(req.query.renew ?? '')) ? Number(req.query.renew) : null,
+      notice: { saved: 'Saved.', archived: 'Archived (kept for the record).', restored: 'Restored.', renewed: 'Renewal recorded.', renewed_unconfirmed: 'Renewal recorded. The registry does not show the new expiry date yet, so it is marked "not confirmed by the registry" until it does (checked every 12 hours).' }[req.query.done] ?? null,
     });
   };
   router.get('/admin/infrastructure', asyncHandler((req, res) => infraPage(req, res)));
@@ -713,24 +761,63 @@ export function adminRoutes({ pool, config, load = null }) {
     const { errors, v } = readService(req.body);
     if (errors.length) return infraPage(req, res, { error: errors.join(' '), status: 400, values: req.body });
     const { rows: [row] } = await pool.query(
-      `INSERT INTO infra_services (name, provider, category, plan, price_minor, currency, billing_frequency, last_paid_on, next_payment_on, expires_on, auto_renew, manage_url, payment_status, invoice_ref, notes, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16) RETURNING id`,
-      [v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId]);
+      `INSERT INTO infra_services (name, provider, category, plan, price_minor, currency, billing_frequency, last_paid_on, next_payment_on, expires_on, auto_renew, manage_url, payment_status, invoice_ref, notes, created_by, updated_by, payment_method_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17) RETURNING id`,
+      [v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId, v.payment_method_status]);
     await audit(pool, req, { action: 'admin.infra_added', entityType: 'infra_service', entityId: row.id, details: { name: v.name, provider: v.provider, price: v.price_minor, currency: v.currency } });
+    if (paymentProblem(v)) await alertNow();
     res.redirect('/admin/infrastructure?done=saved');
   }));
   router.post('/admin/infrastructure/:id', asyncHandler(async (req, res) => {
     if (!/^\d+$/.test(req.params.id)) return res.status(404).render('error', { message: 'Service not found.' });
     const { errors, v } = readService(req.body);
     if (errors.length) return infraPage(req, res, { error: errors.join(' '), status: 400, values: req.body });
-    const { rows: [before] } = await pool.query('SELECT payment_status, next_payment_on, price_minor FROM infra_services WHERE id = $1', [req.params.id]);
+    const { rows: [before] } = await pool.query('SELECT payment_status, payment_method_status, next_payment_on, price_minor FROM infra_services WHERE id = $1', [req.params.id]);
     if (!before) return res.status(404).render('error', { message: 'Service not found.' });
     await pool.query(
       `UPDATE infra_services SET name = $2, provider = $3, category = $4, plan = $5, price_minor = $6, currency = $7, billing_frequency = $8, last_paid_on = $9,
-              next_payment_on = $10, expires_on = $11, auto_renew = $12, manage_url = $13, payment_status = $14, invoice_ref = $15, notes = $16, updated_by = $17, updated_at = now() WHERE id = $1`,
-      [req.params.id, v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId]);
-    await audit(pool, req, { action: 'admin.infra_updated', entityType: 'infra_service', entityId: req.params.id, details: { before, after: { payment_status: v.payment_status, next_payment_on: v.next_payment_on, price: v.price_minor } } });
+              next_payment_on = $10, expires_on = $11, auto_renew = $12, manage_url = $13, payment_status = $14, invoice_ref = $15, notes = $16, updated_by = $17,
+              payment_method_status = $18, updated_at = now() WHERE id = $1`,
+      [req.params.id, v.name, v.provider, v.category, v.plan, v.price_minor, v.currency, v.billing_frequency, v.last_paid_on, v.next_payment_on, v.expires_on, v.auto_renew, v.manage_url, v.payment_status, v.invoice_ref, v.notes, req.session.userId, v.payment_method_status]);
+    await audit(pool, req, { action: 'admin.infra_updated', entityType: 'infra_service', entityId: req.params.id, details: { before, after: { payment_status: v.payment_status, payment_method_status: v.payment_method_status, next_payment_on: v.next_payment_on, price: v.price_minor } } });
+    if (paymentProblem(v) && !paymentProblem(before)) await alertNow();
     res.redirect('/admin/infrastructure?done=saved');
+  }));
+  // Record a successful renewal or payment, with its evidence (invoice or receipt reference). It moves the
+  // renewal date on. For a domain, the registry is compared and the renewal is never shown as confirmed
+  // until the registry's own expiry date reaches the new date.
+  router.post('/admin/infrastructure/:id/renewal', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).render('error', { message: 'Service not found.' });
+    const { rows: [s] } = await pool.query('SELECT * FROM infra_services WHERE id = $1 AND archived_at IS NULL', [req.params.id]);
+    if (!s) return res.status(404).render('error', { message: 'Service not found.' });
+    const renewedOn = String(req.body.renewed_on ?? '').trim();
+    const newDate = String(req.body.new_date ?? '').trim();
+    const evidence = String(req.body.evidence ?? '').trim().slice(0, 200);
+    const amountText = String(req.body.amount ?? '').replace(/[,\s₦$€£]/g, '');
+    const amount = amountText === '' ? null : Number(amountText);
+    const errors = [];
+    if (!validDate(renewedOn)) errors.push('Enter the date of the payment or renewal.');
+    else if (renewedOn > new Date().toISOString().slice(0, 10)) errors.push('The payment date cannot be in the future.');
+    if (!validDate(newDate)) errors.push('Enter the next renewal or expiry date.');
+    else if (validDate(renewedOn) && newDate <= renewedOn) errors.push('The next date must be after the payment date.');
+    if (evidence.length < 3) errors.push('Enter the evidence: the invoice, receipt or order number from the provider.');
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0 || amount > 1e9)) errors.push('Enter the amount as a number.');
+    if (errors.length) return infraPage({ ...req, query: { renew: req.params.id } }, res, { error: errors.join(' '), status: 400 });
+    const usesExpiry = Boolean(s.expires_on) || s.category === 'domain';
+    const previous = usesExpiry ? s.expires_on : s.next_payment_on;
+    const registry = (await registryDates())[serviceDomain(s)] ?? null;
+    await pool.query(
+      `INSERT INTO infra_service_renewals (service_id, renewed_on, previous_date, new_date, amount_minor, currency, evidence, registry_expires_on, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [s.id, renewedOn, previous, newDate, amount === null ? null : Math.round(amount * 100), s.currency, evidence, registry, req.session.userId]);
+    await pool.query(
+      `UPDATE infra_services SET last_paid_on = $2, ${usesExpiry ? 'expires_on' : 'next_payment_on'} = $3, payment_status = 'paid', invoice_ref = $4,
+              payment_method_status = CASE WHEN payment_method_status IN ('failed', 'expired', 'missing') THEN 'on_file' ELSE payment_method_status END,
+              updated_by = $5, updated_at = now() WHERE id = $1`,
+      [s.id, renewedOn, newDate, evidence, req.session.userId]);
+    const confirmed = serviceDomain(s) ? Boolean(registry && registry >= newDate) : null;
+    await audit(pool, req, { action: 'admin.infra_renewal_recorded', entityType: 'infra_service', entityId: s.id, details: { name: s.name, renewed_on: renewedOn, previous_date: previous, new_date: newDate, amount: amount === null ? null : Math.round(amount * 100), registry_expires_on: registry, registry_confirmed: confirmed } });
+    res.redirect(`/admin/infrastructure?done=${confirmed === false ? 'renewed_unconfirmed' : 'renewed'}`);
   }));
   router.post('/admin/infrastructure/:id/:action(archive|restore)', asyncHandler(async (req, res) => {
     if (!/^\d+$/.test(req.params.id)) return res.status(404).render('error', { message: 'Service not found.' });

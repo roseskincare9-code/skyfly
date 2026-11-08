@@ -16,6 +16,7 @@
     <div class="stat" data-backup-age><div class="n"><%= backupAgeHours === null ? '—' : backupAgeHours + ' h' %></div><div class="l">Since the last backup<%= lastBackupAt ? ` (${formatDate(lastBackupAt)})` : '' %></div></div>
   </div>
   <% if (backupAgeHours === null || backupAgeHours > 36) { %><div class="error" role="status" data-backup-alert><strong>Backups:</strong> <%= backupAgeHours === null ? 'no backup has been taken yet' : `the last backup is ${backupAgeHours} hours old` %>. The daily "Database backup" job (GitHub Actions) should run every day; check it.</div><% } %>
+  <% backupAlerts.forEach((a) => { %><div class="error" role="status" data-backup-alert><strong>Backups:</strong> <%= a %> <a href="/admin/system">System status</a></div><% }) %>
   <% infraAlerts.forEach((x) => { %><div class="<%= x.level === 'act' ? 'error' : 'warn-box' %>" role="status" data-infra-alert><strong><%= x.name %>:</strong> <%= x.alerts.map((a) => a.text).join(' ') %> <a href="/admin/infrastructure">Infrastructure</a></div><% }) %>
   <% if (overdue.length) { %><div class="warn-box" role="status"><strong>Expired subscriptions:</strong> <%= overdue.map((b) => b.name).join(', ') %></div><% } %>
   <div class="grid" data-platform-analytics>

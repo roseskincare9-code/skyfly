@@ -22,19 +22,36 @@
   <% }) %>
 
   <div class="card">
-    <div class="table-wrap"><table class="stack" data-infra><thead><tr><th>Service</th><th>Plan &amp; price</th><th>Renewal</th><th>Payment</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table class="stack" data-infra><thead><tr><th>Service</th><th>Plan &amp; price</th><th>Renewal</th><th>Payment</th><th>Payment method</th><th></th></tr></thead><tbody>
     <% services.forEach((s) => { %>
       <tr data-service="<%= s.id %>">
         <td><strong><%= s.name %></strong><br><span class="muted"><%= s.provider %> · <%= CATEGORIES[s.category] %></span><span class="pill" title="Entered by a Super Admin, not read from the provider">entered by you</span></td>
         <td><%= s.plan || '—' %><br><span class="muted"><%= s.price_minor == null ? (s.billing_frequency === 'free' ? 'Free' : 'Price not set') : `${formatMoney(s.price_minor, s.currency)} · ${FREQUENCIES[s.billing_frequency]}` %></span></td>
-        <td><%= s.summary.date || '—' %><% if (s.summary.daysLeft !== null) { %><br><span class="muted"><%= s.summary.daysLeft < 0 ? `${-s.summary.daysLeft} days ago` : `in ${s.summary.daysLeft} days` %> · auto-renew <%= s.auto_renew === true ? 'on' : s.auto_renew === false ? 'OFF' : 'not confirmed' %></span><% } %></td>
+        <td><%= s.summary.date || '—' %><% if (s.summary.registry) { %><br><span class="pill <%= s.summary.registryConfirmed ? 'delivered' : '' %>" data-registry title="Read from the domain registry"><%= s.summary.registryConfirmed ? `registry confirms ${s.summary.registry}` : `registry shows ${s.summary.registry}` %></span><% } %><% if (s.summary.daysLeft !== null) { %><br><span class="muted"><%= s.summary.daysLeft < 0 ? `${-s.summary.daysLeft} days ago` : `in ${s.summary.daysLeft} days` %> · auto-renew <%= s.auto_renew === true ? 'on' : s.auto_renew === false ? 'OFF' : 'not confirmed' %></span><% } %></td>
         <td><span class="pill <%= ['failed','overdue'].includes(s.payment_status) ? 'cancelled' : s.payment_status === 'paid' ? 'delivered' : '' %>"><%= PAYMENT_STATUSES[s.payment_status] %></span><% if (s.last_paid_on) { %><br><span class="muted">Last paid <%= String(s.last_paid_on).slice(0, 10) %><%= s.invoice_ref ? ` · ${s.invoice_ref}` : '' %></span><% } %></td>
-        <td><% if (s.manage_url) { %><a href="<%= s.manage_url %>" rel="noopener" target="_blank">Billing</a><br><% } %><a href="/admin/infrastructure?edit=<%= s.id %>#form">Edit</a></td>
+        <td data-payment-method><span class="pill <%= ['failed','expired'].includes(s.payment_method_status) ? 'cancelled' : s.payment_method_status === 'on_file' ? 'delivered' : '' %>"><%= PAYMENT_METHODS[s.payment_method_status] || PAYMENT_METHODS.unknown %></span><br><span class="muted">no card details stored</span></td>
+        <td><% if (s.manage_url) { %><a href="<%= s.manage_url %>" rel="noopener" target="_blank">Billing</a><br><% } %><a href="/admin/infrastructure?edit=<%= s.id %>#form">Edit</a><br><a href="/admin/infrastructure?renew=<%= s.id %>#renew" data-renew-link>Record payment / renewal</a></td>
       </tr>
     <% }) %>
-    <% if (!services.length) { %><tr><td colspan="5" class="muted">No services yet. Add Render (web service and database), Cloudflare (domain), Resend and any monitoring below.</td></tr><% } %>
+    <% if (!services.length) { %><tr><td colspan="6" class="muted">No services yet. Add Render (web service and database), Cloudflare (domain), Resend and any monitoring below.</td></tr><% } %>
     </tbody></table></div>
   </div>
+
+  <% const r = renewId ? services.find((x) => x.id === renewId) : null; %>
+  <% if (r) { %><form class="card" id="renew" method="post" action="/admin/infrastructure/<%= r.id %>/renewal" data-renew-form>
+    <%- include('../partials/csrf') %>
+    <h2>Record a payment or renewal: <%= r.name %></h2>
+    <p class="muted" style="margin-top:0">Only record what the provider has confirmed (an invoice, receipt or order number). <% if (r.category === 'domain') { %>For a domain, Skyfly also compares the new date with the registry and shows "not confirmed by the registry" until the registry's own expiry date moves.<% } %></p>
+    <div class="two">
+      <div><label for="renewed_on">Date paid / renewed</label><input id="renewed_on" name="renewed_on" type="date" required></div>
+      <div><label for="new_date"><%= r.expires_on || r.category === 'domain' ? 'New expiry date' : 'Next payment date' %></label><input id="new_date" name="new_date" type="date" required></div>
+    </div>
+    <div class="two">
+      <div><label for="evidence">Evidence (invoice / receipt / order number)</label><input id="evidence" name="evidence" required minlength="3" maxlength="200"></div>
+      <div><label for="amount">Amount paid (<%= r.currency %>, optional)</label><input id="amount" name="amount" inputmode="decimal"></div>
+    </div>
+    <p class="row"><button type="submit">Record</button><a class="btn secondary" href="/admin/infrastructure">Cancel</a></p>
+  </form><% } %>
 
   <% const e = editId ? services.find((s) => s.id === editId) : null; const v = values || (e ? { ...e, price: e.price_minor == null ? '' : e.price_minor / 100, auto_renew: e.auto_renew === true ? 'yes' : e.auto_renew === false ? 'no' : '', last_paid_on: e.last_paid_on ? String(e.last_paid_on).slice(0, 10) : '', next_payment_on: e.next_payment_on ? String(e.next_payment_on).slice(0, 10) : '', expires_on: e.expires_on ? String(e.expires_on).slice(0, 10) : '' } : { currency: 'USD', billing_frequency: 'monthly', payment_status: 'unknown' }); %>
   <form class="card" id="form" method="post" action="/admin/infrastructure<%= e ? `/${e.id}` : '' %>" data-infra-form>
@@ -61,6 +78,9 @@
       <div><label for="invoice_ref">Invoice reference</label><input id="invoice_ref" name="invoice_ref" maxlength="120" value="<%= v.invoice_ref || '' %>"></div>
     </div>
     <div class="two">
+      <div><label for="payment_method_status">Payment method at the provider (never card details)</label><select id="payment_method_status" name="payment_method_status"><% Object.entries(PAYMENT_METHODS).forEach(([k, l]) => { %><option value="<%= k %>" <%= (v.payment_method_status || 'unknown') === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
+    </div>
+    <div class="two">
       <div><label for="payment_status">Payment status</label><select id="payment_status" name="payment_status"><% Object.entries(PAYMENT_STATUSES).forEach(([k, l]) => { %><option value="<%= k %>" <%= v.payment_status === k ? 'selected' : '' %>><%= l %></option><% }) %></select></div>
       <div><label for="auto_renew">Auto-renew at the provider</label><select id="auto_renew" name="auto_renew"><option value="" <%= !v.auto_renew ? 'selected' : '' %>>Not confirmed</option><option value="yes" <%= v.auto_renew === 'yes' ? 'selected' : '' %>>On</option><option value="no" <%= v.auto_renew === 'no' ? 'selected' : '' %>>Off</option></select></div>
     </div>
@@ -69,6 +89,9 @@
     <p class="row"><button type="submit"><%= e ? 'Save changes' : 'Add service' %></button><% if (e) { %><a class="btn secondary" href="/admin/infrastructure">Cancel</a><% } %></p>
   </form>
   <% if (e) { %><form method="post" action="/admin/infrastructure/<%= e.id %>/archive" style="margin-top:-8px"><%- include('../partials/csrf') %><button class="secondary" type="submit">Archive this service</button></form><% } %>
+
+  <% if (renewals.length) { %><div class="card" data-renewals><h2>Recorded payments and renewals</h2>
+    <% renewals.forEach((x) => { %><p class="muted" style="margin:4px 0"><%= String(x.renewed_on).slice(0, 10) %> · <%= x.name %> · <%= x.previous_date ? String(x.previous_date).slice(0, 10) : '—' %> → <strong><%= String(x.new_date).slice(0, 10) %></strong><%= x.amount_minor != null ? ` · ${formatMoney(x.amount_minor, x.currency)}` : '' %> · evidence: <%= x.evidence %><%= x.registry_expires_on ? ` · registry showed ${String(x.registry_expires_on).slice(0, 10)}` : '' %><%= x.by_email ? ` · by ${x.by_email}` : '' %></p><% }) %></div><% } %>
 
   <div class="card"><h2>Domains (registry dates read automatically)</h2>
     <% if (!domains.length) { %><p class="muted">No domains added yet. <a href="/admin/domains">Add getskyfly.com on Domains</a> to have its expiry read from the registry.</p><% } %>
