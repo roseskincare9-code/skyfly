@@ -45,7 +45,18 @@
     <% }) %>
     <% if (Number(order.delivery_fee_minor) > 0) { %><div class="line"><span>Delivery</span><span id="delivery"><%= formatMoney(order.delivery_fee_minor, order.currency) %></span></div><% } %>
     <div class="line total"><span>Total</span><span id="total"><%= formatMoney(order.total_minor, order.currency) %></span></div>
+    <% if (order.payment_method === 'stripe' || order.payment_method === 'paypal') { %>
+      <div data-payment="<%= order.payment_status %>" style="margin-top:10px">
+        <% if (order.payment_status === 'paid') { %><p style="margin:0"><strong>Paid online</strong> (<%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %>, USD). Thank you!</p>
+        <% } else if (order.payment_status === 'refunded') { %><p style="margin:0"><strong>Refunded</strong> to your <%= order.payment_method === 'stripe' ? 'card' : 'PayPal account' %>.</p>
+        <% } else { %>
+          <p style="margin:0"><strong><%= order.payment_status === 'failed' ? 'Payment not completed.' : 'Waiting for payment confirmation.' %></strong> Your order is saved; it is marked paid only when <%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %> confirms the payment<%= order.payment_status === 'pending' ? ' (this can take a minute: refresh this page)' : '' %>.</p>
+          <form method="post" action="/o/<%= order.reference %>/pay" style="margin:10px 0 0"><input type="hidden" name="t" value="<%= order.access_token %>"><button type="submit" style="padding:10px 16px;border-radius:10px;border:0;background:#111;color:#fff;font-weight:600">Pay now <%= formatMoney(order.total_minor, order.currency) %> USD</button></form>
+        <% } %>
+      </div>
+    <% } else { %>
     <p class="muted" style="font-size:13px;margin:8px 0 0">Pay on delivery unless our team tells you otherwise.</p>
+    <% } %>
   </section>
 
   <section class="card">

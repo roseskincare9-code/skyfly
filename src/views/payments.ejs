@@ -1,0 +1,41 @@
+<%- include('partials/head', { title: 'Payment gateways' }) %>
+<%- include('partials/nav', { active: 'payments' }) %>
+<main>
+  <div class="page-head"><div><h1>Payment gateways</h1>
+    <p>Let customers pay online in <strong>USD</strong> with your own Stripe and PayPal accounts. Money goes straight to your accounts; Skyfly never sees card details and stores no passwords or secret keys. Payment on Delivery stays available in <%= business.currency %>.</p></div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+  <% if (productsWithoutUsd) { %><div class="warn-box" role="status" data-usd-missing><strong><%= productsWithoutUsd %> product(s)</strong> have no USD price, so they can only be paid on delivery. Add a USD price under <a href="<%= base %>/products">Products</a>.</div><% } %>
+
+  <% ['stripe', 'paypal'].forEach((p) => { const c = conns[p]; %>
+  <div class="card" data-gateway="<%= p %>">
+    <h2><%= PROVIDERS[p] %></h2>
+    <% if (!platform[p]) { %>
+      <p class="muted" data-gateway-unavailable>Not available yet: the Skyfly team is finishing the one-time <%= PROVIDERS[p] %> setup for the platform.</p>
+    <% } else if (!c || c.status === 'disconnected') { %>
+      <p class="muted">Not connected.</p>
+      <form method="post" action="<%= base %>/payments/<%= p %>/connect"><%- include('partials/csrf') %><button type="submit"><%= c ? 'Reconnect' : 'Connect' %> <%= PROVIDERS[p] %></button></form>
+      <p class="muted" style="font-size:13px">You'll sign in on <%= PROVIDERS[p] %>'s own site and authorise Skyfly to take payments into your account<%= modes[p] === 'test' ? ' (test mode: no real money)' : '' %>.</p>
+    <% } else { %>
+      <p><span class="pill <%= c.status === 'connected' && c.enabled ? 'delivered' : 'pending' %>" data-gateway-status><%= c.status === 'pending' ? 'Pending at PayPal' : c.enabled ? 'Connected' : 'Connected, turned off' %></span>
+        <%= c.mode === 'test' ? ' · test mode' : ' · live' %><% if (!usable.includes(p) && c.status === 'connected' && c.enabled) { %> · <span class="muted">not usable: the platform is in <%= modes[p] %> mode</span><% } %></p>
+      <p class="muted">Account <code data-account><%= c.account_id %></code> · connected <%= formatDate(c.connected_at) %></p>
+      <div class="row" style="gap:8px">
+        <% if (c.status === 'connected') { %><form method="post" action="<%= base %>/payments/<%= p %>/enabled" style="margin:0"><%- include('partials/csrf') %><input type="hidden" name="enabled" value="<%= c.enabled ? 'false' : 'true' %>"><button class="secondary" type="submit"><%= c.enabled ? 'Turn off at checkout' : 'Turn on at checkout' %></button></form><% } %>
+        <form method="post" action="<%= base %>/payments/<%= p %>/connect" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Reconnect</button></form>
+        <form method="post" action="<%= base %>/payments/<%= p %>/disconnect" style="margin:0" onsubmit="return confirm('Disconnect <%= PROVIDERS[p] %>? Customers will no longer be able to pay with it.')"><%- include('partials/csrf') %><button class="secondary" type="submit">Disconnect</button></form>
+      </div>
+    <% } %>
+  </div>
+  <% }) %>
+
+  <form class="card" method="post" action="<%= base %>/payments/usd-delivery">
+    <%- include('partials/csrf') %>
+    <h2>Delivery fee for online (USD) orders</h2>
+    <p class="muted" style="margin-top:0">Online orders are charged in USD using the USD prices you set on each product, never a conversion of your <%= business.currency %> prices.</p>
+    <label for="usd_delivery_fee">Delivery fee in USD (0 = free)</label>
+    <input id="usd_delivery_fee" name="usd_delivery_fee" inputmode="decimal" value="<%= (usdDeliveryFee / 100).toFixed(2) %>">
+    <p><button type="submit">Save</button></p>
+  </form>
+</main>
+</body></html>

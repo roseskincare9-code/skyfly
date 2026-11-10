@@ -4,6 +4,7 @@ import { normalizePhone } from '../lib/phone.js';
 import { generateReference, generateToken } from '../lib/reference.js';
 import { originsForPage } from '../lib/origins.js';
 import { STATUS_VALUES, PAYMENT_VALUES } from '../lib/statuses.js';
+import { usableGateways, ONLINE_CURRENCY } from './payments.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MAX_ITEMS = 10;
@@ -89,6 +90,11 @@ export function validateOrderInput(body) {
   const landingPage = str(body?.landingPage).toLowerCase();
   if (!landingPage) fields.landingPage = 'Missing landing page.';
 
+  // Payment on Delivery (default) or online in USD through the business's Stripe or PayPal.
+  const paymentMethod = body?.paymentMethod === undefined || body?.paymentMethod === null || body?.paymentMethod === '' ? 'cod' : String(body.paymentMethod);
+  if (!['cod', 'stripe', 'paypal'].includes(paymentMethod)) fields.paymentMethod = 'Choose a payment method.';
+  // Online payment needs an email for the receipt.
+  if (paymentMethod !== 'cod' && !email && !fields.email) fields.email = 'Enter your email address for the payment receipt.';
   if (Object.keys(fields).length > 0) {
     throw new OrderError(400, 'VALIDATION', 'Please check the highlighted details and try again.', { fields });
   }
@@ -110,12 +116,12 @@ export function validateOrderInput(body) {
 
   // Only true when the page asked and the customer ticked it; never assumed.
   const marketingConsent = customer.marketingConsent === true && Boolean(email);
-  return { landingPage, idempotencyKey, customer: { name, phone, email, address, state, notes, marketingConsent }, items, attribution };
+  return { landingPage, idempotencyKey, customer: { name, phone, email, address, state, notes, marketingConsent }, items, attribution, paymentMethod };
 }
 
 function fingerprint(input) {
   const { customer, items, landingPage } = input;
-  const canonical = JSON.stringify([landingPage, customer, items.map((i) => [i.code, i.quantity, ...(i.upsell ? ['upsell'] : []), ...(i.options && Object.keys(i.options).length ? [Object.entries(i.options).map(([k, v]) => `${k.toLowerCase()}=${v.toLowerCase()}`).sort()] : [])])]);
+  const canonical = JSON.stringify([landingPage, customer, input.paymentMethod ?? 'cod', items.map((i) => [i.code, i.quantity, ...(i.upsell ? ['upsell'] : []), ...(i.options && Object.keys(i.options).length ? [Object.entries(i.options).map(([k, v]) => `${k.toLowerCase()}=${v.toLowerCase()}`).sort()] : [])])]);
   return createHash('sha256').update(canonical).digest('hex');
 }
 
@@ -123,7 +129,7 @@ export async function loadLandingPage(client, slug) {
   const { rows } = await client.query(
     `SELECT lp.id, lp.business_id, lp.status, lp.url, lp.custom_domain, lp.test_mode, lp.upsell_product_id,
             (lp.published_version_id IS NOT NULL) AS hosted, b.currency, b.order_prefix, b.subdomain AS business_subdomain,
-            b.delivery_fee_minor, b.free_delivery_from_minor
+            b.delivery_fee_minor, b.free_delivery_from_minor, b.usd_delivery_fee_minor
        FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
       WHERE lp.slug = $1`,
     [slug],
@@ -133,10 +139,10 @@ export async function loadLandingPage(client, slug) {
 
 // Prices every item from Skyfly's catalog: a package must be on the page; an add-on must be the
 // page's configured upsell. Totals sent by the browser are never used.
-export async function loadPricedItems(client, page, items) {
+export async function loadPricedItems(client, page, items, { usd = false } = {}) {
   const codes = items.map((i) => i.code);
   const { rows } = await client.query(
-    `SELECT p.id, p.code, p.name, p.price_minor, p.options, (lpp.product_id IS NOT NULL) AS on_page
+    `SELECT p.id, p.code, p.name, p.price_minor, p.usd_price_minor, p.options, (lpp.product_id IS NOT NULL) AS on_page
        FROM products p
        LEFT JOIN landing_page_products lpp ON lpp.product_id = p.id AND lpp.landing_page_id = $1
       WHERE p.active AND p.business_id = $2 AND p.code = ANY($3::text[]) AND (lpp.product_id IS NOT NULL OR p.id = $4)`,
@@ -156,10 +162,16 @@ export async function loadPricedItems(client, page, items) {
     }
     const picked = resolveOptions(product.options, item.options ?? {});
     if (picked.error) throw new OrderError(400, 'VALIDATION', picked.error, { fields: { items: picked.error } });
-    const base = Number(product.price_minor);
+    // Online (USD): the price the business set in USD, never a conversion. Options that change the
+    // price have no USD price, so such a choice is paid on delivery.
+    if (usd && (product.usd_price_minor === null || picked.chosen.some((c) => c.delta_minor))) {
+      throw new OrderError(409, 'ONLINE_UNAVAILABLE', 'This package cannot be paid online. Please choose Payment on Delivery.', { product: item.code });
+    }
+    const base = Number(usd ? product.usd_price_minor : product.price_minor);
     // The page shows the product's own price; options add (or take off) their difference here.
-    const unit = Math.max(0, base + picked.chosen.reduce((sum, c) => sum + c.delta_minor, 0));
-    if (item.displayedPrice !== null && Math.round(item.displayedPrice * 100) !== base) {
+    const unit = Math.max(0, base + (usd ? 0 : picked.chosen.reduce((sum, c) => sum + c.delta_minor, 0)));
+    // (The page shows its local-currency price; an online order is priced in USD, so that check is for COD.)
+    if (!usd && item.displayedPrice !== null && Math.round(item.displayedPrice * 100) !== base) {
       throw new OrderError(409, 'PRICE_CHANGED', 'The price of this package has changed. Please refresh the page to see the current price.', {
         product: item.code,
       });
@@ -180,7 +192,7 @@ export async function loadPricedItems(client, page, items) {
 
 async function findByIdempotencyKey(client, businessId, key) {
   const { rows } = await client.query(
-    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test, delivery_fee_minor
+    `SELECT id, reference, access_token, request_fingerprint, total_minor, currency, is_test, delivery_fee_minor, payment_method, payment_status
        FROM orders WHERE business_id = $1 AND idempotency_key = $2`,
     [businessId, key],
   );
@@ -200,10 +212,10 @@ async function insertOrder(client, o) {
        business_id, landing_page_id, reference, access_token, idempotency_key, request_fingerprint,
        customer_name, phone, email, address, state, customer_notes, currency, total_minor,
        source_url, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent, delivery_fee_minor)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+       status, payment_status, source, client_ip, user_agent, fbp, fbc, ttp, ttclid, is_test, marketing_consent, delivery_fee_minor, payment_method)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
      ON CONFLICT (business_id, idempotency_key) DO NOTHING
-     RETURNING id, reference, access_token, total_minor, currency, is_test, delivery_fee_minor`,
+     RETURNING id, reference, access_token, total_minor, currency, is_test, delivery_fee_minor, payment_method, payment_status`,
     [
       o.businessId, o.landingPageId, generateReference(o.prefix), generateToken(), o.idempotencyKey, o.fingerprint,
       o.customer.name, o.customer.phone, o.customer.email, o.customer.address, o.customer.state, o.customer.notes,
@@ -212,7 +224,7 @@ async function insertOrder(client, o) {
       o.attribution.utmCampaign, o.attribution.utmContent, o.attribution.utmTerm,
       o.status, o.paymentStatus, o.source, o.client?.ip ?? null, o.client?.userAgent ?? null,
       o.attribution.fbp ?? null, o.attribution.fbc ?? null, o.attribution.ttp ?? null, o.attribution.ttclid ?? null,
-      isTestName(o.customer.name) || o.testMode === true, o.customer.marketingConsent === true, o.deliveryFee ?? 0,
+      isTestName(o.customer.name) || o.testMode === true, o.customer.marketingConsent === true, o.deliveryFee ?? 0, o.paymentMethod ?? 'cod',
     ],
   );
   const order = inserted.rows[0];
@@ -228,7 +240,7 @@ async function insertOrder(client, o) {
     `INSERT INTO order_status_history (order_id, from_status, to_status, note, changed_by) VALUES ($1, NULL, $2, $3, $4)`,
     [order.id, o.status, o.historyNote, o.userId ?? null],
   );
-  if (o.paymentStatus !== 'unpaid') {
+  if (o.paymentStatus !== 'unpaid' && o.paymentStatus !== 'pending') {
     await client.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, note, changed_by, kind) VALUES ($1, 'unpaid', $2, NULL, $3, 'payment')`,
       [order.id, o.paymentStatus, o.userId ?? null],
@@ -283,15 +295,21 @@ export async function createOrder(pool, input, auth, config) {
     const existing = await findByIdempotencyKey(client, page.business_id, input.idempotencyKey);
     if (existing) return replay(existing, print);
 
-    const items = await loadPricedItems(client, page, input.items);
+    const online = input.paymentMethod === 'stripe' || input.paymentMethod === 'paypal';
+    if (online && !(await usableGateways(client, config, page.business_id)).includes(input.paymentMethod)) {
+      throw new OrderError(409, 'GATEWAY_UNAVAILABLE', 'This payment option is not available right now. Please choose another one.');
+    }
+    const items = await loadPricedItems(client, page, input.items, { usd: online });
     const subtotal = items.reduce((sum, i) => sum + i.lineTotal, 0);
-    const deliveryFee = deliveryFor(page, subtotal);
+    // Online orders are in USD with the business's own USD delivery fee; Payment on Delivery keeps the
+    // business's currency (NGN for Nigerian shops).
+    const deliveryFee = online ? Number(page.usd_delivery_fee_minor ?? 0) : deliveryFor(page, subtotal);
     await client.query('BEGIN');
     const order = await insertOrder(client, {
-      businessId: page.business_id, landingPageId: page.id, prefix: page.order_prefix, currency: page.currency,
+      businessId: page.business_id, landingPageId: page.id, prefix: page.order_prefix, currency: online ? ONLINE_CURRENCY : page.currency,
       idempotencyKey: input.idempotencyKey, fingerprint: print, customer: input.customer, attribution: input.attribution,
-      items, total: subtotal + deliveryFee, deliveryFee,
-      status: 'pending', paymentStatus: 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
+      items, total: subtotal + deliveryFee, deliveryFee, paymentMethod: input.paymentMethod ?? 'cod',
+      status: 'pending', paymentStatus: online ? 'pending' : 'unpaid', source: auth.businessId !== undefined ? 'api' : 'web', historyNote: 'Order placed',
       client: auth.client, testMode: page.test_mode,
     });
     if (!order) {

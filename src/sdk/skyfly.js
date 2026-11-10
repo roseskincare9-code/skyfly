@@ -356,7 +356,8 @@
           restart(order.landingPage);
           if (!(data.replayed && earlierVisit)) {
             track('Lead', { data: { value: data.total, currency: data.currency }, eventId: 'lead_' + data.reference }, data.reference);
-            purchase(data);
+            // An online order is a purchase only once the gateway confirms it (counted by Skyfly's server).
+            if (!data.payment) purchase(data);
           }
           return data;
         }
@@ -412,6 +413,9 @@
     });
     if (anyChoice) order.items[0].options = chosen;
     Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
+    // Optional payment choice on the page's own form: cod (default), stripe or paypal (USD).
+    var payEl = marked(form, 'payment_method')[0] || form.querySelector('[name=payment_method]:checked') || form.querySelector('select[name=payment_method]');
+    if (payEl && /^(cod|stripe|paypal)$/.test(payEl.value)) order.paymentMethod = payEl.value;
     return order;
   }
   function progressOf(form) {
@@ -455,6 +459,7 @@
       if (btn) { btn.disabled = true; btn.textContent = form.getAttribute('data-skyfly-busy') || 'Submitting...'; }
       errorBox(form).style.display = 'none';
       submitOrder(order).then(function (res) {
+        if (res.ok && res.payment) { location.href = res.payment.redirectUrl || res.confirmationUrl; return; }
         if (res.ok) {
           var target = form.getAttribute('data-skyfly-redirect');
           setTimeout(function () { location.href = target && target !== 'confirmation' ? target : res.confirmationUrl; }, 300);
@@ -516,6 +521,7 @@
     '.sky-co input,.sky-co select,.sky-co textarea{width:100%;font:inherit;padding:11px 12px;border:1px solid #cfcbe0;border-radius:10px;background:#fff;color:inherit}' +
     '.sky-co textarea{min-height:64px}.sky-opt{display:flex;gap:10px;align-items:center;border:1px solid #cfcbe0;border-radius:12px;padding:12px;margin:8px 0;cursor:pointer;font-weight:400}' +
     '.sky-opt input{width:auto;margin:0}.sky-opt b{margin-left:auto;white-space:nowrap}.sky-opt.on{border-color:#7c5cff;background:#f6f3ff}' +
+    '.sky-pay{margin-top:14px}.sky-pay .sky-opt b{margin-left:0}.sky-gw{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:6px 0 0 4px}.sky-gw label{display:flex;gap:6px;align-items:center;font-weight:600}.sky-gw input[type=radio]{width:auto;margin:0}.sky-gw p,.sky-gw label:has(input[type=email]){flex-basis:100%}' +
     '.sky-btn{display:block;width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;background:#7c5cff;color:#fff;font:600 16px system-ui,sans-serif;cursor:pointer}' +
     '.sky-btn[disabled]{opacity:.6;cursor:wait}.sky-link{background:none;border:0;color:#5b3fd6;font:inherit;text-decoration:underline;cursor:pointer;padding:0}' +
     '.sky-total{margin-top:12px;font-size:16px}.sky-err{background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;padding:10px 12px;border-radius:10px;margin-top:12px}' +
@@ -666,30 +672,74 @@
         review();
       });
     }
+    // Pay online (USD) is offered only for gateways the business connected and only with the USD prices
+    // the business set (never a conversion). Skyfly prices the order again when saving it.
+    function onlineUsd() {
+      var o = cat.online; var p = product();
+      if (!o || !o.gateways || !o.gateways.length || !p || o.prices[p.code] === undefined) return null;
+      if (addon() && o.upsell === undefined) return null;
+      return o.prices[p.code] * st8.qty + (addon() ? o.upsell : 0) + (o.delivery || 0);
+    }
+    var GATEWAY = { stripe: 'Card (Stripe)', paypal: 'PayPal' };
+    // Online amounts: always "$24.99 USD" (the browser's locale could show "US$" and hide which dollar).
+    function usdText(v) { return '$' + Number(v).toFixed(2) + ' USD'; }
+    // The review shows the amount actually charged: USD when paying online, the local currency otherwise.
+    function payingOnline() { return Boolean(st8.pay && st8.pay !== 'cod' && onlineUsd() !== null); }
+    function payBlock() {
+      var usd = onlineUsd();
+      if (usd === null) { st8.pay = 'cod'; return ''; }
+      if (!st8.pay) st8.pay = 'cod';
+      var online = st8.pay !== 'cod';
+      return '<div class="sky-pay" data-skyfly-payment><b>Payment method</b>' +
+        '<label class="sky-opt' + (online ? '' : ' on') + '"><input type="radio" name="sky_pay" value="cod"' + (online ? '' : ' checked') + '> <span><b>Payment on Delivery</b><br><span class="sky-muted">Pay when your order arrives · ' + esc(money(sum(), cat.currency)) + '</span></span></label>' +
+        '<label class="sky-opt' + (online ? ' on' : '') + '"><input type="radio" name="sky_pay" value="online"' + (online ? ' checked' : '') + '> <span><b>Pay online in USD</b><br><span class="sky-muted">Pay securely now · <b data-skyfly-usd-total>' + esc(usdText(usd)) + '</b></span></span></label>' +
+        (online ? '<div class="sky-gw">' + cat.online.gateways.map(function (g) {
+          return '<label><input type="radio" name="sky_gw" value="' + g + '"' + (st8.pay === g ? ' checked' : '') + '> ' + esc(GATEWAY[g] || g) + '</label>';
+        }).join(' ') + '<p class="sky-muted">You will be charged <b>' + esc(usdText(usd)) + '</b> on the ' + (cat.online.gateways.length > 1 ? 'Stripe or PayPal' : GATEWAY[cat.online.gateways[0]]) + ' secure page.</p>' +
+          (st8.c.email ? '' : '<label>Email for your receipt<input type="email" data-pay-email autocomplete="email" required></label>') + '</div>' : '') +
+        '</div>';
+    }
     function review(message) {
       var p = product(); var c = st8.c;
       reviewing = true; progress();
       box.innerHTML = '<h3>Review your order</h3><div class="sky-rows">' +
         '<div><span>Package</span><b>' + esc(p.name) + ' × ' + st8.qty + '</b></div>' +
         (optionText() ? '<div><span>Options</span><b>' + esc(optionText()) + '</b></div>' : '') +
-        (cat.delivery && cat.delivery.fee ? '<div><span>Delivery</span><b>' + (delivery() ? esc(money(delivery(), cat.currency)) : 'Free') + '</b></div>' : '') +
+        (payingOnline() ? (cat.online.delivery ? '<div><span>Delivery</span><b>' + esc(usdText(cat.online.delivery)) + '</b></div>' : '') : cat.delivery && cat.delivery.fee ? '<div><span>Delivery</span><b>' + (delivery() ? esc(money(delivery(), cat.currency)) : 'Free') + '</b></div>' : '') +
         (addon() ? '<div><span>Add-on</span><b>' + esc(addon().name) + ' (' + esc(money(addon().price, cat.currency)) + ')</b></div>' : '') +
-        '<div><span>Total</span><b>' + esc(money(sum(), cat.currency)) + '</b></div>' +
+        '<div><span>Total</span><b data-review-total>' + esc(payingOnline() ? usdText(onlineUsd()) : money(sum(), cat.currency)) + '</b></div>' +
         '<div><span>Name</span><b>' + esc(c.name) + '</b></div><div><span>Phone</span><b>' + esc(c.phone) + '</b></div>' +
         '<div><span>Deliver to</span><b>' + esc(c.address + (c.state ? ', ' + c.state : '')) + '</b></div>' +
         (c.email ? '<div><span>Email</span><b>' + esc(c.email) + '</b></div>' : '') + '</div>' +
+        payBlock() +
         '<div class="sky-err" data-err' + (message ? '' : ' hidden') + ' role="alert">' + esc(message || '') + '</div>' +
-        '<button class="sky-btn" type="button" data-place>' + esc(box.getAttribute('data-place') || 'Place my order') + '</button>' +
+        '<button class="sky-btn" type="button" data-place>' + esc(st8.pay && st8.pay !== 'cod' ? 'Continue to secure payment' : (box.getAttribute('data-place') || 'Place my order')) + '</button>' +
         '<p style="text-align:center"><button type="button" class="sky-link" data-edit>Change details</button></p>';
       box.querySelector('[data-edit]').onclick = function () { reviewing = false; form(); };
+      Array.prototype.forEach.call(box.querySelectorAll('input[name=sky_pay],input[name=sky_gw]'), function (el) {
+        el.onchange = function () {
+          if (el.name === 'sky_pay') st8.pay = el.value === 'cod' ? 'cod' : (cat.online.gateways[0]);
+          else st8.pay = el.value;
+          var em = box.querySelector('[data-pay-email]'); if (em && em.value) st8.c.email = em.value.trim();
+          review();
+        };
+      });
       var btn = box.querySelector('[data-place]');
       btn.onclick = function () {
         if (btn.disabled) return;
-        btn.disabled = true; btn.textContent = 'Placing your order…';
+        var em = box.querySelector('[data-pay-email]');
+        if (em) { st8.c.email = String(em.value || '').trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(st8.c.email)) { review('Enter your email address for the payment receipt.'); return; } }
+        var pay = st8.pay || 'cod';
+        btn.disabled = true; btn.textContent = pay === 'cod' ? 'Placing your order…' : 'Opening secure payment…';
         var items = [{ product: st8.product, quantity: st8.qty }];
         if (groups().length) { items[0].options = {}; groups().forEach(function (g) { items[0].options[g.name] = choice(g).label; }); }
         if (addon()) items.push({ product: addon().code, quantity: 1, upsell: true });
-        submitOrder({ landingPage: page, customer: st8.c, items: items, website: st8.website || '' }).then(function (r) {
+        submitOrder({ landingPage: page, customer: st8.c, items: items, website: st8.website || '', paymentMethod: pay }).then(function (r) {
+          // Online: the order is saved (unpaid); the customer pays on the gateway's own secure page.
+          if (r && r.ok === true && r.reference && r.payment) {
+            location.href = r.payment.redirectUrl || r.confirmationUrl;
+            return;
+          }
           // Success only when Skyfly has saved the order and returned its reference.
           if (r && r.ok === true && r.reference) {
             // The summary and total are Skyfly's (what was saved and priced), not the browser's.

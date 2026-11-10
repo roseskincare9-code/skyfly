@@ -50,6 +50,18 @@
       <textarea name="note" maxlength="1000" placeholder="e.g. Confirmed by phone, delivery Friday"></textarea>
       <p style="margin-bottom:0"><button type="submit">Save order status</button></p>
     </form>
+<% if (order.payment_method && order.payment_method !== 'cod') { %>
+    <div class="card" style="margin:0" data-online-payment>
+      <h2>Payment</h2>
+      <p><span class="pill <%= order.payment_status === 'paid' ? 'delivered' : ['failed','refunded'].includes(order.payment_status) ? 'cancelled' : 'pending' %>" data-payment-status><%= PAYMENT_LABELS[order.payment_status] %></span> · <%= PAYMENT_METHOD_LABELS[order.payment_method] %></p>
+      <p class="muted" style="font-size:13px">Set only by <%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %>'s verified confirmation, never by hand or by the customer's browser.</p>
+      <% (payments || []).forEach((t) => { %><p class="muted" style="font-size:13px;margin:4px 0" data-payment-tx><%= t.kind === 'refund' ? 'Refund' : 'Payment' %> <%= t.provider_payment_id || t.provider_ref %> · <%= formatMoney(t.amount_minor, t.currency) %> · <strong><%= t.status %></strong><%= t.failure_reason ? ` · ${t.failure_reason}` : '' %> · <%= formatDate(t.updated_at) %></p><% }) %>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <% if (['pending', 'failed'].includes(order.payment_status)) { %><form method="post" action="<%= base %>/orders/<%= order.id %>/payment/check" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Check payment status</button></form><% } %>
+        <% if (order.payment_status === 'paid' && can('payments')) { %><form method="post" action="<%= base %>/orders/<%= order.id %>/payment/refund" style="margin:0" onsubmit="return confirm('Refund the full amount to the customer through <%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %>?')"><%- include('partials/csrf') %><button class="secondary" type="submit">Refund</button></form><% } %>
+      </div>
+    </div>
+    <% } else { %>
     <form class="card" style="margin:0" method="post" action="<%= base %>/orders/<%= order.id %>/status">
       <%- include('partials/csrf') %>
       <input type="hidden" name="kind" value="payment">
@@ -62,6 +74,7 @@
       <p class="muted" style="font-size:13px">Mark <strong>Paid</strong> only when the money has actually been received. This is what sends a Purchase event to your ad pixels.</p>
       <p style="margin-bottom:0"><button type="submit">Save payment status</button></p>
     </form>
+    <% } %>
   </div>
   <div style="height:16px"></div>
 

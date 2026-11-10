@@ -157,6 +157,31 @@ export function loadConfig() {
       orderQueue: Number(process.env.FAIR_ORDER_QUEUE) || 100,
       orderWaitMs: Number(process.env.FAIR_ORDER_WAIT_MS) || 15000,
     },
+    // Online payments (platform credentials, server-side only; each business connects its OWN account).
+    // Stripe Connect (OAuth, Standard accounts): STRIPE_SECRET_KEY (sk_test_… / sk_live_…), STRIPE_CONNECT_CLIENT_ID
+    // (ca_…), STRIPE_WEBHOOK_SECRET (whsec_… of the platform's Connect webhook endpoint).
+    // PayPal partner onboarding: PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_PARTNER_MERCHANT_ID, PAYPAL_WEBHOOK_ID,
+    // PAYPAL_ENV (sandbox | live), PAYPAL_BN_CODE (partner attribution ID, optional).
+    payments: {
+      stripe: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_CONNECT_CLIENT_ID ? {
+        secretKey: process.env.STRIPE_SECRET_KEY,
+        clientId: process.env.STRIPE_CONNECT_CLIENT_ID,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
+        mode: String(process.env.STRIPE_SECRET_KEY).startsWith('sk_live_') ? 'live' : 'test',
+        apiBase: isProduction ? 'https://api.stripe.com' : (process.env.STRIPE_API_BASE || 'https://api.stripe.com'),
+        connectBase: isProduction ? 'https://connect.stripe.com' : (process.env.STRIPE_CONNECT_BASE || 'https://connect.stripe.com'),
+      } : null,
+      paypal: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && process.env.PAYPAL_PARTNER_MERCHANT_ID ? {
+        clientId: process.env.PAYPAL_CLIENT_ID,
+        clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+        partnerMerchantId: process.env.PAYPAL_PARTNER_MERCHANT_ID,
+        webhookId: process.env.PAYPAL_WEBHOOK_ID || null,
+        bnCode: process.env.PAYPAL_BN_CODE || null,
+        mode: process.env.PAYPAL_ENV === 'live' ? 'live' : 'test',
+        apiBase: !isProduction && process.env.PAYPAL_API_BASE ? process.env.PAYPAL_API_BASE
+          : process.env.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
+      } : null,
+    },
     // Local development only: send emails to a stand-in provider instead of the real one.
     emailApiBase: isProduction ? null : (process.env.EMAIL_API_BASE || null),
     // Skyfly's own sender for order notifications and address verification, used for businesses that

@@ -19,6 +19,7 @@
     allowed('marketing') && item('email', base + '/email', 'send', 'Email Automations'),
     allowed('integrations') && item('pixels', base + '/pixels', 'target', 'Tracking & Pixels'),
     allowed('integrations') && item('integrations', base + '/integrations', 'key', 'Integrations'),
+    allowed('payments') && item('payments', base + '/payments', 'card', 'Payment Gateways'),
     item('subscription', base + '/subscription', 'card', 'Subscription'),
     allowed('settings') && item('settings', base + '/settings', 'gear', 'Settings'),
   ].filter(Boolean) : [];

@@ -2,6 +2,7 @@
 // owner confirms payment; there is no payment gateway), setup progress, team invites and
 // platform settings. Only users with is_platform_admin may open it.
 import express, { Router } from 'express';
+import { paymentsOverview, platformGateways } from '../services/payments.js';
 import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { hashPassword } from '../lib/passwords.js';
 import { sendEmail } from '../services/emailProviders.js';
@@ -545,6 +546,13 @@ export function adminRoutes({ pool, config, load = null }) {
 
   // System status: what the database holds, and a full backup download (the free Render
   // database has no automatic backups).
+  // Payments across the platform: which businesses connected Stripe / PayPal, outcomes and volume by
+  // currency. Account identifiers only: merchants' credentials are never stored, so none can be shown.
+  router.get('/admin/payments', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.render('admin/payments', { ...(await paymentsOverview(pool)), platform: platformGateways(config), modes: { stripe: config.payments?.stripe?.mode ?? null, paypal: config.payments?.paypal?.mode ?? null } });
+  }));
+
   router.get('/admin/system', asyncHandler(async (req, res) => {
     const counts = [];
     for (const t of TABLE_ORDER) counts.push([t, (await pool.query(`SELECT count(*)::int AS n FROM ${t}`)).rows[0].n]);

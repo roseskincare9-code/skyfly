@@ -32,3 +32,6 @@ export const SALES_DEFINITIONS = {
 };
 
 export const LANDING_PAGE_STATUSES = ['draft', 'active', 'paused', 'archived'];
+
+// How the customer pays: on delivery, or online in USD through the business's own gateway.
+export const PAYMENT_METHOD_LABELS = { cod: 'Payment on Delivery', stripe: 'Online — Stripe (USD)', paypal: 'Online — PayPal (USD)' };

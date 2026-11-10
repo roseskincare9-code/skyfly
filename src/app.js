@@ -10,6 +10,9 @@ import { authRoutes } from './routes/auth.js';
 import { businessRoutes } from './routes/businesses.js';
 import { publicRoutes } from './routes/public.js';
 import { workspaceRoutes } from './routes/workspace.js';
+import { paymentCallbackRoutes } from './routes/payments.js';
+import { paymentWebhookRoutes, paymentReturnRoutes } from './routes/paymentsPublic.js';
+import { notifyOwnersPaid } from './services/payments.js';
 import { senderReady } from './services/emailVerification.js';
 import { adminRoutes, adminLoginRoutes, backupKeyRoutes, backupReportRoute } from './routes/admin.js';
 import { csrf } from './lib/csrf.js';
@@ -58,7 +61,11 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
     return ctx.preview ? build() : load.caches.html.get(`${ctx.page.id}:${ctx.versionId}:${ctx.filePath}`, build);
   };
   // Marking an order Paid sends the server-side Purchase event (if configured). Never blocks the owner.
-  onPaid ??= (orderId) => recordPurchase(pool, config, orderId).catch((err) => console.error('Purchase event error:', err.message));
+  // A gateway-confirmed online payment also emails the business's own owners.
+  onPaid ??= async (orderId) => {
+    await recordPurchase(pool, config, orderId).catch((err) => console.error('Purchase event error:', err.message));
+    await notifyOwnersPaid(pool, config, orderId).catch((err) => console.error('Payment email error:', err.message));
+  };
   const app = express();
   const PgStore = connectPgSimple(session);
   // gzip for HTML, CSS, JS and JSON (pages, dashboard, SDK, API); images are already compressed.
@@ -101,7 +108,10 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.use(sandboxPreview({ pool, config, transformHtml }));
   app.use(pathPages({ pool, transformHtml, load }));
 
-  app.use(helmet());
+  // Forms may lead only to Skyfly itself and the official payment pages (Pay now / Connect Stripe or PayPal).
+  app.use(helmet({
+    contentSecurityPolicy: { directives: { 'form-action': ["'self'", 'https://checkout.stripe.com', 'https://connect.stripe.com', 'https://www.paypal.com', 'https://www.sandbox.paypal.com'] } },
+  }));
 
   // Dashboard fonts (versioned file names, so they can be cached for a year).
   app.use('/static', express.static(new URL('./static', import.meta.url).pathname, { immutable: true, maxAge: '365d', index: false }));
@@ -115,6 +125,9 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   });
 
   // Public order API and confirmation page: no admin session involved.
+  // Payment webhooks (raw body, signature verified) and the customer's return from Stripe / PayPal.
+  app.use(paymentWebhookRoutes({ pool, config, onPaid }));
+  app.use(paymentReturnRoutes({ pool, config, onPaid }));
   app.use(publicRoutes({ pool, config, onOrderSaved, load }));
   // Backup job results (server's backup key; no session or form).
   app.use(backupReportRoute({ pool, config }));
@@ -196,6 +209,8 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.use(backupKeyRoutes({ pool, config }));
   app.use(adminLoginRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));
+  // Stripe / PayPal send the owner back here after authorising (signed-in owner, one-time state).
+  app.use(paymentCallbackRoutes({ pool, config }));
   // Anything saved in the dashboard (pixels, products, pages, publishing) is visible to visitors at
   // once: the public caches are cleared after every successful change.
   app.use((req, res, next) => {
