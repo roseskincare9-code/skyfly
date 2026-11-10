@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import { checkTransaction, refundOrder, PaymentError } from '../services/payments.js';
 import { asyncHandler } from '../lib/http.js';
 import { toCsv } from '../lib/csv.js';
-import { ORDER_STATUSES, PAYMENT_STATUSES, STATUS_LABELS, STATUS_VALUES, PAYMENT_LABELS, PAYMENT_VALUES } from '../lib/statuses.js';
+import { ORDER_STATUSES, PAYMENT_STATUSES, STATUS_LABELS, STATUS_VALUES, PAYMENT_LABELS, PAYMENT_VALUES, PAYMENT_METHOD_LABELS } from '../lib/statuses.js';
 import { audit } from '../lib/audit.js';
 import { createManualOrder, OrderError } from '../services/orders.js';
 import { retryEvent } from '../services/pixels.js';
@@ -204,7 +205,7 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
   router.get('/:orderId', asyncHandler(async (req, res) => {
     const order = await loadOrder(req);
     if (!order) return res.status(404).render('error', { message: 'Order not found.' });
-    const [items, conversions, history, notification] = await Promise.all([
+    const [items, conversions, history, notification, payments] = await Promise.all([
       pool.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id', [order.id]),
       pool.query('SELECT * FROM conversion_events WHERE order_id = $1 ORDER BY id', [order.id]).then((r) => r.rows),
       pool.query(
@@ -213,10 +214,13 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
         [order.id],
       ),
       notificationFor(pool, order.id),
+      pool.query('SELECT * FROM payment_transactions WHERE order_id = $1 AND business_id = $2 ORDER BY id', [order.id, req.business.id]).then((r) => r.rows),
     ]);
     const waText = `Hello ${order.customer_name.split(' ')[0]}, this is ${req.business.name} about your order ${order.reference}.`;
     res.render('order', {
       order,
+      payments,
+      PAYMENT_METHOD_LABELS,
       items: items.rows,
       history: history.rows,
       conversions,
@@ -260,6 +264,10 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
     const value = String(req.body.status ?? '');
     const note = String(req.body.note ?? '').trim().slice(0, 1000) || null;
     if (!allowed.includes(value)) return res.status(400).render('error', { message: 'Unknown status.' });
+    // An online (Stripe / PayPal) payment status comes only from the gateway's verified confirmation.
+    if (kind === 'payment' && order.payment_method && order.payment_method !== 'cod' && value !== order.payment_status) {
+      return res.status(409).render('error', { message: 'This order is paid online: its payment status is set by Stripe or PayPal only. Use "Check payment status" or "Refund" on the order page.' });
+    }
 
     const previous = order[column];
     if (value !== previous || note) {
@@ -286,6 +294,29 @@ export function ordersRoutes({ pool, config, onPaid = null, onOrderSaved = () =>
       // e.g. Delivered or Cancelled: queued "still processing" emails for this order stop at once.
       if (kind === 'fulfillment') await cancelIneligible(pool, { orderId: order.id });
     }
+    res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
+  }));
+
+  // Online payments: ask the gateway again (server-to-server), or refund a completed payment.
+  router.post('/:orderId/payment/check', asyncHandler(async (req, res) => {
+    const order = await loadOrder(req);
+    if (!order) return res.status(404).render('error', { message: 'Order not found.' });
+    const { rows } = await pool.query("SELECT * FROM payment_transactions WHERE order_id = $1 AND business_id = $2 AND kind = 'payment' AND status IN ('created', 'pending') ORDER BY id DESC", [order.id, req.business.id]);
+    for (const t of rows) await checkTransaction(pool, config, t, { onPaid }).catch((err) => console.error('Payment check failed:', err.message));
+    await audit(pool, req, { action: 'payment.checked', businessId: req.business.id, entityType: 'order', entityId: order.reference });
+    res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
+  }));
+  router.post('/:orderId/payment/refund', asyncHandler(async (req, res) => {
+    const order = await loadOrder(req);
+    if (!order) return res.status(404).render('error', { message: 'Order not found.' });
+    if (!res.locals.can('payments')) return res.status(403).render('error', { message: 'Only the business owner can refund a payment.' });
+    try {
+      await refundOrder(pool, config, { businessId: req.business.id, orderId: order.id });
+    } catch (err) {
+      if (err instanceof PaymentError) return res.status(err.status === 502 ? 502 : 400).render('error', { message: err.message });
+      throw err;
+    }
+    await audit(pool, req, { action: 'payment.refund_requested', businessId: req.business.id, entityType: 'order', entityId: order.reference });
     res.redirect(`${res.locals.base}/orders/${order.id}?saved=1`);
   }));
 

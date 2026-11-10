@@ -8,12 +8,12 @@
 export const TABLE_ORDER = [
   'users', 'businesses', 'platform_settings', 'business_members', 'business_invites', 'api_keys', 'products',
   'landing_pages', 'landing_page_products', 'page_blobs', 'page_versions', 'page_files', 'pixel_settings', 'additional_pixels', 'tracking_pixels', 'tracking_pixel_pages',
-  'sheet_connections', 'orders', 'order_items', 'order_status_history', 'conversion_events', 'sheet_recoveries', 'checkout_sessions',
+  'sheet_connections', 'orders', 'order_items', 'order_status_history', 'payment_connections', 'payment_transactions', 'payment_webhook_events', 'conversion_events', 'sheet_recoveries', 'checkout_sessions',
   'email_settings', 'email_contacts', 'email_templates', 'email_automations', 'email_automation_steps', 'email_messages',
   'platform_domains', 'platform_domain_reminders', 'infra_services', 'infra_service_reminders', 'infra_service_renewals', 'account_requests', 'backup_runs',
   'audit_log',
 ];
-export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets', 'email_verifications', 'auth_attempts', 'admin_invites']; // sign-ins, migration bookkeeping, one-time links and short-lived sign-in attempt counts are not data
+export const SKIPPED_TABLES = ['user_sessions', 'schema_migrations', 'password_resets', 'email_verifications', 'auth_attempts', 'admin_invites', 'payment_oauth_states']; // sign-ins, migration bookkeeping, one-time links and short-lived sign-in attempt counts are not data
 const LATE = { users: ['last_business_id'], businesses: ['default_sheet_connection_id'], landing_pages: ['published_version_id'] };
 
 async function columnsOf(db, table) {

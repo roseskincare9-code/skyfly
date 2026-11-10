@@ -1,0 +1,26 @@
+<%- include('../partials/head', { title: 'Payments' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main>
+  <p><a href="/admin">← Client businesses</a></p>
+  <div class="page-head"><div><h1>Payments</h1>
+    <p>Online payments go to each business's own Stripe / PayPal account. Skyfly stores only account identifiers (no secret keys, no card data), so there are no merchant credentials to show here.</p></div></div>
+  <div class="grid">
+    <div class="stat" data-platform="stripe"><div class="n"><%= platform.stripe ? (modes.stripe === 'live' ? 'Live' : 'Test') : 'Off' %></div><div class="l">Stripe (platform setup)</div></div>
+    <div class="stat" data-platform="paypal"><div class="n"><%= platform.paypal ? (modes.paypal === 'live' ? 'Live' : 'Sandbox') : 'Off' %></div><div class="l">PayPal (platform setup)</div></div>
+    <div class="stat"><div class="n"><%= connections.filter((c) => c.provider === 'stripe' && c.status === 'connected').length %></div><div class="l">Businesses with Stripe</div></div>
+    <div class="stat"><div class="n"><%= connections.filter((c) => c.provider === 'paypal' && c.status === 'connected').length %></div><div class="l">Businesses with PayPal</div></div>
+    <div class="stat"><div class="n"><%= cod.businesses %></div><div class="l">Businesses with Payment on Delivery orders (30 days)</div></div>
+  </div>
+  <div class="card"><h2>Outcomes and volume (by currency)</h2>
+    <div class="table-wrap"><table class="stack" data-payment-totals><thead><tr><th>Gateway</th><th>Type</th><th>Status</th><th>Count</th><th>Amount</th></tr></thead><tbody>
+      <% totals.forEach((t) => { %><tr><td><%= t.provider === 'stripe' ? 'Stripe' : 'PayPal' %></td><td><%= t.kind %></td><td><%= t.status %></td><td><%= t.n %></td><td><%= formatMoney(t.amount, t.currency) %></td></tr><% }) %>
+      <% codVolume.forEach((t) => { %><tr><td>Payment on Delivery</td><td>payment</td><td>paid (collected)</td><td><%= t.n %></td><td><%= formatMoney(t.amount, t.currency) %></td></tr><% }) %>
+      <% if (!totals.length && !codVolume.length) { %><tr><td colspan="5" class="muted">No payments yet.</td></tr><% } %>
+    </tbody></table></div></div>
+  <div class="card"><h2>Connections</h2>
+    <div class="table-wrap"><table class="stack" data-payment-connections><thead><tr><th>Business</th><th>Gateway</th><th>Status</th><th>Account</th><th>Mode</th></tr></thead><tbody>
+      <% connections.forEach((c) => { %><tr><td><a href="/admin/businesses/<%= c.business_id %>"><%= c.name %></a></td><td><%= c.provider === 'stripe' ? 'Stripe' : 'PayPal' %></td><td><%= c.status %><%= c.status === 'connected' && !c.enabled ? ' (turned off)' : '' %></td><td><code><%= c.account_id %></code></td><td><%= c.mode %></td></tr><% }) %>
+      <% if (!connections.length) { %><tr><td colspan="5" class="muted">No business has connected a gateway yet.</td></tr><% } %>
+    </tbody></table></div></div>
+</main>
+</body></html>

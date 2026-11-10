@@ -3,6 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { timingSafeEqual } from 'node:crypto';
 import { asyncHandler } from '../lib/http.js';
 import { createOrder, OrderError, validateOrderInput, isTestName } from '../services/orders.js';
+import { startPayment, usableGateways } from '../services/payments.js';
 import { recordPurchase } from '../services/pixels.js';
 import { maskPhone, whatsappDigits } from '../lib/phone.js';
 import { allKnownOrigins, originsForPage } from '../lib/origins.js';
@@ -184,9 +185,19 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {}, load = nul
       // The checkout session this order completes (same business only; a retry changes nothing).
       await linkOrder(pool, order.id, { checkoutId: typeof req.body?.checkoutId === 'string' ? req.body.checkoutId : null })
         .catch((err) => console.error('Checkout link error:', err.message));
+      const online = order.payment_method === 'stripe' || order.payment_method === 'paypal';
       if (!replayed) {
         onOrderSaved(order.id);
-        recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));
+        // An online order is a purchase only once the gateway confirms payment (then onPaid records it).
+        if (!online) recordPurchase(pool, config, order.id, { trigger: 'saved' }).catch((err) => console.error('Purchase event error:', err.message));
+      }
+      // Online (USD): the gateway's checkout on the business's own account. The order is already saved;
+      // if the gateway cannot be reached, the confirmation page offers "Pay now" again.
+      let payment = null;
+      if (online && order.payment_status !== 'paid') {
+        payment = await startPayment(pool, config, order.id, { baseUrl: baseUrl(req, config) })
+          .then((p) => ({ provider: p.provider, redirectUrl: p.redirectUrl }))
+          .catch((err) => { console.error('Payment start failed:', err.message); return { provider: order.payment_method, error: 'We saved your order but could not open the payment page. Use "Pay now" on the next page to try again.' }; });
       }
       // Reached only after the order is committed: the reply is the proof of a saved order.
       const { rows: [biz] } = await pool.query(
@@ -211,6 +222,10 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {}, load = nul
         // "Checkout + WhatsApp" pages show an optional WhatsApp button after the save; "Checkout" pages none.
         whatsappUrl: number && dest?.order_destination !== 'checkout' ? `https://wa.me/${whatsappDigits(number)}?text=${encodeURIComponent(`Hi ${biz.name}! I just placed order ${order.reference}. Please confirm my order. Thank you!`)}` : null,
         replayed,
+        paymentMethod: order.payment_method ?? 'cod',
+        paymentStatus: order.payment_status ?? 'unpaid',
+        // Online orders: where to send the customer to pay (USD, on the business's own Stripe / PayPal).
+        payment,
         // Test orders ("TEST ORDER …", or any order from a page in test mode) are never counted as purchases.
         test: Boolean(order.is_test) || isTestName(input.customer.name),
       });
@@ -261,17 +276,26 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {}, load = nul
   async function catalog(slug) {
     const { rows: [page] } = await pool.query(
       `SELECT lp.id, lp.slug, lp.upsell_headline, lp.upsell_text, lp.order_destination, b.currency, b.whatsapp_number, b.slug AS business_slug,
-              b.delivery_fee_minor, b.free_delivery_from_minor,
-              u.code AS upsell_code, u.name AS upsell_name, u.price_minor AS upsell_price, u.compare_at_price_minor AS upsell_compare_at
+              b.delivery_fee_minor, b.free_delivery_from_minor, b.usd_delivery_fee_minor, b.id AS business_id,
+              u.code AS upsell_code, u.usd_price_minor AS upsell_usd_price, u.name AS upsell_name, u.price_minor AS upsell_price, u.compare_at_price_minor AS upsell_compare_at
          FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id
          LEFT JOIN products u ON u.id = lp.upsell_product_id AND u.active AND u.business_id = lp.business_id
         WHERE lp.slug = $1 AND lp.status = 'active'`, [slug]);
     if (!page) return null;
     const { rows } = await pool.query(
-      `SELECT p.code, p.name, p.price_minor, p.description, p.compare_at_price_minor, p.options FROM products p JOIN landing_page_products lpp ON lpp.product_id = p.id
+      `SELECT p.code, p.name, p.price_minor, p.usd_price_minor, p.description, p.compare_at_price_minor, p.options FROM products p JOIN landing_page_products lpp ON lpp.product_id = p.id
         WHERE lpp.landing_page_id = $1 AND p.active ORDER BY p.sort_order, p.id`, [page.id]);
     const number = page.whatsapp_number || (page.business_slug === 'larose-nigeria' ? DEFAULT_WHATSAPP : null);
+    // Online payment: only gateways this business connected and enabled, and only products with a USD
+    // price the business set (shown in USD; never converted).
+    const gateways = await usableGateways(pool, config, page.business_id);
+    const online = gateways.length && rows.some((p) => p.usd_price_minor !== null) ? {
+      currency: 'USD', gateways, delivery: Number(page.usd_delivery_fee_minor) / 100,
+      prices: Object.fromEntries(rows.filter((p) => p.usd_price_minor !== null && !(p.options ?? []).some((g) => g.values.some((v) => v.delta_minor))).map((p) => [p.code, Number(p.usd_price_minor) / 100])),
+      ...(page.upsell_code && page.upsell_usd_price !== null ? { upsell: Number(page.upsell_usd_price) / 100 } : {}),
+    } : null;
     return {
+      online,
       page: page.slug, currency: page.currency, whatsapp: number ? whatsappDigits(number) : null,
       // whatsapp = the button opens a WhatsApp conversation (no order in Skyfly); checkout /
       // checkout_whatsapp = Skyfly's checkout (with an optional WhatsApp button after the save).
@@ -300,7 +324,7 @@ export function publicRoutes({ pool, config, onOrderSaved = () => {}, load = nul
   router.get('/o/:reference', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT o.id, o.reference, o.access_token, o.customer_name, o.phone, o.state, o.address, o.currency, o.delivery_fee_minor,
-              o.total_minor, o.created_at, b.name AS business_name, b.whatsapp_number, b.slug AS business_slug
+              o.total_minor, o.created_at, o.payment_method, o.payment_status, b.name AS business_name, b.whatsapp_number, b.slug AS business_slug
          FROM orders o JOIN businesses b ON b.id = o.business_id
         WHERE o.reference = $1`,
       [String(req.params.reference).toUpperCase()],

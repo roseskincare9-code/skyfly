@@ -250,6 +250,15 @@ if (!url) {
       report(signup.status === 404 || (signup.status === 200 && /name="business_name"/.test(regForm)), 'Public business registration', signup.status === 404 ? (/data-reason="setup"/.test(signup.text) ? 'closed until the email and bot-check settings are ready (page: "Business registration opens soon"; NOT invitation-only)' : 'closed (invitation only, chosen in Platform settings)') : signup.status === 200 ? 'open: /signup creates the owner\'s account and their own business' : `unexpected HTTP ${signup.status}`);
       const badKey = await get(`${url}/api/public/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer sky_${'x'.repeat(32)}` }, body: '{}' });
       report(badKey.status === 401, 'Business API refuses unknown API keys', `HTTP ${badKey.status}`);
+      // Online payments: webhooks accept only signed / gateway-verified deliveries; checkout offers online
+      // payment only for gateways a business connected (none until the platform setup is done).
+      for (const gwName of ['stripe', 'paypal']) {
+        const hook = await get(`${url}/webhooks/${gwName}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': 't=1,v1=00' }, body: '{"id":"evt_forged","type":"checkout.session.completed"}' });
+        report(hook.status === 400, `Payment webhook refuses an unsigned ${gwName === 'stripe' ? 'Stripe' : 'PayPal'} delivery`, `HTTP ${hook.status}`);
+      }
+      const cat = await get(`${url}/api/public/pages/larosenigeria/catalog`);
+      let online = null; try { online = JSON.parse(cat.text).online; } catch { /* not JSON */ }
+      report(cat.status === 200, 'Checkout payment options (Larose page)', cat.status !== 200 ? `HTTP ${cat.status}` : online ? `Payment on Delivery + online in USD with ${online.gateways.join(' and ')}` : 'Payment on Delivery only (no online gateway connected yet)');
     }
   }
 }

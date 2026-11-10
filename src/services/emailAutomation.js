@@ -18,6 +18,8 @@ import { classifyCheckouts } from './checkouts.js';
 import { planOrderNotifications, sendOrderNotifications } from './orderNotifications.js';
 import { runDomainJobs } from './platformDomains.js';
 import { remindInfra, remindBackups } from './infra.js';
+import { reconcilePayments } from './payments.js';
+import { recordPurchase } from './pixels.js';
 
 const RETRY_MINUTES = [5, 30, 120];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -286,6 +288,8 @@ export async function runEmailJobs(pool, config) {
   const domains = await runDomainJobs(pool, config).catch((err) => ({ error: String(err.message).slice(0, 200) }));
   const infraReminders = await remindInfra(pool, config).catch((err) => ({ error: String(err.message).slice(0, 200) }));
   await remindBackups(pool, config).catch(() => null);
+  // Online payments still pending after 10 minutes: asked again at Stripe / PayPal (server to server).
+  await reconcilePayments(pool, config, { onPaid: (orderId) => recordPurchase(pool, config, orderId) }).catch((err) => console.error('Payment reconciliation:', err.message));
   return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned, domainReminders: domains.reminders?.length ?? 0, infraReminders: Array.isArray(infraReminders) ? infraReminders.length : 0, ...(domains.error ? { domainError: domains.error } : {}) };
 }
 

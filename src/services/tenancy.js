@@ -8,7 +8,7 @@ export const ROLE_LABELS = { owner: 'Owner', manager: 'Manager', staff: 'Staff' 
 
 // What each role may do in a workspace. The platform owner acts as "owner".
 const PERMISSIONS = {
-  owner: new Set(['orders', 'catalog', 'marketing', 'integrations', 'settings', 'team']),
+  owner: new Set(['orders', 'catalog', 'marketing', 'integrations', 'settings', 'team', 'payments']),
   manager: new Set(['orders', 'catalog', 'marketing', 'integrations', 'settings']),
   staff: new Set(['orders']),
 };
