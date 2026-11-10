@@ -1,13 +1,9 @@
-# Activates public registration: Cloudflare Turnstile widget, Resend sending domain (+ its DNS records on
-# Cloudflare) and the six settings on the Render "skyfly" service, then a redeploy. Skyfly's own launch
-# checks open registration only when a real test email and the Turnstile secret both work.
-# Dry run unless confirm is exactly "activate signup". Prints no keys.
+# TEMPORARY BRANCH VERSION: lists the NAMES (never values) of the secrets and variables Actions can see.
 name: Activate public signup (Resend + Turnstile)
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: Type "activate signup" to apply (anything else is a dry run)
         required: false
         default: ''
 permissions:
@@ -15,15 +11,15 @@ permissions:
 jobs:
   activate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: node scripts/activate-signup.mjs
+      - name: Names only
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          APPLY: ${{ inputs.confirm == 'activate signup' && '1' || '' }}
+          S: ${{ toJSON(secrets) }}
+          V: ${{ toJSON(vars) }}
+        run: |
+          echo "SECRETS visible to Actions (names only):"; echo "$S" | jq -r 'keys[]' | sed 's/^/  /'
+          echo "VARIABLES visible to Actions (names only):"; echo "$V" | jq -r 'keys[]' | sed 's/^/  /'
+          for n in CLOUDFLARE_API_TOKEN RESEND_API_KEY; do
+            echo "$S" | jq -e --arg n "$n" 'has($n) and (.[$n] | length > 0)' >/dev/null && echo "FOUND secret $n (non-empty)" || echo "MISSING secret $n"
+            echo "$V" | jq -e --arg n "$n" 'has($n)' >/dev/null && echo "NOTE: $n exists as a VARIABLE, not a secret"
+          done; true
