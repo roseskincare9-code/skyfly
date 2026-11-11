@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 
-function mock() {
+function mock(m0 = {}) {
   const calls = []; const env = {}; let polls = 0; let widget = null;
   const dns = [{ type: 'MX', name: 'getskyfly.com', content: 'route1.mx.cloudflare.net' }];
   const server = createServer(async (req, res) => {
@@ -31,7 +31,7 @@ function mock() {
       { record: 'DKIM', type: 'TXT', name: 'resend._domainkey', value: 'p=MIGfMA0' }] }); }
     if (p === '/rn/owners') return send([{ owner: { id: 'o1' } }]);
     if (p === '/rn/services') return send([{ service: { id: 'srv-skyfly', name: 'skyfly' } }, { service: { id: 'srv-other', name: 'skyfly-other' } }]);
-    if (p === '/rn/services/srv-skyfly/env-vars' && req.method === 'GET') return send(Object.keys(env).map((key) => ({ envVar: { key } })));
+    if (p === '/rn/services/srv-skyfly/env-vars' && req.method === 'GET') return send([...Object.keys(env).filter((k) => k.startsWith('srv-skyfly:')).map((k) => ({ envVar: { key: k.slice(11), value: env[k] } })), ...(m0.manual ?? [])]);
     const m = /^\/rn\/services\/(srv-[\w-]+)\/env-vars\/(\w+)$/.exec(p);
     if (m && req.method === 'PUT') { env[`${m[1]}:${m[2]}`] = j.value; return send({ key: m[2] }); }
     if (p === '/rn/services/srv-skyfly/deploys') return send({ id: 'dep-1' }, 201);
@@ -70,5 +70,18 @@ test('dry run changes nothing; apply sets everything on the skyfly service only,
 test('missing secrets: blocked, nothing changed', async () => {
   const r = await new Promise((resolve) => execFile('node', ['scripts/activate-signup.mjs'], { env: { PATH: process.env.PATH } }, (err, stdout) => resolve({ code: err?.code, out: stdout })));
   assert.equal(r.code, 2);
-  assert.match(r.out, /BLOCKED {2}Missing repository secret\(s\): CLOUDFLARE_API_TOKEN, RESEND_API_KEY, RENDER_API_KEY/);
+  assert.match(r.out, /BLOCKED {2}Missing: CLOUDFLARE_API_TOKEN, RESEND_API_KEY, RENDER_API_KEY/);
+});
+
+test('keys saved by hand on the Render "skyfly" service are used when GitHub has none', async () => {
+  const m = mock({ manual: [{ envVar: { key: 'CLOUDFLARE_API_TOKEN', value: 'cf-from-render' } }, { envVar: { key: 'RESEND_API_KEY', value: 're_from_render_value' } }] });
+  await new Promise((r) => m.server.listen(0, r)); const base = `http://127.0.0.1:${m.server.address().port}`;
+  try {
+    const r = await new Promise((resolve) => execFile('node', ['scripts/activate-signup.mjs'], { env: { PATH: process.env.PATH, ACTIVATE_TEST_API: base, APPLY: '1', RENDER_API_KEY: 'rnd_render_key_value' } }, (err, stdout, stderr) => resolve({ code: err?.code ?? 0, out: stdout + stderr })));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /CLOUDFLARE_API_TOKEN found on the Render "skyfly" service/);
+    assert.match(r.out, /Resend key found on the Render "skyfly" service/);
+    assert.equal(m.env['srv-skyfly:SKYFLY_NOTIFY_API_KEY'], 're_from_render_value');
+    assert.ok(!r.out.includes('re_from_render_value') && !r.out.includes('cf-from-render'), 'no key printed');
+  } finally { m.server.close(); }
 });

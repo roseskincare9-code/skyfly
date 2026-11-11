@@ -21,9 +21,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Which secrets and variables this workflow can see: NAMES ONLY (values are never printed; GitHub
+      # also masks them). Tells exactly where the keys were saved if the run says they are missing.
+      - name: Secret and variable names visible to this workflow (names only)
+        env:
+          S: ${{ toJSON(secrets) }}
+          V: ${{ toJSON(vars) }}
+        run: |
+          echo "Repository / organisation SECRETS (names): $(echo "$S" | jq -r 'keys | map(select(. != "github_token")) | join(", ")')"
+          echo "Repository / organisation VARIABLES (names): $(echo "$V" | jq -r 'keys | join(", ")')"
+          for n in CLOUDFLARE_API_TOKEN RESEND_API_KEY; do
+            if echo "$S" | jq -e --arg n "$n" '(.[$n] // "") | length > 0' >/dev/null; then echo "OK    secret $n is set";
+            elif echo "$V" | jq -e --arg n "$n" '(.[$n] // "") | length > 0' >/dev/null; then echo "WARN  $n was saved as a VARIABLE (visible in plain text to anyone with repo access): used this time; move it to Secrets";
+            else echo "MISS  $n: not a secret or variable of this repository (names are exact and case-sensitive)"; fi
+          done
       - run: node scripts/activate-signup.mjs
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # A secret is preferred; a key mistakenly saved as a Variable is accepted (with the warning above).
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || vars.CLOUDFLARE_API_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || vars.RESEND_API_KEY }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           APPLY: ${{ inputs.confirm == 'activate signup' && '1' || '' }}
