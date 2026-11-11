@@ -13,12 +13,28 @@ const DOMAIN = 'getskyfly.com';
 const WIDGET = 'Skyfly signup';
 const FROM = `no-reply@${DOMAIN}`;
 const APPLY = process.env.APPLY === '1';
-const { CLOUDFLARE_API_TOKEN: CF, RESEND_API_KEY: RS, RENDER_API_KEY: RN } = process.env;
+let { CLOUDFLARE_API_TOKEN: CF, RESEND_API_KEY: RS } = process.env;
+const { RENDER_API_KEY: RN } = process.env;
 const mask = (v) => { if (v && process.env.GITHUB_ACTIONS) console.log(`::add-mask::${v}`); };
 [CF, RS, RN].forEach(mask);
 
+// Keys saved by hand on the Render "skyfly" service (Skyfly's own service only) are used too.
+if ((!CF || !RS) && RN) {
+  const base = process.env.ACTIVATE_TEST_API ? `${process.env.ACTIVATE_TEST_API}/rn` : 'https://api.render.com/v1';
+  const get = async (path) => { const r = await fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${RN}`, Accept: 'application/json' } }); if (!r.ok) throw new Error(`Render ${path.split('?')[0]}: HTTP ${r.status}`); return r.json(); };
+  try {
+    let svc = null;
+    for (const o of (await get('/owners?limit=20')).map((x) => x.owner ?? x)) svc ||= (await get(`/services?ownerId=${encodeURIComponent(o.id)}&name=skyfly&limit=20`)).map((x) => x.service ?? x).find((x) => x.name === 'skyfly');
+    const env = svc ? Object.fromEntries((await get(`/services/${svc.id}/env-vars?limit=100`)).map((e) => e.envVar ?? e).map((e) => [e.key, e.value])) : {};
+    const fromRender = (k) => (env[k] && String(env[k]).trim()) || null;
+    if (!CF && fromRender('CLOUDFLARE_API_TOKEN')) { CF = fromRender('CLOUDFLARE_API_TOKEN'); mask(CF); console.log('OK    CLOUDFLARE_API_TOKEN found on the Render "skyfly" service'); }
+    const rs = fromRender('RESEND_API_KEY') || fromRender('SKYFLY_NOTIFY_API_KEY');
+    if (!RS && rs) { RS = rs; mask(RS); console.log('OK    Resend key found on the Render "skyfly" service'); }
+  } catch (err) { console.log(`NOTE  Could not read the Render service settings (${err.message}).`); }
+}
+
 const missing = [['CLOUDFLARE_API_TOKEN', CF], ['RESEND_API_KEY', RS], ['RENDER_API_KEY', RN]].filter(([, v]) => !v).map(([k]) => k);
-if (missing.length) { console.log(`BLOCKED  Missing repository secret(s): ${missing.join(', ')}. Nothing was changed.`); process.exit(2); }
+if (missing.length) { console.log(`BLOCKED  Missing: ${missing.join(', ')} (not a GitHub repository secret or variable, and not on the Render "skyfly" service). Nothing was changed.`); process.exit(2); }
 
 async function call(base, token, path, { method = 'GET', body } = {}) {
   const res = await fetch(`${base}${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: body ? JSON.stringify(body) : undefined });
