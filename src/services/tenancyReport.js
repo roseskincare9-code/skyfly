@@ -22,6 +22,11 @@ export async function logTenancyMap(pool) {
             (SELECT count(*)::int FROM sheet_connections x WHERE x.business_id = b.id) AS sheets,
             (SELECT count(*)::int FROM api_keys x WHERE x.business_id = b.id AND x.revoked_at IS NULL) AS api_keys,
             (SELECT count(*)::int FROM business_invites x WHERE x.business_id = b.id AND x.accepted_at IS NULL AND x.revoked_at IS NULL AND x.expires_at > now()) AS open_invites,
+            (SELECT json_agg(json_build_object('email', x.email, 'role', x.role, 'expires', x.expires_at) ORDER BY x.id)
+               FROM business_invites x WHERE x.business_id = b.id AND x.accepted_at IS NULL AND x.revoked_at IS NULL AND x.expires_at > now()) AS invites,
+            -- How it was made: by a Super Admin in Platform admin (with an owner invitation) or from a dashboard.
+            (SELECT a.action FROM audit_log a WHERE a.business_id = b.id AND a.action IN ('admin.business_created', 'business.created', 'auth.signup') ORDER BY a.id LIMIT 1) AS created_via,
+            (SELECT u.email FROM audit_log a JOIN users u ON u.id = a.user_id WHERE a.business_id = b.id AND a.action IN ('admin.business_created', 'business.created', 'auth.signup') ORDER BY a.id LIMIT 1) AS created_by,
             coalesce((SELECT json_agg(json_build_object('id', u.id, 'email', u.email, 'role', m.role, 'admin', u.is_platform_admin, 'disabled', u.disabled_at IS NOT NULL) ORDER BY m.role, u.id)
                         FROM business_members m JOIN users u ON u.id = m.user_id WHERE m.business_id = b.id), '[]') AS members
        FROM businesses b ORDER BY b.id`);
@@ -37,7 +42,7 @@ export async function logTenancyMap(pool) {
     const owners = b.members.filter((x) => x.role === 'owner').length;
     const testBusiness = /\(test\)$/.test(b.name);
     const noOwner = owners ? '' : testBusiness ? ' | no owner (labelled test business: its automated test accounts are disabled after each run)' : ' | WARNING: no owner';
-    console.log(`${P} business #${b.id} ${b.slug} "${b.name}" | ${b.subscription_status}${b.plan ? ` ${b.plan}` : ''} | created ${new Date(b.created_at).toISOString().slice(0, 10)} | orders ${b.real_orders} real + ${b.test_orders} test${b.last_real_order ? ` (last real ${new Date(b.last_real_order).toISOString().slice(0, 10)})` : ''} | customers ${b.customers}, contacts ${b.contacts}, products ${b.products}, pages ${b.pages}, checkouts ${b.checkouts}, pixels ${b.pixels}, sheets ${b.sheets}, API keys ${b.api_keys}, open invites ${b.open_invites} | members: ${m || 'none'}${noOwner}`);
+    console.log(`${P} business #${b.id} ${b.slug} "${b.name}" | ${b.subscription_status}${b.plan ? ` ${b.plan}` : ''} | created ${new Date(b.created_at).toISOString().slice(0, 10)} | orders ${b.real_orders} real + ${b.test_orders} test${b.last_real_order ? ` (last real ${new Date(b.last_real_order).toISOString().slice(0, 10)})` : ''} | customers ${b.customers}, contacts ${b.contacts}, products ${b.products}, pages ${b.pages}, checkouts ${b.checkouts}, pixels ${b.pixels}, sheets ${b.sheets}, API keys ${b.api_keys}, open invites ${b.open_invites}${b.invites ? ` (${b.invites.map((i) => `${i.role} ${maskEmail(i.email)} until ${new Date(i.expires).toISOString().slice(0, 10)}`).join(', ')})` : ''} | members: ${m || 'none'}${noOwner}${b.created_via ? ` | created via ${b.created_via === 'admin.business_created' ? 'Platform admin (owner invitation)' : b.created_via === 'auth.signup' ? 'public registration' : 'registration or the dashboard'}${b.created_by ? ` by ${maskEmail(b.created_by)}` : ''}` : ''}`);
   }
   // Orders not marked as test inside labelled test businesses: evidence for the owner (read-only).
   const { rows: odd } = await pool.query(
