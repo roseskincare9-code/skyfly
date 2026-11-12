@@ -1,0 +1,83 @@
+{
+  "about": "The owner's Exfoliating 3-in-1 Combo landing page (Claude artifact 55a49ccd-aab1-404a-bc6c-19514fd24494, index.html + 12 images, unchanged), installed into business #11 \"3 in 1 Exfoliating package\" only. Prices are the page's own (NGN). Version 1 is the original file; version 2 adds only the Skyfly connection markers listed in 'connect' (no visible change).",
+  "business": {
+    "id": 11,
+    "slug": "3-in-1-exfoliating-package-e71584",
+    "name": "3 in 1 Exfoliating package",
+    "currency": "NGN"
+  },
+  "page": {
+    "name": "Exfoliating 3-in-1 Combo",
+    "slug": "exfoliating-3-in-1-combo",
+    "orderDestination": "checkout"
+  },
+  "products": [
+    {
+      "code": "combo1",
+      "name": "1 Complete 3-in-1 Combo",
+      "price": 59500,
+      "sortOrder": 1,
+      "description": "1 × Knuckle Exfoliating Cream, 1 × Exfoliating Cleansing Complexion Paste, 1 × Knuckle Moisturizing Cream"
+    },
+    {
+      "code": "combo2",
+      "name": "2 Complete 3-in-1 Combos",
+      "price": 109000,
+      "compareAt": 119000,
+      "sortOrder": 2,
+      "description": "2 × each of the three products"
+    },
+    {
+      "code": "combo3",
+      "name": "3 Complete 3-in-1 Combos",
+      "price": 168500,
+      "compareAt": 178500,
+      "sortOrder": 3,
+      "description": "3 × each of the three products"
+    }
+  ],
+  "upsell": {
+    "code": "complete-facial-set",
+    "name": "Complete Facial Set",
+    "price": 22000,
+    "compareAt": 25000,
+    "sortOrder": 9,
+    "description": "Facial Detox Toner + Baby Face Whitening Soap + All Clear Face Cream",
+    "headline": "Special add-on price, only with this order",
+    "text": "Facial Detox Toner + Baby Face Whitening Soap + All Clear Face Cream. It comes in the same delivery."
+  },
+  "connect": [
+    {
+      "find": "<form id=\"orderForm\" novalidate>",
+      "replace": "<form id=\"orderForm\" novalidate data-skyfly-form data-skyfly-exclusive>"
+    },
+    {
+      "find": "<input id=\"fullName\" name=\"full_name\"",
+      "replace": "<input id=\"fullName\" data-skyfly-field=\"name\" name=\"full_name\""
+    },
+    {
+      "find": "<textarea id=\"address\" name=\"address\"",
+      "replace": "<textarea id=\"address\" data-skyfly-field=\"address\" name=\"address\""
+    },
+    {
+      "find": "<input id=\"phone\" name=\"phone\"",
+      "replace": "<input id=\"phone\" data-skyfly-field=\"phone\" name=\"phone\""
+    },
+    {
+      "find": "<input id=\"email\" name=\"email\"",
+      "replace": "<input id=\"email\" data-skyfly-field=\"email\" name=\"email\""
+    },
+    {
+      "find": "<input type=\"checkbox\" id=\"bumpChk\">",
+      "replace": "<input type=\"checkbox\" id=\"bumpChk\" data-skyfly-upsell=\"complete-facial-set\">"
+    },
+    {
+      "find": "<input type=\"hidden\" name=\"product\" id=\"hProduct\">",
+      "replace": "<input type=\"hidden\" name=\"product\" id=\"hProduct\">\n        <select id=\"skyProduct\" data-skyfly-field=\"product\" hidden aria-hidden=\"true\" tabindex=\"-1\"><option value=\"combo1\" data-product=\"combo1\">1 Complete 3-in-1 Combo</option><option value=\"combo2\" data-product=\"combo2\">2 Complete 3-in-1 Combos</option><option value=\"combo3\" data-product=\"combo3\">3 Complete 3-in-1 Combos</option></select>"
+    },
+    {
+      "find": "  document.getElementById(\"hProduct\").value = p.option + \" - \" + p.name;",
+      "replace": "  document.getElementById(\"hProduct\").value = p.option + \" - \" + p.name;\n  document.getElementById(\"skyProduct\").value = p.id; // Skyfly: the chosen package's product code"
+    }
+  ]
+}

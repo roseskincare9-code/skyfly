@@ -32,6 +32,7 @@ export async function businessCatalogue(pool, businessId) {
 function connectedParts(html) {
   const doc = parse(html);
   const forms = [];
+  const upsells = [];
   const codes = [];
   let dropIn = false;
   walk(doc, (n) => {
@@ -67,10 +68,12 @@ function connectedParts(html) {
       });
       forms.push(f);
     }
+    // An add-on checkbox inside the page's own form (data-skyfly-upsell="code"): checked against the page's upsell.
+    if (attr(n, 'data-skyfly-upsell')) upsells.push(attr(n, 'data-skyfly-upsell'));
     if (attr(n, 'data-product') && n.tagName !== 'option') codes.push({ code: attr(n, 'data-product'), price: attr(n, 'data-price') ?? null, where: n.tagName === 'form' ? 'form' : 'button' });
     return true;
   });
-  return { forms, codes, dropIn };
+  return { forms, codes, dropIn, upsells };
 }
 
 export async function validateVersion(pool, config, page, versionId) {
@@ -165,6 +168,10 @@ export async function validateVersion(pool, config, page, versionId) {
         }
       }
     }
+  }
+  if (parts.upsells.length) {
+    const { rows: [u] } = await pool.query('SELECT code FROM products WHERE id = $1 AND business_id = $2 AND active', [page.upsell_product_id ?? null, page.business_id]);
+    for (const code of parts.upsells) if (!u || u.code !== code) problems.push(`the add-on "${code}" is not this page's add-on (set it in Page settings → Upsell)`);
   }
   for (const c of parts.codes) {
     if (!byCode.has(c.code)) problems.push(`a ${c.where} orders "${c.code}", which is not a product on this page`);

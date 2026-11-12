@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exfoliating 3-in-1 Combo | Latose Natural Skincare</title>
+<meta name="description" content="The Exfoliating 3-in-1 Combo: Knuckle Exfoliating Cream, Exfoliating Cleansing Complexion Paste and Knuckle Moisturizing Cream. Natural skin lightening routine. Pay on delivery anywhere in Nigeria.">
+<link rel="preload" as="image" href="images/combo-hero.webp" fetchpriority="high">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#E0337A; --gold-dark:#5B1F7A; --cream:#FFF7FA; --blush:#FBE3EE;
+  --ink:#2A1433; --muted:#6B625A; --green:#1F7A4D; --red:#C0392B; --white:#fff;
+  --radius:18px; --shadow:0 10px 30px rgba(30,26,22,.10);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:var(--cream);color:var(--ink);line-height:1.6;font-size:16px;padding-bottom:84px}
+h1,h2,h3{font-family:'Playfair Display',serif;line-height:1.2}
+img{max-width:100%;display:block}
+.wrap{max-width:1080px;margin:0 auto;padding:0 18px}
+section{padding:56px 0}
+.center{text-align:center}
+.eyebrow{display:inline-block;background:var(--blush);color:var(--gold-dark);font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:50px;margin-bottom:14px}
+.sec-title{font-size:clamp(26px,5vw,38px);margin-bottom:12px}
+.sec-sub{color:var(--muted);max-width:640px;margin:0 auto 32px}
+.btn{display:inline-block;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#fff;font-weight:700;font-size:17px;padding:16px 30px;border-radius:50px;text-decoration:none;border:none;cursor:pointer;box-shadow:0 8px 20px rgba(224,51,122,.35);transition:transform .15s}
+.btn:hover{transform:translateY(-2px)}
+.btn-block{display:block;width:100%;text-align:center}
+
+/* top bar */
+.topbar{background:var(--ink);color:#fff;text-align:center;font-size:13.5px;padding:9px 12px;font-weight:500}
+.topbar b{color:#FF8DBB}
+
+/* hero */
+.hero{background:radial-gradient(circle at 80% 20%,#F9D3E4 0,transparent 55%),var(--cream);padding:40px 0 56px}
+.hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:36px;align-items:center}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--gold-dark);margin-bottom:18px}
+.hero h1{font-size:clamp(32px,6.4vw,54px);margin-bottom:16px}
+.hero h1 span{color:var(--gold-dark)}
+.hero p.lead{font-size:18px;color:var(--muted);margin-bottom:22px}
+.ticks{list-style:none;margin-bottom:26px}
+.ticks li{padding-left:30px;position:relative;margin-bottom:9px;font-weight:500}
+.ticks li:before{content:"✓";position:absolute;left:0;top:0;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center}
+.trust-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.trust-row span{background:#fff;border-radius:50px;padding:7px 14px;font-size:13px;font-weight:600;box-shadow:var(--shadow)}
+.hero-visual{position:relative}
+.product-frame{background:linear-gradient(160deg,#fff,var(--blush));border-radius:28px;aspect-ratio:1/1;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.product-frame img{width:100%;height:100%;object-fit:cover}
+.mock{display:flex;align-items:flex-end;gap:14px;padding:30px}
+.mock div{border-radius:14px;background:linear-gradient(180deg,#fff,#EED9BF);box-shadow:0 8px 20px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;font-weight:700;color:var(--gold-dark);padding:8px}
+.mock .m1{width:90px;height:110px}
+.mock .m2{width:80px;height:190px}
+.mock .m3{width:85px;height:160px}
+.badge-off{position:absolute;top:16px;right:16px;background:var(--red);color:#fff;font-weight:700;border-radius:50%;width:84px;height:84px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;line-height:1.15;transform:rotate(-10deg);box-shadow:0 6px 16px rgba(192,57,43,.4)}
+
+/* problem */
+.problem{background:#fff}
+.pain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pain{background:var(--cream);border-radius:var(--radius);padding:22px;border-left:4px solid var(--red)}
+.pain h3{font-size:18px;margin-bottom:6px;font-family:'Poppins',sans-serif;font-weight:700}
+.pain p{color:var(--muted);font-size:15px}
+.turn{margin-top:30px;background:var(--ink);color:#fff;border-radius:var(--radius);padding:26px;text-align:center;font-size:18px}
+.turn b{color:#FF8DBB}
+
+/* routine */
+.routine-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.step{background:#fff;border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow);position:relative}
+.step .num{position:absolute;top:-16px;left:22px;background:var(--gold);color:#fff;font-weight:700;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.step .when{display:inline-block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:4px 10px;border-radius:50px;margin:8px 0 10px}
+.when.night{background:#2C2A4A;color:#fff}
+.when.bath{background:#DCEFE6;color:var(--green)}
+.when.day{background:#FFF1C9;color:#8A6400}
+.step h3{font-size:21px;margin-bottom:8px}
+.step p{color:var(--muted);font-size:15px}
+.step ul{margin-top:10px;padding-left:18px;font-size:14.5px}
+
+/* benefits */
+.benefits{background:var(--blush)}
+.ben-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.ben{background:#fff;border-radius:var(--radius);padding:22px;text-align:center}
+.ben .ic{font-size:30px;margin-bottom:8px}
+.ben h3{font-family:'Poppins',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px}
+.ben p{font-size:14px;color:var(--muted)}
+
+/* timeline */
+.timeline{max-width:720px;margin:0 auto}
+.tl{display:flex;gap:16px;margin-bottom:18px;background:#fff;border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.tl .wk{flex:0 0 92px;font-weight:700;color:var(--gold-dark)}
+.tl p{color:var(--muted);font-size:15px}
+.note{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
+
+/* reviews */
+.reviews{background:#fff}
+.rev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.rev{background:var(--cream);border-radius:var(--radius);padding:22px}
+.rev .stars{color:#E8A317;font-size:18px;margin-bottom:8px}
+.rev p{font-size:15px;margin-bottom:10px}
+.rev .who{font-weight:600;font-size:14px;color:var(--muted)}
+.rev img{border-radius:12px;margin-bottom:12px;aspect-ratio:4/3;object-fit:cover;width:100%}
+
+/* pricing */
+.pricing{background:linear-gradient(180deg,var(--cream),var(--blush))}
+.price-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+.pkg{background:#fff;border-radius:22px;padding:28px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;position:relative;border:2px solid transparent;cursor:pointer;transition:border-color .15s,transform .15s}
+.pkg:hover{transform:translateY(-3px)}
+.pkg.selected{border-color:var(--gold)}
+.pkg.best{border-color:var(--gold);transform:scale(1.03)}
+.pkg .flag{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:50px;white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
+.pkg .opt{font-size:13px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.07em}
+.pkg h3{font-size:23px;margin:6px 0 4px}
+.pkg .desc{color:var(--muted);font-size:14px;margin-bottom:14px}
+.pkg .was{text-decoration:line-through;color:var(--muted);font-size:16px;min-height:24px}
+.pkg .now{font-size:36px;font-weight:800;color:var(--ink);font-family:'Poppins',sans-serif}
+.pkg .save{display:inline-block;background:#DCEFE6;color:var(--green);font-weight:700;font-size:13px;padding:4px 10px;border-radius:50px;margin:6px 0 14px;min-height:26px}
+.pkg .save:empty{visibility:hidden}
+.pkg ul{list-style:none;margin-bottom:22px;flex:1}
+.pkg li{padding:6px 0 6px 26px;position:relative;font-size:15px;border-bottom:1px dashed #eee}
+.pkg li:before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+.pkg .btn{font-size:16px;padding:14px 20px}
+
+/* order form */
+.order{background:var(--ink);color:#fff}
+.order .sec-sub{color:#E5D3EC}
+.form-card{background:#fff;color:var(--ink);border-radius:24px;padding:30px;max-width:640px;margin:0 auto;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.pick{display:grid;gap:10px;margin-bottom:20px}
+.pick label{display:flex;align-items:center;gap:12px;border:2px solid #eee;border-radius:14px;padding:14px;cursor:pointer;font-weight:500}
+.pick label.on{border-color:var(--gold);background:#FFF0F6}
+.pick input{accent-color:var(--gold-dark);width:20px;height:20px}
+.pick .pp{margin-left:auto;font-weight:700;white-space:nowrap}
+.field{margin-bottom:14px}
+.field label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font:inherit;font-size:16px;background:#fff}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--gold)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.summary{background:var(--cream);border-radius:14px;padding:16px;margin:8px 0 18px}
+.summary div{display:flex;justify-content:space-between;gap:14px;font-size:15px;margin-bottom:4px}
+.summary div span:last-child{text-align:right}
+.summary .tot{font-weight:800;font-size:19px;border-top:1px solid #F3CFDF;padding-top:8px;margin-top:8px}
+.pod{display:flex;gap:10px;align-items:center;background:#DCEFE6;color:var(--green);border-radius:12px;padding:12px 14px;font-size:14px;font-weight:600;margin-bottom:16px}
+.err{color:var(--red);font-size:13px;margin-top:4px;display:none}
+.thanks{display:none;text-align:center;padding:20px 0}
+.thanks .big{font-size:56px}
+.thanks h3{font-size:26px;margin:8px 0}
+
+/* before / after */
+.ba{background:#fff}
+.ba-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.ba-card img{width:100%;height:auto;border-radius:12px;display:block}
+.ba-card.wide{grid-column:span 2}
+.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:860px;margin:0 auto}
+.s3{background:#fff;border-radius:var(--radius);padding:20px;text-align:center;box-shadow:var(--shadow)}
+.s3 .n{width:44px;height:44px;border-radius:50%;background:var(--gold);color:#fff;font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+.s3 h3{font-family:'Poppins',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px}
+.s3 p{font-size:14px;color:var(--muted)}
+.ba-card{background:var(--cream);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+.ba-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;position:relative}
+.ba-pair figure{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:1/1;background:#F3E6EE;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:12px;padding:0}
+.ba-pair figure.empty{border:2px dashed #E3BCD0;padding:10px}
+.ba-pair img{width:100%;height:100%;object-fit:cover}
+.ba-pair figcaption{position:absolute;top:8px;left:8px;background:rgba(42,20,51,.85);color:#fff;font-size:11px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:50px;text-transform:uppercase}
+.ba-pair figure.after figcaption{background:var(--gold)}
+.ba-card h3{font-family:'Poppins',sans-serif;font-size:16px;font-weight:700;margin:12px 4px 2px}
+.ba-card p{font-size:14px;color:var(--muted);margin:0 4px 4px}
+
+/* model */
+.model{display:grid;grid-template-columns:.9fr 1.1fr;gap:34px;align-items:center}
+.model-img{border-radius:28px;overflow:hidden;background:linear-gradient(160deg,#fff,var(--blush));box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center}
+.model-img img{width:100%;height:100%;object-fit:cover}
+
+/* upsell / order bump */
+.bump{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;border:2.5px dashed var(--gold);background:#FFF0F6;border-radius:16px;padding:16px;margin:6px 0 18px;cursor:pointer}
+.bump.on{border-style:solid;background:#FFE3EF}
+.bump input{width:24px;height:24px;flex:0 0 24px;accent-color:var(--gold);margin-top:2px}
+.bump img{width:100%;height:auto;border-radius:12px;flex:0 0 100%;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+.bump .bhead{flex:0 0 100%;text-align:center;font-weight:800;font-size:15px;letter-spacing:.06em;color:var(--gold);text-transform:uppercase}
+.bump .brow{display:flex;gap:12px;align-items:flex-start;flex:1 1 100%}
+.bump .bt{font-size:17px}
+.bump .bt{font-weight:700;font-size:15px;line-height:1.35}
+.bump .bt span.hl{background:var(--gold);color:#fff;padding:1px 6px;border-radius:6px}
+.bump .bd{font-size:13.5px;color:var(--muted);margin-top:4px}
+.bump a{font-size:13px;color:var(--gold-dark);font-weight:600}
+.opt-tag{font-weight:400;color:var(--muted);font-size:13px}
+
+/* ready-to-receive notice */
+.notice{max-width:640px;margin:0 auto 22px;background:#FFF4D6;color:#5A3A00;border:3px solid #F2B705;border-radius:18px;padding:18px 18px 18px 16px;display:flex;gap:14px;align-items:flex-start;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.notice .ic{font-size:34px;line-height:1}
+.notice h3{font-family:'Poppins',sans-serif;font-size:18px;font-weight:800;color:#B42318;text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
+.notice p{font-size:15px;line-height:1.5}
+.notice-mini{display:inline-block;background:#FFF4D6;color:#5A3A00;border:2px solid #F2B705;border-radius:50px;padding:8px 16px;font-size:14px;font-weight:600;margin-top:-14px;margin-bottom:26px}
+
+/* faq */
+.faq{max-width:760px;margin:0 auto}
+details{background:#fff;border-radius:14px;margin-bottom:12px;box-shadow:var(--shadow);overflow:hidden}
+summary{padding:18px 20px;font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"+";font-size:22px;color:var(--gold-dark);line-height:1}
+details[open] summary:after{content:"–"}
+details p{padding:0 20px 18px;color:var(--muted);font-size:15px}
+
+/* final */
+.final{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#fff;text-align:center}
+.final h2{font-size:clamp(26px,5vw,40px);margin-bottom:12px}
+.final .btn{background:#fff;color:var(--gold-dark);box-shadow:0 8px 20px rgba(0,0,0,.2)}
+footer{background:var(--ink);color:#aaa;text-align:center;font-size:13px;padding:24px 18px}
+
+/* sticky */
+.sticky{position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -6px 20px rgba(0,0,0,.12);padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:50}
+.sticky .sp{font-size:13px;color:var(--muted);line-height:1.3}
+.sticky .sp b{display:block;color:var(--ink);font-size:17px}
+.sticky .btn{margin-left:auto;padding:13px 22px;font-size:15px}
+
+@media(max-width:860px){
+  .hero-grid,.pain-grid,.routine-grid,.rev-grid,.price-grid,.ba-grid,.model,.steps3{grid-template-columns:1fr}
+  .ba-card.wide{grid-column:auto}
+  .ben-grid{grid-template-columns:1fr 1fr}
+  .hero-visual{order:-1}
+  .pkg.best{transform:none}
+  .routine-grid{gap:30px}
+  section{padding:44px 0}
+}
+@media(max-width:480px){
+  .row2{grid-template-columns:1fr}
+  .form-card{padding:22px 16px}
+  .tl{flex-direction:column;gap:4px}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">🚚 <b>Pay on Delivery</b> anywhere in Nigeria • You only pay when your pack arrives</div>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="brand" data-brand>Latose Natural Skincare</div>
+      <span class="eyebrow">New • Exfoliating 3-in-1 Combo</span>
+      <h1>Tried Everything and Nothing Works? <span>Your Skin Just Needs the Right Routine.</span></h1>
+      <p class="lead">One complete pack that clears dead skin, deep-cleans and nourishes, so your skin finally <b>responds</b> and glows lighter, brighter and even-toned, naturally.</p>
+      <ul class="ticks">
+        <li>Works even on "stubborn skin" that other products don't touch</li>
+        <li>Fades dark knuckles, fingers, elbows, knees and armpits</li>
+        <li>Simple day, night and bath routine anyone can follow</li>
+        <li>Natural formula for face and body</li>
+      </ul>
+      <a href="#packages" class="btn">Yes! I Want My 3-in-1 Combo →</a>
+      <div style="margin-top:12px"><a href="#results" style="color:var(--gold-dark);font-weight:600;font-size:15px">See before &amp; after results ↓</a></div>
+      <div class="trust-row">
+        <span>💳 Pay on Delivery</span>
+        <span>🌿 Natural Ingredients</span>
+        <span>🇳🇬 Delivery Nationwide</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="product-frame" id="heroFrame">
+        <img src="images/combo-hero.webp" width="720" height="720" fetchpriority="high" decoding="async" alt="Latose Exfoliating 3-in-1 Combo: Knuckle Exfoliating Cream, Knuckle Moisturizing Cream and Exfoliating Cleansing Complexion Paste">
+      </div>
+      <div class="badge-off" id="heroBadge">SAVE<br>BIG ON<br>COMBO</div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PROBLEM ============ -->
+<section class="problem">
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">Sound familiar?</span>
+      <h2 class="sec-title">Why Your Products Have Not Been Working</h2>
+      <p class="sec-sub">It is not that your skin is "resistant." Most of the time, your products simply can't get through.</p>
+    </div>
+    <div class="pain-grid">
+      <div class="pain"><h3>😩 Money wasted</h3><p>You have bought cream after cream, soap after soap, and your skin still looks the same.</p></div>
+      <div class="pain"><h3>🌑 Skin not blending</h3><p>Dark knuckles, dark fingers around the nails, dark elbows, knees and armpits that don't match the rest of your body.</p></div>
+      <div class="pain"><h3>🧱 Dead skin build-up</h3><p>A layer of dead cells sits on your skin and blocks your creams from working.</p></div>
+    </div>
+    <div class="turn">The fix: <b>remove the dead skin first</b>, then cleanse and nourish. That is exactly what the <b>Exfoliating 3-in-1 Combo</b> does.</div>
+  </div>
+</section>
+
+<!-- ============ BEFORE & AFTER ============ -->
+<section class="ba" id="results">
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">See the difference</span>
+      <h2 class="sec-title">From Dark &amp; Patchy to Even &amp; Glowing</h2>
+      <p class="sec-sub">Knuckles, knees, elbows, armpits and stubborn patches that refused to blend with the rest of the body.</p>
+    </div>
+    <div class="ba-grid">
+      <div class="ba-card">
+        <img src="images/ba-knuckles.webp" width="800" height="533" loading="lazy" decoding="async" alt="Dark knuckles before and after">
+        <h3>Dark knuckles</h3><p>Knuckles blend back in with the rest of the hand.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-knees.webp" width="800" height="533" loading="lazy" decoding="async" alt="Dark knees before and after">
+        <h3>Dark knees</h3><p>Dark, rough knees smoothed and evened out.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-elbows.webp" width="800" height="533" loading="lazy" decoding="async" alt="Dark elbows before and after">
+        <h3>Dark elbows</h3><p>Elbows that finally match the arm.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-armpits.webp" width="800" height="533" loading="lazy" decoding="async" alt="Dark armpits before and after">
+        <h3>Dark armpits</h3><p>Underarms closer to your natural skin tone.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-rough.webp" width="720" height="474" loading="lazy" decoding="async" alt="Rough and blemished skin before and after">
+        <h3>Rough &amp; blemished skin</h3><p>Smoother texture, fewer dark marks.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-back.webp" width="720" height="450" loading="lazy" decoding="async" alt="Uneven tone and dark patches before and after">
+        <h3>Uneven tone &amp; dark patches</h3><p>A more even, glowing back.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-thighs.webp" width="618" height="439" loading="lazy" decoding="async" alt="Discoloration and patches before and after">
+        <h3>Discoloration &amp; patches</h3><p>Inner thighs brighter and more even.</p>
+      </div>
+      <div class="ba-card">
+        <img src="images/ba-stretch.webp" width="640" height="439" loading="lazy" decoding="async" alt="Stretch marks before and after">
+        <h3>Stretch marks</h3><p>The look of stretch marks reduced.</p>
+      </div>
+    </div>
+    <p class="note">Results vary from person to person. Use all three products consistently for best results.</p>
+    <div class="center" style="margin-top:22px"><a href="#packages" class="btn">I Want Results Like These →</a></div>
+  </div>
+</section>
+
+<!-- ============ ROUTINE ============ -->
+<section>
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">What's inside</span>
+      <h2 class="sec-title">3 Products. 1 Simple Routine. Real Glow.</h2>
+      <p class="sec-sub">Each product has one job. Together, they work as a complete system.</p>
+    </div>
+    <div class="routine-grid">
+      <div class="step">
+        <div class="num">1</div>
+        <span class="when night">🌙 Night time</span>
+        <h3>Knuckle Exfoliating Cream</h3>
+        <p>The star of the pack. Gently removes dead skin cells so fresh, lighter skin can come through, and so your other products can finally penetrate.</p>
+        <ul><li>Clears dead skin build-up</li><li>Helps fade dark knuckles and spots</li><li>Perfect for "nothing works on me" skin</li></ul>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <span class="when bath">🚿 Bath time</span>
+        <h3>Exfoliating Cleansing Complexion Paste</h3>
+        <p>Your bath-time whitening soap. Deep-cleans and gently exfoliates the whole body, washing away dirt, dead skin and dullness every bath.</p>
+        <ul><li>Deep cleansing</li><li>Exfoliates dead skin</li><li>Brightens and improves complexion</li></ul>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <span class="when day">☀️ Day time</span>
+        <h3>Knuckle Moisturizing Cream</h3>
+        <p>For face and body in the daytime. Deeply nourishes, restores softness and keeps your skin smooth and glowing, never dry or ashy.</p>
+        <ul><li>Deeply nourishes</li><li>Restores softness</li><li>Evens out skin tone</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BENEFITS ============ -->
+<section class="benefits">
+  <div class="wrap">
+    <div class="center">
+      <h2 class="sec-title">What You Can Expect</h2>
+      <p class="sec-sub">When you use all three together, consistently.</p>
+    </div>
+    <div class="ben-grid">
+      <div class="ben"><div class="ic">✨</div><h3>Lighter, brighter skin</h3><p>Natural lightening, step by step</p></div>
+      <div class="ben"><div class="ic">🎯</div><h3>Fewer dark spots</h3><p>Helps fade spots and patches</p></div>
+      <div class="ben"><div class="ic">⚖️</div><h3>Even skin tone</h3><p>Face and body, one tone</p></div>
+      <div class="ben"><div class="ic">🧴</div><h3>Soft &amp; smooth</h3><p>No dryness, no ashy look</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TIMELINE ============ -->
+<section>
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">Your glow journey</span>
+      <h2 class="sec-title">What Happens Week by Week</h2>
+    </div>
+    <div class="timeline">
+      <div class="tl"><div class="wk">Week 1</div><p>Dead skin starts clearing. Skin feels smoother and cleaner after every bath.</p></div>
+      <div class="tl"><div class="wk">Week 2–3</div><p>Skin looks fresher and brighter. Dark areas begin to soften.</p></div>
+      <div class="tl"><div class="wk">Week 4+</div><p>More even tone, a visible glow, and skin that finally responds to care.</p></div>
+    </div>
+    <p class="note">Results vary from person to person. For best results, use all three products together and consistently.</p>
+  </div>
+</section>
+
+<!-- ============ MODEL / LIFESTYLE ============ -->
+<section>
+  <div class="wrap model">
+    <div class="model-img"><img src="images/model.webp" width="640" height="800" loading="lazy" decoding="async" alt="Woman with smooth, even, glowing skin"></div>
+    <div>
+      <span class="eyebrow">Confidence in every inch</span>
+      <h2 class="sec-title">One Even Tone, From Your Face to Your Fingertips</h2>
+      <p style="color:var(--muted);margin-bottom:18px">No more hiding your hands in photos or keeping your arms down. When your knuckles, elbows and underarms finally match the rest of your skin, you wear what you want and show up with confidence.</p>
+      <ul class="ticks">
+        <li>Hands you are proud to show</li>
+        <li>Sleeveless outfits without worrying</li>
+        <li>Smooth, soft, glowing skin all day</li>
+      </ul>
+      <a href="#packages" class="btn">Start My Glow Today →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ROUTINE BANNER ============ -->
+<!-- REAL CUSTOMER REVIEWS: when you have real WhatsApp screenshots (with permission, numbers blurred),
+     ask for them to be added here as a review section. -->
+<section class="reviews">
+  <div class="wrap model">
+    <div class="model-img"><img src="images/lady-jars.webp" width="848" height="820" loading="lazy" decoding="async" alt="Woman holding the Latose Exfoliating 3-in-1 Combo jars"></div>
+    <div>
+      <span class="eyebrow">All 3 jars, one routine</span>
+      <h2 class="sec-title">Everything Your Skin Needs, In One Pack</h2>
+      <p style="color:var(--muted);margin-bottom:18px">No more guessing which cream goes with which soap. The Exfoliating 3-in-1 Combo gives you a complete routine that works together: exfoliate at night, cleanse in the bath, moisturize in the day.</p>
+      <ul class="ticks">
+        <li>Knuckle Exfoliating Cream for night</li>
+        <li>Exfoliating Cleansing Complexion Paste for your bath</li>
+        <li>Knuckle Moisturizing Cream for face and body in the day</li>
+      </ul>
+      <a href="#packages" class="btn">Get All 3 for ₦59,500 →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW TO ORDER ============ -->
+<section style="padding-bottom:0">
+  <div class="wrap">
+    <div class="center"><span class="eyebrow">Ordering is easy</span><h2 class="sec-title">Get Yours in 3 Simple Steps</h2></div>
+    <div class="steps3">
+      <div class="s3"><div class="n">1</div><h3>Pick your package</h3><p>Choose 1, 2 or 3 combos below.</p></div>
+      <div class="s3"><div class="n">2</div><h3>Fill the short form</h3><p>Name, address, phone and email. That's all.</p></div>
+      <div class="s3"><div class="n">3</div><h3>Pay on delivery</h3><p>We call to confirm, deliver, and you pay at your door.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRICING ============ -->
+<section class="pricing" id="packages">
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">Choose your package</span>
+      <h2 class="sec-title">Pick the Pack That Fits You</h2>
+      <p class="sec-sub">Pay on delivery. You only pay when your order arrives at your door.</p>
+    </div>
+    <div class="center"><span class="notice-mini">⚠️ Only order if you are ready to receive and pay. We deliver immediately.</span></div>
+    <div class="price-grid" id="priceGrid"></div>
+  </div>
+</section>
+
+<!-- ============ ORDER FORM ============ -->
+<section class="order" id="order">
+  <div class="wrap">
+    <div class="center">
+      <span class="eyebrow">Place your order</span>
+      <h2 class="sec-title">Order Now, Pay When It Arrives</h2>
+      <p class="sec-sub">Fill the form below. Our team will call you to confirm your order before delivery.</p>
+    </div>
+
+    <div class="notice" role="note">
+      <div class="ic">⚠️</div>
+      <div>
+        <h3>Please read before you order</h3>
+        <p><b>Only place an order if you are ready to receive it and pay.</b> Once you order, we process and send it out for delivery immediately. If you are not ready to receive your package, please do not place an order yet.</p>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <form id="orderForm" novalidate>
+        <div class="field"><label>1. Select your package *</label></div>
+        <div class="pick" id="pickList"></div>
+
+        <div class="field"><label>2. Your details</label></div>
+        <div class="field">
+          <label for="fullName">Full name *</label>
+          <input id="fullName" name="full_name" type="text" placeholder="e.g. Ada Okafor" autocomplete="name">
+          <div class="err" data-for="fullName">Please enter your full name</div>
+        </div>
+        <div class="field">
+          <label for="address">Delivery address *</label>
+          <textarea id="address" name="address" rows="2" placeholder="House number, street, area, city and state" autocomplete="street-address"></textarea>
+          <div class="err" data-for="address">Please enter your full delivery address</div>
+        </div>
+        <div class="field">
+          <label for="phone">Phone number *</label>
+          <input id="phone" name="phone" type="tel" placeholder="080xxxxxxxx" autocomplete="tel" inputmode="tel">
+          <div class="err" data-for="phone">Enter a valid 11-digit phone number</div>
+        </div>
+        <div class="field">
+          <label for="email">Email address <span class="opt-tag" id="emailTag">(optional)</span></label>
+          <input id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email">
+          <div class="err" data-for="email">Please enter a valid email address</div>
+        </div>
+
+        <!-- UPSELL / ORDER BUMP (edit UPSELL in the config below) -->
+        <label class="bump" id="bump">
+          <div class="bhead">🎁 Special add-on price, only with this order</div>
+          <img id="bumpImg" alt="" width="900" height="822" loading="lazy" decoding="async" style="display:none">
+          <div class="brow">
+            <input type="checkbox" id="bumpChk">
+            <div>
+              <div class="bt">YES! Add the <span id="bumpName"></span> for <span class="hl" id="bumpPrice"></span></div>
+              <div class="bd" id="bumpDesc"></div>
+              <a id="bumpLink" target="_blank" rel="noopener" style="display:none">See full details →</a>
+            </div>
+          </div>
+        </label>
+
+        <div class="summary">
+          <div><span>Package</span><span id="sumPkg">—</span></div>
+          <div id="sumUpRow" style="display:none"><span id="sumUpName">Add-on</span><span id="sumUp">—</span></div>
+          <div><span>Delivery</span><span id="sumDel">—</span></div>
+          <div class="tot"><span>Total</span><span id="sumTot">—</span></div>
+        </div>
+
+        <div class="pod">💳 <span>Payment on Delivery. No payment needed now.</span></div>
+
+        <!-- hidden fields sent to your dashboard -->
+        <input type="hidden" name="product" id="hProduct">
+        <input type="hidden" name="price" id="hPrice">
+        <input type="hidden" name="upsell" id="hUpsell" value="No">
+        <input type="hidden" name="upsell_price" id="hUpsellPrice" value="0">
+        <input type="hidden" name="total" id="hTotal">
+        <input type="hidden" name="source" value="3in1-combo-landing-page">
+
+        <p style="font-size:13.5px;color:#B42318;font-weight:600;text-align:center;margin-bottom:10px">By clicking below, you confirm you are ready to receive and pay for this order.</p>
+        <button type="submit" class="btn btn-block" id="submitBtn">CONFIRM MY ORDER →</button>
+        <p class="note" style="margin-top:12px">🔒 Your details are safe and only used to deliver your order.</p>
+      </form>
+
+      <div class="thanks" id="thanks">
+        <div class="big">🎉</div>
+        <h3>Thank you! Your order is received.</h3>
+        <p>Our team will call you shortly on <b id="thanksPhone"></b> to confirm your order and delivery. Please keep your phone close.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section>
+  <div class="wrap">
+    <div class="center"><h2 class="sec-title">Questions? We've Got Answers</h2></div>
+    <div class="faq">
+      <details><summary>How do I pay?</summary><p>You pay on delivery. Once your pack arrives, you pay the delivery agent. No payment is needed when you place your order.</p></details>
+      <details><summary>How do I use the 3 products?</summary><p>Wash with the Exfoliating Cleansing Complexion Paste during your bath. Apply the Knuckle Moisturizing Cream on your face and body in the daytime. Apply the Knuckle Exfoliating Cream at night before bed.</p></details>
+      <details><summary>Will it work on my skin? Nothing works on me.</summary><p>That is exactly who this combo was made for. Dead skin build-up often stops products from working. The Knuckle Exfoliating Cream clears that layer so your skin can respond.</p></details>
+      <details><summary>How soon will I see results?</summary><p>Many people notice smoother, fresher skin within the first week, with brighter, more even tone building over the following weeks. Results vary from person to person, so use it consistently.</p></details>
+      <details><summary>How long does delivery take?</summary><p>Delivery time depends on your location. Our team will confirm your delivery date when they call you.</p></details>
+      <details><summary>Is it safe?</summary><p>Our products are made with natural ingredients. As with any new skincare product, do a small patch test on your inner arm 24 hours before full use. If you are pregnant, breastfeeding or have a skin condition, speak to your doctor first.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FINAL CTA ============ -->
+<section class="final">
+  <div class="wrap">
+    <h2>Your Glow Is One Order Away</h2>
+    <p style="margin-bottom:24px;font-size:18px">Stop wasting money on products that can't get through. Start the routine that works.</p>
+    <a href="#packages" class="btn">Get My 3-in-1 Combo Now →</a>
+  </div>
+</section>
+
+<footer>
+  © <span id="yr"></span> <span data-brand>Latose Natural Skincare</span>. All rights reserved.<br>
+  Results vary from person to person.
+</footer>
+
+<div class="sticky">
+  <div class="sp">Exfoliating 3-in-1 Combo<b id="stickyPrice">—</b></div>
+  <a href="#order" class="btn">Order Now</a>
+</div>
+
+<script>
+/* =========================================================
+   CONFIG — edit only this part
+   ========================================================= */
+const CONFIG = {
+  BRAND: "Latose Natural Skincare",
+
+  // Paste your Skyfly form/webhook URL here (the URL orders should be POSTed to).
+  ORDER_ENDPOINT: "",
+
+  // Delivery fee shown in the order summary. Use 0 for free delivery,
+  // or null to show "Confirmed on call".
+  DELIVERY_FEE: null,
+
+  // Make email compulsory? true = required, false = optional (optional gets more orders)
+  EMAIL_REQUIRED: false,
+
+  // UPSELL: the checkbox offer shown just before "Confirm my order"
+  UPSELL: {
+    enabled: true,
+    name: "Complete Facial Set",
+    price: 22000,
+    compareAt: 25000,
+    desc: "Facial Detox Toner + Baby Face Whitening Soap + All Clear Face Cream. Tick the box to add it. It comes in the same delivery.",
+    link: "",          // optional: link to the facial set's own page
+    image: "images/facial-set.webp"
+  },
+
+  // Which package is pre-selected and marked "Most Popular"
+  DEFAULT_PACKAGE: "combo1",
+
+  PACKAGES: [
+    {
+      id: "combo1",
+      option: "Package 1",
+      name: "1 Complete 3-in-1 Combo",
+      desc: "One complete skincare system",
+      price: 59500,
+      compareAt: null,
+      flag: "🔥 Most Popular",
+      items: ["1 × Knuckle Exfoliating Cream", "1 × Exfoliating Cleansing Complexion Paste", "1 × Knuckle Moisturizing Cream", "Full day, night &amp; bath routine", "Pay on delivery"],
+      cta: "Get 1 Combo"
+    },
+    {
+      id: "combo2",
+      option: "Package 2",
+      name: "2 Complete 3-in-1 Combos",
+      desc: "Save ₦10,000 when you buy two",
+      price: 109000,
+      compareAt: 119000,
+      flag: "💰 Best Value",
+      items: ["2 × Knuckle Exfoliating Cream", "2 × Exfoliating Cleansing Complexion Paste", "2 × Knuckle Moisturizing Cream", "Lasts twice as long", "Pay on delivery"],
+      cta: "Get 2 Combos"
+    },
+    {
+      id: "combo3",
+      option: "Package 3",
+      name: "3 Complete 3-in-1 Combos",
+      desc: "Save ₦10,000 when you buy three",
+      price: 168500,
+      compareAt: 178500,
+      flag: "👑 Biggest Pack",
+      items: ["3 × Knuckle Exfoliating Cream", "3 × Exfoliating Cleansing Complexion Paste", "3 × Knuckle Moisturizing Cream", "Stock up or share with family", "Pay on delivery"],
+      cta: "Get 3 Combos"
+    }
+  ]};
+/* ========================================================= */
+
+const naira = n => "₦" + Number(n).toLocaleString("en-NG");
+let selected = CONFIG.DEFAULT_PACKAGE;
+
+document.querySelectorAll("[data-brand]").forEach(e => e.textContent = CONFIG.BRAND);
+document.getElementById("yr").textContent = new Date().getFullYear();
+const combo = CONFIG.PACKAGES.find(p => p.id === "combo1");
+document.getElementById("stickyPrice").textContent = "Only " + naira(combo.price);
+document.getElementById("heroBadge").innerHTML = "ALL 3<br>FOR<br>" + naira(combo.price);
+
+// pricing cards
+const grid = document.getElementById("priceGrid");
+CONFIG.PACKAGES.forEach(p => {
+  const save = p.compareAt ? "You save " + naira(p.compareAt - p.price) : "";
+  const card = document.createElement("div");
+  card.className = "pkg" + (p.id === CONFIG.DEFAULT_PACKAGE ? " best" : "");
+  card.dataset.id = p.id;
+  card.innerHTML =
+    (p.flag ? '<div class="flag">' + p.flag + '</div>' : '') +
+    '<div class="opt">' + p.option + '</div>' +
+    '<h3>' + p.name + '</h3>' +
+    '<div class="desc">' + p.desc + '</div>' +
+    '<div class="was">' + (p.compareAt ? naira(p.compareAt) : '') + '</div>' +
+    '<div class="now">' + naira(p.price) + '</div>' +
+    '<div class="save">' + save + '</div>' +
+    '<ul>' + p.items.map(i => '<li>' + i + '</li>').join('') + '</ul>' +
+    '<a href="#order" class="btn btn-block">' + p.cta + ' →</a>';
+  card.addEventListener("click", () => selectPkg(p.id));
+  grid.appendChild(card);
+});
+
+// package picker in form
+const pick = document.getElementById("pickList");
+CONFIG.PACKAGES.forEach(p => {
+  const l = document.createElement("label");
+  l.dataset.id = p.id;
+  l.innerHTML = '<input type="radio" name="package" value="' + p.id + '"> <span>' + p.option + ': ' + p.name + '</span><span class="pp">' + naira(p.price) + '</span>';
+  l.querySelector("input").addEventListener("change", () => selectPkg(p.id));
+  pick.appendChild(l);
+});
+
+// upsell setup
+const U = CONFIG.UPSELL;
+const bump = document.getElementById("bump");
+const bumpChk = document.getElementById("bumpChk");
+if (!U.enabled) { bump.style.display = "none"; }
+else {
+  document.getElementById("bumpName").textContent = U.name;
+  document.getElementById("bumpPrice").textContent = U.price ? "only " + naira(U.price) : "a special price";
+  if (U.compareAt) document.getElementById("bumpPrice").insertAdjacentHTML("beforebegin", '<s style="color:var(--muted);font-weight:500">' + naira(U.compareAt) + "</s> ");
+  document.getElementById("bumpDesc").textContent = U.desc;
+  if (U.link) { const a = document.getElementById("bumpLink"); a.href = U.link; a.style.display = "inline-block"; a.addEventListener("click", ev => ev.stopPropagation()); }
+  if (U.image) { const im = document.getElementById("bumpImg"); im.src = U.image; im.alt = U.name; im.style.display = "block"; }
+  bumpChk.addEventListener("change", () => { bump.classList.toggle("on", bumpChk.checked); selectPkg(selected); });
+}
+if (CONFIG.EMAIL_REQUIRED) document.getElementById("emailTag").textContent = "*";
+
+function selectPkg(id) {
+  selected = id;
+  const p = CONFIG.PACKAGES.find(x => x.id === id);
+  document.querySelectorAll(".pkg").forEach(c => c.classList.toggle("selected", c.dataset.id === id));
+  document.querySelectorAll("#pickList label").forEach(l => {
+    const on = l.dataset.id === id;
+    l.classList.toggle("on", on);
+    l.querySelector("input").checked = on;
+  });
+  const fee = CONFIG.DELIVERY_FEE;
+  const up = (U.enabled && bumpChk.checked) ? (U.price || 0) : 0;
+  const total = p.price + up + (typeof fee === "number" ? fee : 0);
+  document.getElementById("sumUpRow").style.display = (U.enabled && bumpChk.checked) ? "flex" : "none";
+  document.getElementById("sumUpName").textContent = U.name;
+  document.getElementById("sumUp").textContent = U.price ? naira(up) : "Confirmed on call";
+  document.getElementById("hUpsell").value = (U.enabled && bumpChk.checked) ? "Yes - " + U.name : "No";
+  document.getElementById("hUpsellPrice").value = up;
+  document.getElementById("sumPkg").textContent = p.name + " (" + naira(p.price) + ")";
+  document.getElementById("sumDel").textContent = fee === null ? "Confirmed on call" : (fee === 0 ? "FREE" : naira(fee));
+  document.getElementById("sumTot").textContent = naira(total) + (fee === null ? " + delivery" : "");
+  document.getElementById("hProduct").value = p.option + " - " + p.name;
+  document.getElementById("hPrice").value = p.price;
+  document.getElementById("hTotal").value = total;
+}
+selectPkg(selected);
+
+// validation + submit
+function showErr(id, show) { document.querySelector('.err[data-for="' + id + '"]').style.display = show ? "block" : "none"; }
+["fullName","address","phone","email"].forEach(id => document.getElementById(id).addEventListener("input", () => showErr(id, false)));
+
+document.getElementById("orderForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const v = id => document.getElementById(id).value.trim();
+  const phoneOk = /^(\+?234|0)[789][01]\d{8}$/.test(v("phone").replace(/[\s-]/g, ""));
+  const em = v("email");
+  const emailOk = em ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em) : !CONFIG.EMAIL_REQUIRED;
+  const checks = { fullName: v("fullName").length > 2, address: v("address").length > 8, phone: phoneOk, email: emailOk };
+  let ok = true;
+  for (const k in checks) { showErr(k, !checks[k]); if (!checks[k]) ok = false; }
+  if (!ok) { document.querySelector('.err[style*="block"]').scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true; btn.textContent = "Sending your order...";
+  const data = new FormData(e.target);
+  data.append("submitted_at", new Date().toISOString());
+
+  try {
+    if (CONFIG.ORDER_ENDPOINT) {
+      await fetch(CONFIG.ORDER_ENDPOINT, { method: "POST", body: data, mode: "no-cors" });
+    } else {
+      console.warn("ORDER_ENDPOINT is empty. Order not sent:", Object.fromEntries(data));
+    }
+    document.getElementById("thanksPhone").textContent = v("phone");
+    e.target.style.display = "none";
+    document.getElementById("thanks").style.display = "block";
+    document.getElementById("order").scrollIntoView({ behavior: "smooth" });
+    if (window.fbq) fbq("track", "Purchase", { value: Number(document.getElementById("hTotal").value), currency: "NGN" });
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "CONFIRM MY ORDER →";
+    alert("Network issue, please check your connection and try again.");
+  }
+});
+</script>
+</body>
+</html>
