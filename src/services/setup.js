@@ -226,12 +226,22 @@ export async function ensureImportTestSite(pool, config, log = console) {
 export const E2E_EMAIL = 'e2e-tests@skyfly.invalid';
 export const E2E_OWNER_A = 'e2e-owner-a@skyfly.invalid';
 export const E2E_OWNER_B = 'e2e-owner-b@skyfly.invalid';
+// Three-business isolation check (separate, non-admin, one business each): a Staff member of Larose, a Staff
+// member of the 3-in-1 business (least access that still opens their own business), and the Owner of a
+// labelled test business Skyfly creates for itself. Same 20-minute window; disabled and removed after.
+export const E2E_LAROSE = 'e2e-iso-larose@skyfly.invalid';
+export const E2E_3IN1 = 'e2e-iso-3in1@skyfly.invalid';
+export const E2E_NEWBIZ = 'e2e-iso-new@skyfly.invalid';
+export const E2E_NEW_BUSINESS = { slug: 'skyfly-isolation-new-test', name: 'Isolation New Business (test)' };
 export const E2E_EMAIL_LIKE = 'e2e-%@skyfly.invalid';
 export const isE2eEmail = (email) => /^e2e-[a-z0-9.-]+@skyfly\.invalid$/.test(String(email || '').toLowerCase());
 const E2E_ACCOUNTS = [
   { email: E2E_EMAIL, name: 'Automated live tests', role: 'manager', businesses: ['skyfly-import-test'] }, // one business only (only a Super Admin may belong to several),
   { email: E2E_OWNER_A, name: 'Live test owner A', role: 'owner', businesses: ['skyfly-demo'] },
   { email: E2E_OWNER_B, name: 'Live test owner B', role: 'owner', businesses: ['skyfly-import-test'] },
+  { email: E2E_LAROSE, name: 'Isolation check (Larose staff)', role: 'staff', businesses: ['larose-nigeria'] },
+  { email: E2E_3IN1, name: 'Isolation check (3-in-1 staff)', role: 'staff', businesses: ['3-in-1-exfoliating-package-e71584'] },
+  { email: E2E_NEWBIZ, name: 'Isolation check (new business owner)', role: 'owner', businesses: [E2E_NEW_BUSINESS.slug] },
 ];
 // Each sign-in the test workflow sets (a new random password per run, given here only as its
 // hash) works for E2E_WINDOW_MS after it is first seen, once: a later start with the same hash
@@ -274,6 +284,15 @@ export async function ensureE2eAccount(pool, log = console, { now = Date.now() }
     await disableE2eAccount(pool, { log() {} });
     log.log(`Live-test account: disabled (${hash && hash !== 'disabled' ? 'this sign-in was already used and has expired' : 'no SKYFLY_E2E_PASSWORD_HASH'})`);
     return false;
+  }
+  // The labelled test business for the "new business" owner (created once, like a registration would).
+  // Recorded as created by the platform's first real account (never by a live-test account); skipped on a
+  // brand-new installation that has no real account yet.
+  const { rows: [first] } = await pool.query('SELECT id FROM users WHERE email NOT LIKE $1 ORDER BY id LIMIT 1', [E2E_EMAIL_LIKE]);
+  if (first) {
+    await pool.query(
+      `INSERT INTO businesses (owner_id, name, slug, currency, subscription_status) VALUES ($1, $2, $3, 'NGN', 'internal')
+       ON CONFLICT (slug) DO NOTHING`, [first.id, E2E_NEW_BUSINESS.name, E2E_NEW_BUSINESS.slug]);
   }
   for (const u of users) {
     await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [u.id, hash]);
