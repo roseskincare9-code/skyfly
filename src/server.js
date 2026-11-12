@@ -1,6 +1,7 @@
 import { platformSettings } from './services/tenancy.js';
 import { logTenancyMap } from './services/tenancyReport.js';
 import { signupBlockers } from './routes/auth.js';
+import { installPackagedPages } from './services/packagedPages.js';
 import { startLaunchChecks } from './services/launchChecks.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
@@ -78,6 +79,8 @@ const server = app.listen(config.port, () => {
     .then(() => ensureLaroseHostedPage(pool, config)).catch((err) => console.error('Larose hosted page setup failed:', err.message))
     .then(() => ensureImportTestSite(pool, config)).catch((err) => console.error('Import test site setup failed:', err.message))
     .then(() => ensureE2eAccount(pool)).catch((err) => console.error('Live-test account setup failed:', err.message))
+    // Owner-supplied pages shipped with Skyfly (landing-pages/install): installed once into their own business.
+    .then(() => installPackagedPages(pool, config)).catch((err) => console.error('Packaged pages failed:', err.message))
     // WebP sizes for published pages that do not have them yet (e.g. published before this feature).
     .then(() => optimizePublished(pool))
     .then(() => testOrderSummary(pool, 8)).then((lines) => lines.forEach((l) => console.log(l))).catch((err) => console.error('Orders check failed:', err.message));

@@ -413,6 +413,12 @@
     });
     if (anyChoice) order.items[0].options = chosen;
     Object.keys(FIELDS).forEach(function (k) { order.customer[k] = field(form, FIELDS[k]); });
+    // An add-on ticked on the page's own form (checkbox with data-skyfly-upsell="code"): sent as the add-on;
+    // Skyfly accepts it only if it is the page's configured upsell.
+    Array.prototype.forEach.call(form.querySelectorAll('[data-skyfly-upsell]'), function (el) {
+      var code = el.getAttribute('data-skyfly-upsell');
+      if (el.checked && code) order.items.push({ product: code, quantity: 1, upsell: true });
+    });
     // Optional payment choice on the page's own form: cod (default), stripe or paypal (USD).
     var payEl = marked(form, 'payment_method')[0] || form.querySelector('[name=payment_method]:checked') || form.querySelector('select[name=payment_method]');
     if (payEl && /^(cod|stripe|paypal)$/.test(payEl.value)) order.paymentMethod = payEl.value;

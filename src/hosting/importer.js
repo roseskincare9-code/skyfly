@@ -134,6 +134,29 @@ export async function importUpload(file) {
   }
   if (files.length === 0) throw new ImportError('The ZIP is empty.');
 
+  return prepareImport(files, name, { standalone: !isZip });
+}
+
+// A page given as a list of files (e.g. a packaged page shipped with Skyfly): the same safety checks as
+// a ZIP upload (safe paths, allowed file types, size limits), then prepared exactly like an upload.
+export function importFiles(list, sourceName = 'package') {
+  const problems = []; let total = 0;
+  if (!list.length) throw new ImportError('No files to import.');
+  if (list.length > LIMITS.files) throw new ImportError(`More than ${LIMITS.files} files.`);
+  const files = list.map((f) => {
+    const safe = normalizePath(f.path);
+    if (!safe) problems.push(`${f.path}: unsafe or hidden file name`);
+    else if (!contentTypeFor(safe)) problems.push(`${f.path}: file type not allowed`);
+    if (f.data.length > LIMITS.fileBytes) problems.push(`${f.path}: file too large`);
+    total += f.data.length;
+    return { path: safe, data: f.data };
+  });
+  if (total > LIMITS.totalBytes) problems.push('The files are too large in total.');
+  if (problems.length) throw new ImportError('These files cannot be hosted safely.', problems);
+  return prepareImport(files, String(sourceName).slice(0, 200), { standalone: false });
+}
+
+function prepareImport(files, name, { standalone }) {
   const entryPath = findEntry(files);
   const prepared = files.map((f) => ({
     ...f,
@@ -146,6 +169,6 @@ export async function importUpload(file) {
     entryPath,
     files: prepared,
     totalBytes: prepared.reduce((a, f) => a + f.size, 0),
-    report: analyzeFiles(prepared, entryPath, { standalone: !isZip }),
+    report: analyzeFiles(prepared, entryPath, { standalone }),
   };
 }
