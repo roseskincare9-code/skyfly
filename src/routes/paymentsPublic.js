@@ -3,6 +3,7 @@
 // the gateway server-to-server (Stripe session / PayPal capture) and only that answer counts.
 import express, { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
+import { verifyWebhook as verifyPaystack, applyPayment as applyPlanPayment } from '../services/billing.js';
 import {
   stripe, paypal, markPaid, markFailed, markRefunded, checkTransaction, capturePaypal, startPayment, firstDelivery, noteOutcome, PaymentError,
 } from '../services/payments.js';
@@ -14,6 +15,17 @@ export function paymentWebhookRoutes({ pool, config, onPaid = null }) {
   const router = Router();
   const raw = express.raw({ type: '*/*', limit: '512kb' });
 
+  // Skyfly's own plan payments (Paystack): signature = HMAC-SHA512 of the raw body with the secret key.
+  router.post('/webhooks/paystack', raw, asyncHandler(async (req, res) => {
+    const event = verifyPaystack(config, Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '', req.get('x-paystack-signature'));
+    if (!event) return res.status(401).json({ error: 'invalid signature' });
+    const tx = event.data ?? {};
+    if (['charge.success', 'charge.failed'].includes(event.event) && typeof tx.reference === 'string' && tx.reference.startsWith('SKY-SUB-')) {
+      const r = await applyPlanPayment(pool, { ...tx, status: event.event === 'charge.success' ? tx.status : 'failed' }, { source: 'Paystack webhook (signature verified)' });
+      return res.json({ received: true, outcome: r.outcome });
+    }
+    return res.json({ received: true, outcome: 'ignored' });
+  }));
   router.post('/webhooks/stripe', raw, asyncHandler(async (req, res) => {
     const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
     const event = stripe.verify(config, body, req.get('stripe-signature'));

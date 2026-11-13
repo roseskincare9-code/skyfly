@@ -65,3 +65,15 @@ The mode (test / live) follows the secret key. A business connected in test mode
   the confirmation page.
 - Products need a USD price (Products → "Online price in USD") to be payable online; each business sets its
   own USD delivery fee (Payment Gateways). Nothing is ever converted from Naira.
+
+## Skyfly's own plans (Business Pro ₦199,000 / Agency VIP ₦399,000 a month): Paystack
+
+Owners pay for their plan on Paystack's checkout (Subscription page → Pay). The plan is switched on only
+when Paystack confirms the payment to Skyfly (server-side verify or a signed webhook) for the exact amount.
+
+| Setting (Render → skyfly → Environment) | Where to find it |
+| --- | --- |
+| `PAYSTACK_SECRET_KEY` | Paystack dashboard → Settings → API Keys & Webhooks → Secret key (`sk_test_…` for testing, `sk_live_…` for real payments) |
+
+On the same Paystack page, set **Webhook URL** to `https://getskyfly.com/webhooks/paystack`.
+Without the key the pricing and subscription pages say online payment is not on, and nothing is charged.

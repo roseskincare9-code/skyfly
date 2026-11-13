@@ -15,6 +15,7 @@ import { adminVerified, safeAdminNext, ADMIN_SESSION_HOURS } from '../lib/adminS
 import { asyncHandler } from '../lib/http.js';
 import { tooMany, record, clear } from '../lib/authThrottle.js';
 import { PLANS } from '../lib/plans.js';
+import { subscriptionAlerts, verifyReference, billingReady, BillingError } from '../services/billing.js';
 import { planLimit, belongsElsewhere, ONE_BUSINESS_MESSAGE } from '../services/tenancy.js';
 import { CATEGORIES, FREQUENCIES, PAYMENT_STATUSES, PAYMENT_METHODS, listServices, serviceSummary, serviceDomain, paymentProblem, remindInfra, recordBackupRun, backupHealth, totals as infraTotals, monthlyMinor } from '../services/infra.js';
 import { signupNeedsSender, signupBlockers } from './auth.js';
@@ -275,7 +276,8 @@ export function adminRoutes({ pool, config, load = null }) {
     const lastBackupAt = backups.lastOk?.created_at ?? lastDownload?.at ?? null;
     const backupAgeHours = lastBackupAt ? Math.round((Date.now() - new Date(lastBackupAt)) / 36e5) : null;
     const backupAlerts = backups.lastOk ? backups.alerts : backups.alerts.filter((a) => !a.startsWith('No successful backup'));
-    res.render('admin/index', { businesses, counts, plans, platform, mrr, overdue, infraAlerts, backupAlerts, lastBackupAt, backupAgeHours, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
+    const subAlerts = await subscriptionAlerts(pool);
+    res.render('admin/index', { subAlerts, businesses, counts, plans, platform, mrr, overdue, infraAlerts, backupAlerts, lastBackupAt, backupAgeHours, soon, domainAlerts, SUBSCRIPTION_LABELS, notice: req.query.done === 'created' ? 'Client business created.' : null });
   }));
 
   router.get('/admin/businesses/new', (req, res) => {
@@ -551,6 +553,30 @@ export function adminRoutes({ pool, config, load = null }) {
   router.get('/admin/payments', asyncHandler(async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.render('admin/payments', { ...(await paymentsOverview(pool)), platform: platformGateways(config), modes: { stripe: config.payments?.stripe?.mode ?? null, paypal: config.payments?.paypal?.mode ?? null } });
+  }));
+
+  // Skyfly's own plan subscriptions: expiry alerts (14/7/3/0 days), every business's plan, and plan payments.
+  router.get('/admin/subscriptions', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    await expireSubscriptions(pool);
+    const [alerts, { rows: businesses }, { rows: payments }] = await Promise.all([
+      subscriptionAlerts(pool),
+      pool.query(`SELECT b.id, b.name, b.plan, b.subscription_status, b.subscription_price_minor, b.subscription_currency,
+                         b.subscription_started_on::text AS started, b.subscription_expires_on::text AS expires,
+                         (b.subscription_expires_on - (now() AT TIME ZONE b.timezone)::date) AS days_left
+                    FROM businesses b ORDER BY b.subscription_expires_on NULLS LAST, b.id`),
+      pool.query(`SELECT p.*, p.period_start::text AS period_start, p.period_end::text AS period_end, b.name AS business
+                    FROM subscription_payments p JOIN businesses b ON b.id = p.business_id ORDER BY p.id DESC LIMIT 100`),
+    ]);
+    res.render('admin/subscriptions', { alerts, businesses, payments, SUBSCRIPTION_LABELS, billingOn: billingReady(config), mode: config.payments?.paystack?.mode ?? null, notice: typeof req.query.checked === 'string' ? `Checked at Paystack: ${req.query.checked}` : null, error: null });
+  }));
+  // Asks Paystack again about one payment (the same server-to-server check as the return page).
+  router.post('/admin/subscriptions/payments/:reference/check', asyncHandler(async (req, res) => {
+    let outcome;
+    try { ({ outcome } = await verifyReference(pool, config, req.params.reference, 'Paystack verification (Super Admin check)')); }
+    catch (err) { if (!(err instanceof BillingError)) throw err; outcome = err.message; }
+    await audit(pool, req, { action: 'admin.subscription_payment_checked', details: { reference: req.params.reference, outcome } });
+    res.redirect(`/admin/subscriptions?checked=${encodeURIComponent(outcome)}`);
   }));
 
   router.get('/admin/system', asyncHandler(async (req, res) => {

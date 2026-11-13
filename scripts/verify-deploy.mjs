@@ -70,7 +70,7 @@ if (process.env.RENDER_API_KEY) {
         const names = new Set((await render(`/services/${svc.id}/env-vars?limit=100`)).map((e) => (e.envVar ?? e).key));
         const opt = ['GOOGLE_SERVICE_ACCOUNT_JSON', 'SKYFLY_META_ACCESS_TOKEN', 'SKYFLY_META_TEST_EVENT_CODE', 'SKYFLY_BACKUP_KEY', 'SKYFLY_NOTIFY_API_KEY', 'SKYFLY_NOTIFY_FROM', 'SKYFLY_NOTIFY_PROVIDER', 'SKYFLY_ENCRYPTION_KEY',
           // Online payments: the platform's one-time Stripe Connect and PayPal partner setup (names only).
-          'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID', 'STRIPE_WEBHOOK_SECRET', 'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET', 'PAYPAL_PARTNER_MERCHANT_ID', 'PAYPAL_WEBHOOK_ID',
+          'PAYSTACK_SECRET_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID', 'STRIPE_WEBHOOK_SECRET', 'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET', 'PAYPAL_PARTNER_MERCHANT_ID', 'PAYPAL_WEBHOOK_ID',
           // Public registration: email sender and bot check (set by the activation workflow), and keys saved here by hand.
           'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'CLOUDFLARE_API_TOKEN'];
         report(null, 'Render: optional settings on the service itself (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));

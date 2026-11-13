@@ -17,6 +17,8 @@ import { audit } from '../lib/audit.js';
 import { adminVerified } from '../lib/adminSession.js';
 import { workspaceAccess, subscriptionState, expireSubscriptions, platformSettings, can } from '../services/tenancy.js';
 import { teamRoutes } from './team.js';
+import { PLANS } from '../lib/plans.js';
+import { billingReady, startCheckout, BillingError } from '../services/billing.js';
 import { checkoutRoutes } from './checkouts.js';
 import { emailRoutes, emailContactRoutes } from './email.js';
 
@@ -58,7 +60,9 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
         await audit(pool, req, { action: 'admin.workspace_opened', businessId: b.id });
       }
     }
-    if (!sub.open && !(access.isPlatformAdmin && adminVerified(req))) {
+    // An expired (not Super-Admin-locked) business can still open its subscription page and pay to renew.
+    const renewing = sub.reason === 'expired' && /^\/subscription(\/checkout)?\/?$/.test(req.path);
+    if (!sub.open && !renewing && !(access.isPlatformAdmin && adminVerified(req))) {
       const settings = await platformSettings(pool);
       return res.status(402).render('account-locked', { sub, renewalInstructions: settings.renewalInstructions, active: 'subscription' });
     }
@@ -169,7 +173,36 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.use('/team', need('team'), teamRoutes({ pool, config }));
   scoped.use('/email', need('marketing'), emailRoutes({ pool, config }));
   scoped.use('/email-contacts', need('marketing'), emailContactRoutes({ pool }));
-  scoped.get('/subscription', (req, res) => res.render('subscription', { active: 'subscription' }));
+  scoped.get('/subscription', asyncHandler(async (req, res) => {
+    // This business's own payments only.
+    const { rows: payments } = await pool.query(
+      `SELECT reference, plan, amount_minor, currency, mode, status, period_start::text, period_end::text, failure_reason, paid_at, created_at
+         FROM subscription_payments WHERE business_id = $1 ORDER BY id DESC LIMIT 24`, [req.business.id]);
+    res.set('Cache-Control', 'no-store');
+    res.render('subscription', {
+      active: 'subscription', payments, billingOn: billingReady(config), isOwner: req.role === 'owner',
+      outcome: typeof req.query.payment === 'string' ? req.query.payment : null, error: null,
+    });
+  }));
+  // Owner only: starts Paystack's checkout for Business Pro or Agency VIP (new plan or renewal).
+  scoped.post('/subscription/checkout', asyncHandler(async (req, res) => {
+    if (req.role !== 'owner') return res.status(403).render('error', { message: 'Only the business owner can pay for the subscription.' });
+    const { rows: [u] } = await pool.query('SELECT email FROM users WHERE id = $1', [req.session.userId]);
+    try {
+      const { url } = await startCheckout(pool, config, {
+        businessId: req.business.id, plan: String(req.body.plan ?? ''), userId: req.session.userId, email: u.email,
+        baseUrl: config.publicBaseUrl || `${req.protocol}://${req.get('host')}`,
+      });
+      await audit(pool, req, { action: 'subscription.checkout_started', businessId: req.business.id, details: { plan: String(req.body.plan) } });
+      return res.redirect(303, url);
+    } catch (err) {
+      if (!(err instanceof BillingError)) throw err;
+      const { rows: payments } = await pool.query(
+        `SELECT reference, plan, amount_minor, currency, mode, status, period_start::text, period_end::text, failure_reason, paid_at, created_at
+           FROM subscription_payments WHERE business_id = $1 ORDER BY id DESC LIMIT 24`, [req.business.id]);
+      return res.status(err.status).render('subscription', { active: 'subscription', payments, billingOn: billingReady(config), isOwner: true, outcome: null, error: err.message });
+    }
+  }));
   scoped.get('/integrations', need('integrations'), (req, res) => res.render('integrations', { active: 'integrations' }));
 
   router.use('/businesses/:businessId', scoped);

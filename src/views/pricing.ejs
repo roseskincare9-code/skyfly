@@ -1,0 +1,30 @@
+<%- include('partials/head', { title: 'Pricing' }) %>
+<main class="narrow auth" data-pricing>
+  <a class="auth-brand" href="/"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
+  <div class="card">
+    <h1>Plans and pricing</h1>
+    <p class="muted">Monthly subscription for your business on Skyfly, paid in Naira. Your orders, customers, pages and settings are always kept, even if a subscription ends.</p>
+    <% const lim = (k, key) => { const v = limits?.[k]?.[key]; return Number.isInteger(v) ? String(v) : 'Platform standard'; }; %>
+    <div class="table-wrap">
+      <table data-plan-compare>
+        <thead><tr><th></th><% Object.entries(PLANS).forEach(([k, p]) => { %><th data-plan="<%= k %>"><%= p.label %></th><% }) %></tr></thead>
+        <tbody>
+          <tr><th>Price</th><% Object.values(PLANS).forEach((p) => { %><td><strong><%= formatMoney(p.priceMinor, p.currency) %></strong> / month</td><% }) %></tr>
+          <tr><th>Landing pages</th><% Object.keys(PLANS).forEach((k) => { %><td><%= lim(k, 'landing_pages') %></td><% }) %></tr>
+          <tr><th>Team members</th><% Object.keys(PLANS).forEach((k) => { %><td><%= lim(k, 'team_members') %></td><% }) %></tr>
+          <tr><th>Orders, customers, products, tracking pixels, Google Sheets, email follow-up</th><% Object.keys(PLANS).forEach(() => { %><td>Included</td><% }) %></tr>
+          <tr><th>Billing</th><% Object.keys(PLANS).forEach(() => { %><td>Monthly; renew any time, the new month starts where the current one ends</td><% }) %></tr>
+        </tbody>
+      </table>
+    </div>
+    <h2 style="margin-top:20px">How to subscribe</h2>
+    <ol>
+      <li><a href="/signup">Register your business</a> (or <a href="/login">sign in</a>).</li>
+      <li>Open <strong>Subscription</strong> in your dashboard and choose Business Pro or Agency VIP.</li>
+      <li>Pay securely on Paystack's checkout (card, bank transfer or USSD). Your plan is switched on as soon as Paystack confirms the payment to Skyfly.</li>
+    </ol>
+    <% if (!billingOn) { %><p class="warn-box" data-billing-off>Online payment is being switched on. Until then, contact the Skyfly team to subscribe.</p><% } %>
+    <p class="muted" style="font-size:13px;margin-bottom:0">Prices include no hidden fees from Skyfly. See the <a href="/terms">Terms of Service</a> and <a href="/privacy">Privacy Policy</a>.</p>
+  </div>
+</main>
+</body></html>
