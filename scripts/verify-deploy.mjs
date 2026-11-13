@@ -260,6 +260,12 @@ if (!url) {
         const hook = await get(`${url}/webhooks/${gwName}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': 't=1,v1=00' }, body: '{"id":"evt_forged","type":"checkout.session.completed"}' });
         report(hook.status === 400, `Payment webhook refuses an unsigned ${gwName === 'stripe' ? 'Stripe' : 'PayPal'} delivery`, `HTTP ${hook.status}`);
       }
+      // Skyfly's own plans (Paystack): forged webhooks refused; public pricing page; whether online plan payment is on.
+      const ps = await get(`${url}/webhooks/paystack`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-paystack-signature': '0'.repeat(128) }, body: '{"event":"charge.success","data":{"reference":"SKY-SUB-1-000000000000","amount":19900000,"currency":"NGN","status":"success"}}' });
+      report(ps.status === 401, 'Plan payment webhook (Paystack) refuses a forged signature', `HTTP ${ps.status}`);
+      const pricing = await get(`${url}/pricing`);
+      report(pricing.status === 200 && /Business Pro/.test(pricing.text) && /Agency VIP/.test(pricing.text) && /₦199,000/.test(pricing.text) && /₦399,000/.test(pricing.text), 'Public pricing page (Business Pro ₦199,000 / Agency VIP ₦399,000 a month)',
+        `HTTP ${pricing.status}; online plan payment ${/data-billing-off/.test(pricing.text) ? 'NOT on yet (PAYSTACK_SECRET_KEY not set)' : 'on (Paystack)'}`);
       const cat = await get(`${url}/api/public/pages/larosenigeria/catalog`);
       let online = null; try { online = JSON.parse(cat.text).online; } catch { /* not JSON */ }
       report(cat.status === 200, 'Checkout payment options (Larose page)', cat.status !== 200 ? `HTTP ${cat.status}` : online ? `Payment on Delivery + online in USD with ${online.gateways.join(' and ')}` : 'Payment on Delivery only (no online gateway connected yet)');
