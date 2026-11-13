@@ -1,3 +1,4 @@
+import { billingRoutes } from './routes/billing.js';
 import { PLANS } from './lib/plans.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,7 +111,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   // Forms may lead only to Skyfly itself and the official payment pages (Pay now / Connect Stripe or PayPal).
   app.use(helmet({
-    contentSecurityPolicy: { directives: { 'form-action': ["'self'", 'https://checkout.stripe.com', 'https://connect.stripe.com', 'https://www.paypal.com', 'https://www.sandbox.paypal.com'] } },
+    contentSecurityPolicy: { directives: { 'form-action': ["'self'", 'https://checkout.stripe.com', 'https://connect.stripe.com', 'https://www.paypal.com', 'https://www.sandbox.paypal.com', 'https://checkout.paystack.com'] } },
   }));
 
   // Dashboard fonts (versioned file names, so they can be cached for a year).
@@ -185,7 +186,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   // With Skyfly's email sender set up, a self-registered account confirms its email before any dashboard
   // page opens (sign-out, the confirmation pages, invitations and password reset stay reachable).
   if (senderReady(config)) {
-    const open = /^\/(verify-email(\/.*)?|logout|login|signup|terms|privacy|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
+    const open = /^\/(verify-email(\/.*)?|logout|login|signup|terms|privacy|pricing|billing\/paystack\/callback|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
     app.use(async (req, res, next) => {
       if (!req.session.userId || open.test(req.path)) return next();
       try {
@@ -206,6 +207,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   }));
 
   app.use(authRoutes({ pool, config }));
+  app.use(billingRoutes({ pool, config }));
   app.use(backupKeyRoutes({ pool, config }));
   app.use(adminLoginRoutes({ pool, config }));
   app.use(businessRoutes({ pool }));

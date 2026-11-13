@@ -171,6 +171,13 @@ export function loadConfig() {
         apiBase: isProduction ? 'https://api.stripe.com' : (process.env.STRIPE_API_BASE || 'https://api.stripe.com'),
         connectBase: isProduction ? 'https://connect.stripe.com' : (process.env.STRIPE_CONNECT_BASE || 'https://connect.stripe.com'),
       } : null,
+      // Skyfly's own plan billing (Business Pro / Agency VIP, NGN): Skyfly's Paystack account.
+      // PAYSTACK_SECRET_KEY (sk_test_… / sk_live_…) is used server-side only (API calls, webhook signatures).
+      paystack: process.env.PAYSTACK_SECRET_KEY ? {
+        secretKey: process.env.PAYSTACK_SECRET_KEY,
+        mode: String(process.env.PAYSTACK_SECRET_KEY).startsWith('sk_live_') ? 'live' : 'test',
+        apiBase: !isProduction && process.env.PAYSTACK_API_BASE ? process.env.PAYSTACK_API_BASE : 'https://api.paystack.co',
+      } : null,
       paypal: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && process.env.PAYPAL_PARTNER_MERCHANT_ID ? {
         clientId: process.env.PAYPAL_CLIENT_ID,
         clientSecret: process.env.PAYPAL_CLIENT_SECRET,

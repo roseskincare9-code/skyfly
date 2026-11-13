@@ -6,6 +6,7 @@
     <h1 style="margin:14px 0 6px"><%= business.name %></h1>
     <p><%= sub.reason === 'locked' ? 'This account has been paused by the Skyfly team.' : `Your subscription ended on ${business.subscription_expires_on}.` %></p>
     <p class="muted" style="white-space:pre-line"><%= renewalInstructions %></p>
+    <% if (sub.reason === 'expired') { %><p><a class="btn" href="/businesses/<%= business.id %>/subscription" data-renew>Renew subscription</a></p><% } %>
     <p class="muted" style="font-size:13px;margin-bottom:0">Nothing has been deleted: your orders, customers, pages and settings are kept and will be available again as soon as the account is renewed.</p>
   </div>
 </main>

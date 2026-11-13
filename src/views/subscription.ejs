@@ -3,17 +3,71 @@
 <main class="narrow">
   <div class="page-head"><div><h1>Subscription</h1><p>Your Skyfly account for <%= business.name %>.</p></div></div>
   <% const labels = { internal: 'Internal account', trial: 'Trial', active: 'Active', expired: 'Expired', locked: 'Locked' }; %>
+  <% const notes = {
+       activated: ['ok', 'Payment confirmed by Paystack. Your plan is active.'],
+       already_applied: ['ok', 'This payment was already confirmed. Your plan is active.'],
+       pending: ['warn', 'Paystack has not confirmed this payment yet. This page updates once it does; you will not be charged twice.'],
+       failed: ['warn', 'The payment did not go through. Nothing was charged for the plan; you can try again.'],
+       abandoned: ['warn', 'The payment was not completed. You can try again.'],
+       mismatch: ['warn', 'Paystack reported a different amount than the plan price, so the plan was not changed. The Skyfly team has been shown this payment.'],
+       check_failed: ['warn', 'Skyfly could not reach Paystack to confirm the payment just now. It is checked again automatically within minutes.'],
+     }; %>
+  <% if (outcome && notes[outcome]) { %><div class="<%= notes[outcome][0] === 'ok' ? 'notice' : 'warn-box' %>" role="status" data-payment-outcome="<%= outcome %>"><%= notes[outcome][1] %></div><% } %>
+  <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
   <div class="card">
     <dl class="kv">
       <dt>Plan</dt><dd data-plan><%= business.plan && PLANS[business.plan] ? PLANS[business.plan].label : 'No plan chosen yet' %></dd>
-      <dt>Status</dt><dd><span class="pill <%= subscription.open ? 'delivered' : 'cancelled' %>"><%= labels[subscription.status] %></span></dd>
+      <dt>Status</dt><dd><span class="pill <%= subscription.open ? 'delivered' : 'cancelled' %>" data-sub-status="<%= subscription.status %>"><%= labels[subscription.status] %></span></dd>
       <% if (business.subscription_status !== 'internal') { %>
       <dt>Monthly price</dt><dd><%= business.subscription_price_minor == null ? '—' : formatMoney(business.subscription_price_minor, business.subscription_currency) %></dd>
       <dt>Started</dt><dd><%= business.subscription_started_on || '—' %></dd>
-      <dt>Paid until</dt><dd><%= business.subscription_expires_on ? business.subscription_expires_on + ' (end of day, ' + business.timezone + ')' : 'No end date' %></dd>
+      <dt>Paid until</dt><dd data-paid-until><%= business.subscription_expires_on ? business.subscription_expires_on + ' (end of day, ' + business.timezone + ')' : 'No end date' %></dd>
       <% } %>
     </dl>
-    <% if (business.subscription_status !== 'internal') { %><p class="muted" style="margin-bottom:0">Payments are confirmed by the Skyfly team, who then extend your date. Your orders and settings are always kept, even if the account expires.</p><% } %>
   </div>
+
+  <% if (business.subscription_status !== 'internal') { %>
+  <div class="card">
+    <h2><%= subscription.open && business.plan ? 'Renew or change plan' : 'Choose a plan' %></h2>
+    <p class="muted">Paid securely on Paystack. A renewal starts the day after your current paid-until date, so no days are lost. <a href="/pricing">Compare plans</a></p>
+    <% if (!billingOn) { %>
+      <p class="warn-box" data-billing-off>Online payment is not switched on yet. Contact the Skyfly team to renew.</p>
+    <% } else if (!isOwner) { %>
+      <p class="muted" data-owner-only>Only the business owner can pay for the subscription.</p>
+    <% } else { %>
+      <div class="row" data-checkout>
+        <% Object.entries(PLANS).forEach(([k, p]) => { %>
+        <form method="post" action="<%= base %>/subscription/checkout">
+          <%- include('partials/csrf') %>
+          <input type="hidden" name="plan" value="<%= k %>">
+          <button class="btn<%= business.plan === k ? '' : ' secondary' %>" type="submit" data-pay="<%= k %>">Pay <%= formatMoney(p.priceMinor, p.currency) %> — <%= p.label %> (1 month)</button>
+        </form>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <h2>Payments</h2>
+    <% if (!payments.length) { %><p class="muted">No online payments yet.</p><% } else { %>
+    <div class="table-wrap"><table data-payments>
+      <thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th><th>Period</th><th>Reference</th></tr></thead>
+      <tbody>
+      <% payments.forEach((p) => { %>
+        <tr>
+          <td><%= new Date(p.created_at).toISOString().slice(0, 10) %></td>
+          <td><%= PLANS[p.plan]?.label ?? p.plan %><%= p.mode === 'test' ? ' (test)' : '' %></td>
+          <td><%= formatMoney(p.amount_minor, p.currency) %></td>
+          <td><span class="pill <%= p.status === 'success' ? 'delivered' : p.status === 'pending' ? 'pending' : 'cancelled' %>"><%= { success: 'Paid', pending: 'Awaiting confirmation', failed: 'Failed', abandoned: 'Not completed' }[p.status] %></span></td>
+          <td><%= p.period_start ? `${p.period_start} → ${p.period_end}` : '—' %></td>
+          <td><code><%= p.reference %></code></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table></div>
+    <% } %>
+    <p class="muted" style="margin-bottom:0;font-size:13px">A plan is switched on only when Paystack confirms the payment to Skyfly. Your orders and settings are always kept, even if the account expires.</p>
+  </div>
+  <% } %>
 </main>
 </body></html>

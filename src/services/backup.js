@@ -8,7 +8,7 @@
 export const TABLE_ORDER = [
   'users', 'businesses', 'platform_settings', 'business_members', 'business_invites', 'api_keys', 'products',
   'landing_pages', 'landing_page_products', 'page_blobs', 'page_versions', 'page_files', 'pixel_settings', 'additional_pixels', 'tracking_pixels', 'tracking_pixel_pages',
-  'sheet_connections', 'orders', 'order_items', 'order_status_history', 'payment_connections', 'payment_transactions', 'payment_webhook_events', 'conversion_events', 'sheet_recoveries', 'checkout_sessions',
+  'sheet_connections', 'orders', 'order_items', 'order_status_history', 'payment_connections', 'payment_transactions', 'payment_webhook_events', 'subscription_payments', 'subscription_reminders', 'conversion_events', 'sheet_recoveries', 'checkout_sessions',
   'email_settings', 'email_contacts', 'email_templates', 'email_automations', 'email_automation_steps', 'email_messages',
   'platform_domains', 'platform_domain_reminders', 'infra_services', 'infra_service_reminders', 'infra_service_renewals', 'account_requests', 'backup_runs',
   'audit_log',

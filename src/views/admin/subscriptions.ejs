@@ -1,0 +1,56 @@
+<%- include('../partials/head', { title: 'Subscriptions' }) %>
+<%- include('../partials/nav', { active: 'admin' }) %>
+<main>
+  <div class="page-head"><div><h1>Subscriptions</h1><p>Skyfly's own plans: Business Pro and Agency VIP, paid through Paystack. <a href="/admin">Back to Platform admin</a></p></div></div>
+  <% if (notice) { %><div class="notice" role="status"><%= notice %></div><% } %>
+  <div class="card">
+    <p style="margin:0" data-billing-state><strong>Online plan payment:</strong>
+      <%= billingOn ? `on (Paystack, ${mode === 'live' ? 'LIVE — real money' : 'TEST mode — no real money'})` : 'off — PAYSTACK_SECRET_KEY is not set on the server' %>.
+      Webhook address for the Paystack dashboard: <code>/webhooks/paystack</code> on this site.</p>
+  </div>
+
+  <div class="card" data-sub-alerts>
+    <h2>Expiry alerts (14, 7 and 3 days before, and on the day)</h2>
+    <% if (!alerts.length) { %><p class="muted">No subscription expires within 14 days.</p><% } else { %>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Business</th><th>Plan</th><th>Amount</th><th>Expires</th><th>Days left</th><th>Renewal</th></tr></thead>
+      <tbody><% alerts.forEach((a) => { %>
+        <tr class="<%= a.level === 'act' ? 'warn' : '' %>"><td><a href="/admin/businesses/<%= a.id %>"><%= a.name %></a></td>
+          <td><%= PLANS[a.plan]?.label ?? 'No plan' %></td>
+          <td><%= a.subscription_price_minor == null ? '—' : formatMoney(a.subscription_price_minor, a.subscription_currency) %></td>
+          <td><%= a.expires_on %></td><td><%= a.days_left < 0 ? 'expired' : a.days_left %></td><td><%= a.renewal %></td></tr>
+      <% }) %></tbody>
+    </table></div><% } %>
+    <p class="muted" style="font-size:13px;margin-bottom:0">Each alert is also emailed to Super Admins once per step and expiry date (when Skyfly's email sender is set up).</p>
+  </div>
+
+  <div class="card">
+    <h2>All businesses</h2>
+    <div class="table-wrap"><table data-sub-businesses>
+      <thead><tr><th>Business</th><th>Plan</th><th>Status</th><th>Price</th><th>Started</th><th>Paid until</th></tr></thead>
+      <tbody><% businesses.forEach((b) => { %>
+        <tr><td><a href="/admin/businesses/<%= b.id %>"><%= b.name %></a></td><td><%= PLANS[b.plan]?.label ?? '—' %></td>
+          <td><%= SUBSCRIPTION_LABELS[b.subscription_status] %></td>
+          <td><%= b.subscription_price_minor == null ? '—' : formatMoney(b.subscription_price_minor, b.subscription_currency) %></td>
+          <td><%= b.started || '—' %></td><td><%= b.expires || '—' %></td></tr>
+      <% }) %></tbody>
+    </table></div>
+    <p class="muted" style="font-size:13px;margin-bottom:0">To change a plan or date by hand (e.g. a bank transfer), open the business and use its subscription form.</p>
+  </div>
+
+  <div class="card">
+    <h2>Plan payments</h2>
+    <% if (!payments.length) { %><p class="muted">No plan payments yet.</p><% } else { %>
+    <div class="table-wrap"><table data-sub-payments>
+      <thead><tr><th>Date</th><th>Business</th><th>Plan</th><th>Amount</th><th>Mode</th><th>Status</th><th>Period</th><th>Reference</th><th></th></tr></thead>
+      <tbody><% payments.forEach((p) => { %>
+        <tr><td><%= new Date(p.created_at).toISOString().slice(0, 16).replace('T', ' ') %></td><td><%= p.business %></td>
+          <td><%= PLANS[p.plan]?.label ?? p.plan %></td><td><%= formatMoney(p.amount_minor, p.currency) %></td><td><%= p.mode %></td>
+          <td><%= p.status %><%= p.failure_reason ? ` — ${p.failure_reason}` : '' %></td>
+          <td><%= p.period_start ? `${p.period_start} → ${p.period_end}` : '—' %></td><td><code><%= p.reference %></code></td>
+          <td><% if (p.status === 'pending' && billingOn) { %><form method="post" action="/admin/subscriptions/payments/<%= p.reference %>/check"><%- include('../partials/csrf') %><button class="btn secondary" type="submit">Check at Paystack</button></form><% } %></td></tr>
+      <% }) %></tbody>
+    </table></div><% } %>
+  </div>
+</main>
+</body></html>
