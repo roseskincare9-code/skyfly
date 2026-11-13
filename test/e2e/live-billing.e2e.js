@@ -111,6 +111,31 @@ async function startCheckout(planLabel) {
 }
 
 try {
+  // Page script errors and failed requests seen anywhere during the run.
+  const consoleErrors = [];
+  page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`console: ${m.text()}`); });
+  const btn = { visible: false, clickable: false };
+  await step('Signup button: /login shows "Create Your Business Account" and clicking it opens /signup', async () => {
+    await page.goto(`${SKYFLY}/login`);
+    const cta = page.locator('[data-signup-cta] a');
+    await page.screenshot({ path: 'live-screenshots/login.png', fullPage: true });
+    ok(await cta.count(), 'no signup button on /login (it is shown only while registration is open)');
+    ok(await cta.first().isVisible(), 'signup button present but not visible');
+    btn.visible = true;
+    await Promise.all([page.waitForURL(/\/signup/, { timeout: 30000 }), cta.first().click()]);
+    btn.clickable = true;
+    return `"${(await cta.first().textContent().catch(() => 'button'))?.trim()}" → ${page.url()}`;
+  });
+  await step('Signup page: the form and its submit button are visible and enabled', async () => {
+    const r = await page.goto(`${SKYFLY}/signup`);
+    await page.screenshot({ path: 'live-screenshots/signup.png', fullPage: true });
+    const html = await page.content();
+    ok(/name="business_name"/.test(html), `HTTP ${r.status()}: ${/opens soon/i.test(html) ? 'page shows "Business registration opens soon" (no form)' : 'no registration form'}`);
+    const submit = page.locator('form button[type="submit"]').last();
+    ok(await submit.isVisible() && await submit.isEnabled(), 'submit button hidden or disabled');
+    return `HTTP ${r.status()}, submit "${(await submit.textContent())?.trim()}" visible and enabled`;
+  });
   const registered = await step('Registration: /signup shows the real form and a new owner registers without an invitation', async () => {
     await page.goto(`${SKYFLY}/signup`);
     const html = await page.content();
@@ -223,6 +248,7 @@ try {
     ok(s.rows.find((r) => r.reference === ref)?.status !== 'Paid', 'declined payment shown as Paid');
     return `${ref}: outcome "${outcome}"; still ${s.plan}, paid until ${s.paidUntil}`;
   });
+  console.log(`INFO  Browser console errors during the run: ${consoleErrors.length ? consoleErrors.slice(0, 10).join(' | ').slice(0, 900) : 'none'}`);
 } finally { await browser.close(); }
 console.log(`\n${failed ? `${failed} check(s) FAILED` : 'No failures'}${blocked ? `, ${blocked} BLOCKED` : ''} (test business: ${BUSINESS}${biz ? ` #${biz}` : ''})`);
 process.exit(failed ? 1 : blocked ? 2 : 0);
