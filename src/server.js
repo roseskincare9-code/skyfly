@@ -3,6 +3,7 @@ import { logTenancyMap } from './services/tenancyReport.js';
 import { signupBlockers } from './routes/auth.js';
 import { installPackagedPages } from './services/packagedPages.js';
 import { startLaunchChecks } from './services/launchChecks.js';
+import { selfActivate } from './services/selfActivate.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
@@ -23,6 +24,15 @@ const sheets = config.isProduction || process.env.SHEET_SYNC === 'on' ? startShe
 // Subscription expiry, email contacts, automation planning and sending (every minute).
 // Only in production (or EMAIL_WORKER=on), so local servers never email anyone.
 const jobs = config.isProduction || process.env.EMAIL_WORKER === 'on' ? startEmailWorker(pool, config) : { kick() {}, stop() {} };
+// Public registration switches itself on from RESEND_API_KEY + CLOUDFLARE_API_TOKEN on this service
+// (src/services/selfActivate.js); at most 60 s at start-up, then in the background.
+const activating = selfActivate(config, { onChange: () => startLaunchChecks(pool, config) });
+const activation = await Promise.race([
+  activating,
+  new Promise((r) => { setTimeout(() => r({ timeout: true }), 60000).unref(); }),
+]).catch((err) => ({ error: err.message }));
+if (activation.timeout) activating.then(() => startLaunchChecks(pool, config)).catch(() => {});
+console.log(`Self-activation: bot check ${activation.turnstile ?? 'still starting'}; email sender ${activation.email ?? 'still starting'}`);
 // Google Sheets API (service account): yes/no results only, shown on /healthz. Never the key.
 const google = Object.assign(googleStatus, { configured: false, setting: config.google.setting, problem: config.google.problem });
 const app = createApp({

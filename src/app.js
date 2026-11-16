@@ -185,10 +185,11 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   // With Skyfly's email sender set up, a self-registered account confirms its email before any dashboard
   // page opens (sign-out, the confirmation pages, invitations and password reset stay reachable).
-  if (senderReady(config)) {
+  // Checked on every request: the sender may be switched on after start-up (self-activation).
+  {
     const open = /^\/(verify-email(\/.*)?|logout|login|signup|terms|privacy|pricing|billing\/paystack\/callback|forgot-password|reset-password\/.*|invite\/.*|admin\/login|static\/.*|sdk\/.*)$/;
     app.use(async (req, res, next) => {
-      if (!req.session.userId || open.test(req.path)) return next();
+      if (!senderReady(config) || !req.session.userId || open.test(req.path)) return next();
       try {
         const { rows: [u] } = await pool.query('SELECT email_verified_at, is_platform_admin FROM users WHERE id = $1', [req.session.userId]);
         if (!u || u.email_verified_at || u.is_platform_admin) return next();

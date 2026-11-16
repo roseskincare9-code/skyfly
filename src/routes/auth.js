@@ -18,8 +18,8 @@ export const signupNeedsSender = (config) => Boolean(config.requireEmailForSignu
 export const signupNeedsCaptcha = (config) => Boolean(config.requireCaptchaForSignup) && !config.turnstile;
 // What keeps public registration closed, apart from Platform settings (for messages and logs).
 export const signupBlockers = (config) => [
-  ...(signupNeedsSender(config) ? ['email sender (SKYFLY_NOTIFY_PROVIDER, SKYFLY_NOTIFY_API_KEY, SKYFLY_NOTIFY_FROM)'] : []),
-  ...(signupNeedsCaptcha(config) ? ['bot check (TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY)'] : []),
+  ...(signupNeedsSender(config) ? ['email sender (RESEND_API_KEY on the skyfly service; sends from no-reply@getskyfly.com once Resend verifies the domain)'] : []),
+  ...(signupNeedsCaptcha(config) ? ['bot check (CLOUDFLARE_API_TOKEN on the skyfly service, for the Turnstile widget)'] : []),
   ...(config.requireLaunchChecks ? launchBlockers(config) : []),
 ];
 
