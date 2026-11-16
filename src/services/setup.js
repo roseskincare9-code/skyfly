@@ -295,7 +295,8 @@ export async function ensureE2eAccount(pool, log = console, { now = Date.now() }
        ON CONFLICT (slug) DO NOTHING`, [first.id, E2E_NEW_BUSINESS.name, E2E_NEW_BUSINESS.slug]);
   }
   for (const u of users) {
-    await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [u.id, hash]);
+    // Platform-made test accounts (@skyfly.invalid, no mailbox): marked confirmed so the email gate never locks them out.
+    await pool.query('UPDATE users SET password_hash = $2, email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1', [u.id, hash]);
     await pool.query('DELETE FROM business_members WHERE user_id = $1 AND business_id NOT IN (SELECT id FROM businesses WHERE slug = ANY($2::text[]))', [u.id, u.businesses]);
     await pool.query(
       `INSERT INTO business_members (business_id, user_id, role) SELECT id, $1, $3 FROM businesses WHERE slug = ANY($2::text[])
