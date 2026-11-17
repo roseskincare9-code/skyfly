@@ -134,5 +134,31 @@ for (const p of people) {
     return '/admin and its pages: 404';
   });
 }
+// Direct API: the new business's own API key cannot place an order on another business's page (the
+// labelled test shop "skyfly-demo", business #3, so no real business is ever written to). The key is
+// revoked at the end.
+{
+  const p = people.find((x) => x.key === 'newbiz');
+  let key = null; let keyId = null;
+  await step('Direct API: business #12\'s own API key cannot place an order on another business\'s page', async () => {
+    const c = await p.s.csrf(`/businesses/${p.business}/api-keys`);
+    const made = await p.s.req('POST', `/businesses/${p.business}/api-keys`, { _csrf: c, name: 'isolation probe (temporary)' });
+    key = made.text.match(/sky_[A-Za-z0-9_-]{20,}/)?.[0];
+    keyId = [...made.text.matchAll(/api-keys\/(\d+)\/revoke/g)].map((m) => Number(m[1])).sort((a, b) => b - a)[0];
+    ok(made.status === 201 && key, `API key not created (HTTP ${made.status})`);
+    const r = await fetch(`${SKYFLY}/api/public/orders`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ landingPage: 'skyfly-demo', idempotencyKey: `iso-api-probe-${Date.now()}`, customer: { name: 'TEST ORDER isolation probe', phone: '08000000000', address: 'Test only, do not deliver, Ikeja, Lagos' }, items: [{ product: 'serum', quantity: 1 }] }) });
+    const body = await r.text();
+    ok(r.status >= 400 && r.status < 500 && r.status !== 429, `HTTP ${r.status}: ${body.slice(0, 160)}`);
+    return `HTTP ${r.status} ${body.match(/"error":"([A-Z_]+)"/)?.[1] ?? ''}: refused, no order created`;
+  });
+  if (keyId) await step('Direct API: the probe key is revoked and then refused (401)', async () => {
+    const c = await p.s.csrf(`/businesses/${p.business}/api-keys`);
+    await p.s.req('POST', `/businesses/${p.business}/api-keys/${keyId}/revoke`, { _csrf: c });
+    const r = await fetch(`${SKYFLY}/api/public/orders`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: '{}' });
+    ok(r.status === 401, `after revoking: HTTP ${r.status}`);
+    return 'revoked key → 401';
+  });
+}
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll three-business isolation checks passed');
 process.exit(failed ? 1 : 0);
