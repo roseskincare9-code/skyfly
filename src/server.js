@@ -9,7 +9,7 @@ import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { testOrderSummary } from './services/orders.js';
 import { notificationReadiness } from './services/orderNotifications.js';
-import { ensureLaroseForOwner, ensureDemoSite, ensureDemoUpsell, ensureLaroseHostedPage, ensureImportTestSite, ensureE2eAccount } from './services/setup.js';
+import { ensureLaroseForOwner, ensureDemoSite, ensureDemoUpsell, ensureLaroseHostedPage, ensureImportTestSite, ensureE2eAccount, ensureScaleForgeHub } from './services/setup.js';
 import { optimizePublished } from './hosting/images.js';
 import { startSheetWorker, recheckGoogleConnections, compareHeldGoogleConnections } from './services/sheets.js';
 import { startEmailWorker } from './services/emailAutomation.js';
@@ -83,7 +83,8 @@ const server = app.listen(config.port, () => {
     const open = st.clientSignup === 'open' && !blockers.length;
     console.log(`Public registration: ${open ? `OPEN, email confirmation required (${sender ?? 'no sender: confirmation off outside production'}), bot check ${config.turnstile ? 'Turnstile on' : 'off'}` : st.clientSignup === 'open' ? `CLOSED until set on Render: ${blockers.join('; ')}` : 'CLOSED (Platform settings: by invitation only)'}`);
   }).catch(() => {});
-  logTenancyMap(pool).catch((err) => console.error('Tenancy map failed:', err.message));
+  ensureScaleForgeHub(pool).catch((err) => console.error('ScaleForge Business Hub setup failed:', err.message))
+    .then(() => logTenancyMap(pool)).catch((err) => console.error('Tenancy map failed:', err.message));
   ensureLaroseForOwner(pool, config).catch((err) => console.error('Automatic Larose setup failed:', err.message))
     .then(() => ensureDemoSite(pool, config)).then(() => (config.demoSite ? ensureDemoUpsell(pool) : null)).catch((err) => console.error('Demo site setup failed:', err.message))
     .then(() => ensureLaroseHostedPage(pool, config)).catch((err) => console.error('Larose hosted page setup failed:', err.message))

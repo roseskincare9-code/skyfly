@@ -307,3 +307,30 @@ export async function ensureE2eAccount(pool, log = console, { now = Date.now() }
   log.log(`Live-test account: can sign in until ${new Date(until).toISOString()} (test businesses only: ${E2E_ACCOUNTS.map((a) => `${a.email} ${a.role} of ${a.businesses.join(' + ')}`).join('; ')})`);
   return true;
 }
+
+// "ScaleForge Business Hub": the platform owner's own new business (owner's request, 17 Nov 2026), created
+// once, as a NEW business with its own ID and workspace, owned by the existing Super Admin account
+// (Laroseskincare3@gmail.com, which keeps its global access). Never merged with or linked to any other
+// business (e.g. ScaleForge business growth, Skill Forge); never re-created once made, even if renamed.
+export const HUB = { name: 'ScaleForge Business Hub', slug: 'scaleforge-business-hub', owner: 'laroseskincare3@gmail.com' };
+export async function ensureScaleForgeHub(pool, log = console) {
+  const { rows: [done] } = await pool.query("SELECT business_id FROM audit_log WHERE action = 'business.scaleforge_hub_created' LIMIT 1");
+  if (done) return { status: 'exists', businessId: done.business_id };
+  const { rows: [taken] } = await pool.query('SELECT id FROM businesses WHERE slug = $1', [HUB.slug]);
+  if (taken) return { status: 'exists', businessId: taken.id };
+  const { rows: [owner] } = await pool.query('SELECT id FROM users WHERE lower(email) = $1 AND is_platform_admin AND disabled_at IS NULL', [HUB.owner]);
+  if (!owner) { log.log('ScaleForge Business Hub: not created (the Super Admin account was not found).'); return { status: 'no_owner' }; }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [b] } = await client.query(
+      `INSERT INTO businesses (owner_id, name, slug, currency, timezone, subscription_status, subscription_updated_at)
+       VALUES ($1, $2, $3, 'NGN', 'Africa/Lagos', 'internal', now()) RETURNING id`, [owner.id, HUB.name, HUB.slug]);
+    await client.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'owner')", [b.id, owner.id]);
+    await client.query("INSERT INTO audit_log (user_id, business_id, action, details) VALUES ($1, $2, 'business.scaleforge_hub_created', $3)",
+      [owner.id, b.id, JSON.stringify({ automatic: true, requestedBy: 'platform owner', name: HUB.name })]);
+    await client.query('COMMIT');
+    log.log(`ScaleForge Business Hub created as business #${b.id} (own workspace; Owner: the Super Admin account).`);
+    return { status: 'created', businessId: b.id };
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+}
