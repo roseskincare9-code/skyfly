@@ -115,6 +115,15 @@ for (const p of people) {
       return 'all refused (403/404)';
     });
   }
+  // ScaleForge Business Hub (#21), owned by the Super Admin only: no test account may reach it.
+  await step(`${p.label} → ScaleForge Business Hub #21: every section refused (${SECTIONS.length} pages) and writes refused`, async () => {
+    const bad = [];
+    for (const sct of SECTIONS) { const r = await p.s.get(`/businesses/21${sct}`); if (r.status !== 404 || r.text.includes('ScaleForge Business Hub')) bad.push(`${sct || '/'}: HTTP ${r.status}`); }
+    const c = await p.s.csrf(`/businesses/${p.business}`);
+    for (const [path, form] of WRITES) { const r = await p.s.req('POST', `/businesses/21${path}`, { _csrf: c, ...form }); if (![403, 404].includes(r.status)) bad.push(`POST ${path}: HTTP ${r.status}`); }
+    ok(!bad.length, bad.join('; '));
+    return 'all 404 / refused, name never shown';
+  });
   await step(`${p.label}: Super Admin area refused`, async () => {
     const bad = [];
     for (const path of ['/admin', '/admin/businesses/new', '/admin/payments', '/admin/system', '/admin/infrastructure', '/admin/backup.json']) {
