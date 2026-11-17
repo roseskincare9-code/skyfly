@@ -1,8 +1,11 @@
 // Temporary branch only: who reaches Skyfly (Render request logs, last 12 h): per hour, client IP prefixes,
 // paths and statuses. IPs shortened to their first two parts. No secrets.
 const api = async (p) => { const r = await fetch(`https://api.render.com/v1${p}`, { headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json' } }); if (!r.ok) throw new Error(`${p.split('?')[0]} HTTP ${r.status}`); return r.json(); };
-let svc = null;
-for (const o of (await api('/owners?limit=20')).map((x) => x.owner ?? x)) svc ||= (await api(`/services?ownerId=${o.id}&limit=100`)).map((x) => x.service ?? x).find((s) => s.name === 'skyfly');
+let svc = null; let owner = null;
+for (const o of (await api('/owners?limit=20')).map((x) => x.owner ?? x)) { const f = (await api(`/services?ownerId=${o.id}&limit=100`)).map((x) => x.service ?? x).find((s) => s.name === 'skyfly'); if (f && !svc) { svc = f; owner = o.id; } }
+svc.ownerId ??= owner;
+const probe = await api(`/logs?ownerId=${svc.ownerId}&resource=${svc.id}&type=request&limit=5&direction=backward`);
+console.log(`PROBE keys ${Object.keys(probe).join(',')}; n=${probe.logs?.length}; first ${JSON.stringify(probe.logs?.[0] ?? null).slice(0, 500)}`);
 const label = (l, n) => (l.labels || []).find((x) => x.name === n)?.value ?? '';
 const start = new Date(Date.now() - 12 * 3600e3).toISOString();
 const logs = [];
