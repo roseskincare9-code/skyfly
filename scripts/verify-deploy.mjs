@@ -1,31 +1,18 @@
-// Temporary branch only: availability probe of getskyfly.com from outside (DNS, TLS, HTTP), no secrets.
-import { promises as dns } from 'node:dns';
-import tls from 'node:tls';
-const hosts = ['getskyfly.com', 'www.getskyfly.com', 'skyfly-gybf.onrender.com'];
-for (const h of hosts) {
-  for (const t of ['A', 'AAAA', 'CNAME']) {
-    try { console.log(`DNS ${h} ${t}: ${(await dns.resolve(h, t)).join(', ')}`); } catch (e) { console.log(`DNS ${h} ${t}: ${e.code}`); }
+// Temporary branch only: reachability of getskyfly.com from several countries (check-host.net public nodes).
+const CH = 'https://check-host.net';
+const j = async (p) => (await fetch(`${CH}${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })).json();
+const nodes = (await j('/nodes/hosts')).nodes;
+const pick = Object.entries(nodes).filter(([, n]) => ['ng', 'gh', 'za', 'ke', 'eg', 'ma', 'gb', 'de', 'fr', 'nl', 'us', 'in'].includes(String(n.location?.[0]).toLowerCase()));
+console.log(`NODES ${pick.map(([k, n]) => `${k}=${n.location.slice(0, 3).join('/')}`).join('; ')}`);
+const names = Object.fromEntries(pick.map(([k, n]) => [k, n.location.slice(1, 3).join(', ')]));
+for (const [kind, target] of [['http', 'https://getskyfly.com/login'], ['http', 'https://skyfly-gybf.onrender.com/login'], ['tcp', 'getskyfly.com:443']]) {
+  const q = new URLSearchParams({ host: target }); pick.forEach(([k]) => q.append('node', k));
+  const start = await j(`/check-${kind}?${q}`);
+  let res = {};
+  for (let i = 0; i < 12; i += 1) { await new Promise((r) => setTimeout(r, 5000)); res = await j(`/check-result/${start.request_id}`); if (Object.values(res).every((v) => v !== null)) break; }
+  for (const [k, v] of Object.entries(res)) {
+    const r = Array.isArray(v) ? v[0] : v;
+    const txt = r == null ? 'no answer yet' : kind === 'http' ? (Array.isArray(r) ? `ok=${r[0]} ${r[1]}s ${r[2]} ${r[3] ?? ''}` : JSON.stringify(r)) : (r.error ? `ERROR ${r.error}` : `connected ${r.time}s to ${r.address}`);
+    console.log(`REACH ${kind} ${target} from ${names[k] ?? k}: ${String(txt).slice(0, 160)}`);
   }
-  try { console.log(`DNS ${h} NS: ${(await dns.resolveNs(h.split('.').slice(-2).join('.'))).join(', ')}`); } catch (e) { console.log(`DNS ${h} NS: ${e.code}`); }
-  await new Promise((done) => {
-    const s = tls.connect({ host: h, port: 443, servername: h, timeout: 15000 }, () => {
-      const c = s.getPeerCertificate();
-      console.log(`TLS ${h}: ${s.authorized ? 'valid' : `NOT valid (${s.authorizationError})`}; issuer ${c.issuer?.O ?? '?'} / ${c.issuer?.CN ?? '?'}; subject ${c.subject?.CN}; SAN ${String(c.subjectaltname).slice(0, 120)}; expires ${c.valid_to}`);
-      s.end(); done();
-    });
-    s.on('error', (e) => { console.log(`TLS ${h}: ERROR ${e.code ?? ''} ${e.message}`); done(); });
-    s.on('timeout', () => { console.log(`TLS ${h}: TIMEOUT`); s.destroy(); done(); });
-  });
-}
-const urls = ['https://getskyfly.com/', 'https://getskyfly.com/login', 'https://getskyfly.com/signup', 'https://getskyfly.com/admin/login', 'https://getskyfly.com/healthz', 'https://www.getskyfly.com/', 'http://getskyfly.com/', 'https://skyfly-gybf.onrender.com/healthz', 'https://skyfly-gybf.onrender.com/login'];
-for (let round = 1; round <= 3; round += 1) {
-  for (const u of urls) {
-    const t0 = Date.now();
-    try {
-      const r = await fetch(u, { redirect: 'manual', signal: AbortSignal.timeout(30000) });
-      const body = await r.text();
-      console.log(`HTTP round ${round} ${u} → ${r.status} ${r.headers.get('location') ? `→ ${r.headers.get('location')} ` : ''}(${Date.now() - t0} ms; server ${r.headers.get('server')}; cf-ray ${r.headers.get('cf-ray') ?? '-'}; title "${(body.match(/<title>([^<]*)/)?.[1] ?? '').slice(0, 60)}")`);
-    } catch (e) { console.log(`HTTP round ${round} ${u} → ERROR ${e.cause?.code ?? ''} ${e.cause?.message ?? e.message} (${Date.now() - t0} ms)`); }
-  }
-  if (round < 3) await new Promise((r) => setTimeout(r, 20000));
 }
