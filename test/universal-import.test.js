@@ -316,7 +316,7 @@ describe('live-test account', () => {
     assert.ok(isE2eEmail('e2e-invitee-1@skyfly.invalid') && !isE2eEmail('owner@larose.test'));
     delete process.env.SKYFLY_E2E_PASSWORD_HASH;
     await ensureE2eAccount(pool, quiet);
-    assert.match((await joiner.get('/')).headers.location ?? '', /\/login/, 'the invited test account is signed out');
+    assert.match((await joiner.get('/account')).headers.location ?? '', /\/login/, 'the invited test account is signed out');
     const { rows: left } = await pool.query("SELECT u.email FROM business_members m JOIN users u ON u.id = m.user_id WHERE u.email LIKE 'e2e-%@skyfly.invalid'");
     assert.deepEqual(left, [], 'no test account keeps any membership');
     const { rows: [inv2] } = await pool.query("SELECT count(*)::int AS n FROM users WHERE email LIKE 'e2e-%@skyfly.invalid' AND password_hash <> 'disabled'");
@@ -344,7 +344,7 @@ describe('live-test account', () => {
     assert.equal(await ensureE2eAccount(pool, quiet, { now: start + E2E_WINDOW_MS - 60000 }), true);
     // …the window ending disables it and ends its signed-in sessions…
     await disableE2eAccount(pool, quiet);
-    assert.match((await agent.get('/')).headers.location ?? '', /\/login/, 'signed out');
+    assert.match((await agent.get('/account')).headers.location ?? '', /\/login/, 'signed out');
     assert.notEqual((await login('window-password-0123456789')).status, 302);
     // …and a later start with the same, now used, setting keeps it disabled.
     assert.equal(await ensureE2eAccount(pool, quiet, { now: start + E2E_WINDOW_MS + 1000 }), false);

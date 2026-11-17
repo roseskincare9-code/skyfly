@@ -34,10 +34,10 @@ test('a wrong key is refused and logged; no key goes to the sign-in page', async
 });
 
 test('the key opens nothing else', async () => {
-  for (const path of ['/admin', '/admin/system', '/admin/settings', '/']) {
+  for (const path of ['/admin', '/admin/system', '/admin/settings', '/businesses/1']) {
     const res = await request(app).get(path).set('Authorization', `Bearer ${KEY}`);
     assert.equal(res.status, 302, path);
-    assert.equal(res.headers.location, path === '/' ? '/login' : `/admin/login?next=${encodeURIComponent(path)}`, path);
+    assert.equal(res.headers.location, path === '/businesses/1' ? '/login' : `/admin/login?next=${encodeURIComponent(path)}`, path);
   }
 });
 
