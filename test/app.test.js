@@ -14,10 +14,13 @@ test('health check reports database ok', async () => {
   assert.deepEqual(res.body, { status: 'ok' });
 });
 
-test('dashboard redirects to login when signed out', async () => {
+test('signed out: / is the public homepage (what Skyfly does, sign in, pricing, terms); dashboard pages still need sign-in', async () => {
   const res = await request(app).get('/');
-  assert.equal(res.status, 302);
-  assert.equal(res.headers.location, '/login');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /data-home/);
+  for (const href of ['/login', '/pricing', '/terms', '/privacy', '/signup']) assert.match(res.text, new RegExp(`href="${href}"`));
+  assert.match(res.text, /₦199,000/);
+  assert.equal((await request(app).get('/businesses/1')).headers.location, '/login');
 });
 
 test('owner can sign up, create a business, log out and log back in', async () => {
@@ -30,7 +33,7 @@ test('owner can sign up, create a business, log out and log back in', async () =
 
   _csrf = await csrfToken(agent, '/?all=1');
   await agent.post('/logout').type('form').send({ _csrf }).expect(302);
-  await agent.get('/').expect(302);
+  assert.match((await agent.get('/').expect(200)).text, /data-home/); // signed out: the public homepage
 
   _csrf = await csrfToken(agent, '/login');
   await agent.post('/login').type('form').send({ _csrf, email: 'owner@example.com', password: 'wrong-password' }).expect(401);

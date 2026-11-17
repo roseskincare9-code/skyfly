@@ -95,7 +95,7 @@ describe('password reset by email', () => {
     const ok = await reset(path, 'a-new-password-1234');
     assert.equal(ok.res.status, 200);
     assert.match(ok.res.text, /Your password has been changed/);
-    await owner.get('/').expect(302).expect('Location', '/login');
+    await owner.get('/businesses/1').expect(302).expect('Location', '/login');
     assert.equal((await login('owner@skyfly.test', 'correct-horse-battery')).ok, false);
     assert.equal((await login('owner@skyfly.test', 'a-new-password-1234')).ok, true);
     const again = await reset(path, 'another-password-1234');

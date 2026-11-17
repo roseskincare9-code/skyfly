@@ -41,7 +41,7 @@ const people = [
   { key: 'threeInOne', label: '3-in-1 staff', email: E2E_3IN1 },
   { key: 'newbiz', label: 'new business owner', email: E2E_NEWBIZ },
 ];
-const SECTIONS = ['', '/orders', '/customers', '/products', '/landing-pages', '/analytics', '/pixels', '/integrations', '/settings', '/team', '/subscription', '/email', '/email-contacts', '/checkouts', '/google-sheets', '/api-keys', '/payments', '/orders/export.csv', '/customers/export.csv'];
+const SECTIONS = ['', '/activity', '/orders', '/customers', '/products', '/landing-pages', '/analytics', '/pixels', '/integrations', '/settings', '/team', '/subscription', '/email', '/email-contacts', '/checkouts', '/google-sheets', '/api-keys', '/payments', '/orders/export.csv', '/customers/export.csv'];
 const WRITES = [['/products', { name: 'Isolation probe', price: '1000', code: 'iso-probe' }], ['/settings', { name: 'Isolation probe' }], ['/team/invite', { email: 'e2e-iso-probe@skyfly.invalid', role: 'owner' }], ['/landing-pages/template', { name: 'Isolation probe' }], ['/pixels', { platform: 'meta', name: 'probe', pixel_id: '1234567890123456' }]];
 
 await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) }).catch(() => {});
@@ -62,6 +62,29 @@ for (const p of people) {
 }
 if (people.some((p) => !p.business)) { console.log('\nSetup failed: not every account reached its business.'); process.exit(1); }
 ok(new Set(people.map((p) => p.business)).size === 3, 'the three accounts are not in three different businesses');
+
+// Permitted operations work inside one's own business, within the role: staff (Larose, 3-in-1) may work
+// on orders and customers only; the owner of the new business may open every section.
+const STAFF_OK = ['', '/orders', '/customers', '/checkouts', '/subscription'];
+const STAFF_NO = ['/products', '/landing-pages', '/analytics', '/settings', '/team', '/payments', '/pixels', '/integrations', '/api-keys', '/email', '/google-sheets'];
+for (const p of people) {
+  const owner = p.key === 'newbiz';
+  await step(`${p.label}: permitted sections of its own business #${p.business} open (${owner ? 'Owner: all' : 'Staff: orders and customers only'})`, async () => {
+    const bad = [];
+    for (const sct of owner ? [...STAFF_OK, ...STAFF_NO] : STAFF_OK) { const r = await p.s.get(`/businesses/${p.business}${sct}`); if (r.status !== 200) bad.push(`${sct || '/'}: HTTP ${r.status}`); }
+    ok(!bad.length, bad.join('; '));
+    return `${owner ? STAFF_OK.length + STAFF_NO.length : STAFF_OK.length} sections → 200`;
+  });
+  if (!owner) await step(`${p.label}: sections beyond the Staff role are refused in its own business`, async () => {
+    const bad = [];
+    for (const sct of STAFF_NO) { const r = await p.s.get(`/businesses/${p.business}${sct}`); if (r.status !== 403) bad.push(`${sct}: HTTP ${r.status}`); }
+    const c = await p.s.csrf(`/businesses/${p.business}`);
+    const w = await p.s.req('POST', `/businesses/${p.business}/team/invite`, { _csrf: c, email: 'e2e-iso-probe@skyfly.invalid', role: 'owner' });
+    if (w.status !== 403) bad.push(`POST /team/invite: HTTP ${w.status}`);
+    ok(!bad.length, bad.join('; '));
+    return `${STAFF_NO.length} sections → 403; inviting an owner → 403`;
+  });
+}
 
 for (const p of people) {
   const others = people.filter((o) => o !== p);

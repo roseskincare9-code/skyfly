@@ -5,9 +5,18 @@ import { asyncHandler } from '../lib/http.js';
 import { PLANS } from '../lib/plans.js';
 import { platformSettings, workspaceAccess } from '../services/tenancy.js';
 import { billingReady, verifyReference } from '../services/billing.js';
+import { signupBlockers } from './auth.js';
 
 export function billingRoutes({ pool, config }) {
   const router = Router();
+
+  // Public homepage for visitors who are not signed in (signed-in accounts go on to their dashboard).
+  router.get('/', asyncHandler(async (req, res, next) => {
+    if (req.session.userId) return next();
+    const settings = await platformSettings(pool);
+    res.set('Cache-Control', 'no-store');
+    res.render('home', { PLANS, signupOpen: Boolean(config.allowSignup) && settings.clientSignup === 'open' && !signupBlockers(config).length });
+  }));
 
   router.get('/pricing', asyncHandler(async (req, res) => {
     const settings = await platformSettings(pool);

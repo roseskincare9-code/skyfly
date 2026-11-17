@@ -1,0 +1,77 @@
+<%- include('partials/head', { title: 'Landing pages and orders for your business' }) %>
+<style>
+  .home { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
+  .home-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .home-top nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hero { padding: 40px 0 24px; max-width: 760px; }
+  .hero h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.12; margin: 0 0 14px; }
+  .hero p.lead { font-size: 18px; color: var(--muted); margin: 0 0 22px; }
+  .cta-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 14px; }
+  .feature h3 { margin: 0 0 6px; font-size: 17px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
+  .steps li { counter-increment: s; padding-left: 40px; position: relative; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; }
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 14px; }
+  .plan .price { font-size: 26px; font-weight: 700; margin: 6px 0; }
+  .home section { margin-top: 36px; }
+  .home h2 { font-size: 22px; margin: 0; }
+  .home footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+</style>
+<div class="home" data-home>
+  <header class="home-top">
+    <a class="auth-brand" href="/" style="margin:0"><span class="logo-mark"><%- include('partials/icon', { name: 'spark', size: 22 }) %></span><span>Skyfly<small>by ScaleForge Business Hub</small></span></a>
+    <nav><a class="btn secondary" href="/pricing">Pricing</a><a class="btn secondary" href="/login" data-home-login>Sign in</a></nav>
+  </header>
+
+  <div class="hero">
+    <h1>Turn your ads into orders, in one place.</h1>
+    <p class="lead">Skyfly gives businesses that sell through social media ads a landing page, an order form with Payment on Delivery, and one dashboard for orders, customers, products and ad tracking. Each business has its own private workspace.</p>
+    <div class="cta-row">
+      <% if (signupOpen) { %>
+        <a class="btn" href="/signup" data-home-signup>Create your business account</a>
+      <% } else { %>
+        <a class="btn" href="/signup" data-home-signup>Business registration opens soon</a>
+      <% } %>
+      <a class="btn secondary" href="/login">Sign in</a>
+    </div>
+  </div>
+
+  <section>
+    <h2>What you can do with Skyfly</h2>
+    <div class="grid3">
+      <div class="card feature"><h3>Landing pages</h3><p>Publish a page from a template, or upload the one you already have. It is hosted for you, works on phones, and its order form is connected to your dashboard.</p></div>
+      <div class="card feature"><h3>Orders and Payment on Delivery</h3><p>Every order arrives in your dashboard with the customer's details, priced from your own product list in ₦. Follow each one from pending to delivered.</p></div>
+      <div class="card feature"><h3>Customers and products</h3><p>A customer list built from your orders, your products and prices, and optional add-on offers on the order form.</p></div>
+      <div class="card feature"><h3>Ad tracking</h3><p>Add your Meta, TikTok or X pixel ID without editing code, so your ads can see page views, started orders and completed orders.</p></div>
+      <div class="card feature"><h3>Google Sheets and email follow-up</h3><p>Copy each new order to your Google Sheet, and send follow-up emails to customers who agreed to hear from you.</p></div>
+      <div class="card feature"><h3>Your team, your data</h3><p>Invite staff with Owner, Manager or Staff roles. Your orders, customers and settings are visible only to your own business.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li><strong>Register your business</strong> with your name, business name and email, then confirm your email address.</li>
+      <li><strong>Add your products and publish your page</strong>: the setup checklist in your dashboard walks you through it.</li>
+      <li><strong>Put the page link in your ads</strong>, and manage every order from your dashboard on your phone or computer.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Simple monthly plans</h2>
+    <div class="plans">
+      <% Object.entries(PLANS).forEach(([k, p]) => { %>
+      <div class="card plan" data-plan="<%= k %>"><h3 style="margin:0"><%= p.label %></h3><div class="price"><%= formatMoney(p.priceMinor, p.currency) %><span class="muted" style="font-size:15px;font-weight:400"> / month</span></div><p class="muted" style="margin:0">Paid securely through Paystack. Renew any time; no days are lost.</p></div>
+      <% }) %>
+    </div>
+    <p style="margin-top:12px"><a href="/pricing">Compare the plans</a></p>
+  </section>
+
+  <footer>
+    <span>© <%= new Date().getFullYear() %> Skyfly by ScaleForge Business Hub</span>
+    <a href="/pricing">Pricing</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a><a href="/login">Sign in</a>
+  </footer>
+</div>
+</body></html>
