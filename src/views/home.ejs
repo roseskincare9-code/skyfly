@@ -36,6 +36,7 @@
       <% } %>
       <a class="btn secondary" href="/login">Sign in</a>
     </div>
+    <p class="muted" style="margin:14px 0 0">Questions before you start? Chat with us on <a href="<%= SUPPORT.whatsappLink %>" target="_blank" rel="noopener" data-support-whatsapp>WhatsApp: <%= SUPPORT.whatsappDisplay %></a></p>
   </div>
 
   <section>
@@ -71,7 +72,7 @@
 
   <footer>
     <span>© <%= new Date().getFullYear() %> Skyfly by ScaleForge Business Hub</span>
-    <a href="/pricing">Pricing</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a><a href="/login">Sign in</a>
+    <a href="/pricing">Pricing</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a><a href="/login">Sign in</a><a href="<%= SUPPORT.whatsappLink %>" target="_blank" rel="noopener" data-support-footer>WhatsApp <%= SUPPORT.whatsappDisplay %></a>
   </footer>
 </div>
 </body></html>
