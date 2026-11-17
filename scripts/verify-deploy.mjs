@@ -1,18 +1,30 @@
-// Temporary branch only: reachability of getskyfly.com from several countries (check-host.net public nodes).
-const CH = 'https://check-host.net';
-const j = async (p) => (await fetch(`${CH}${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })).json();
-const nodes = (await j('/nodes/hosts')).nodes;
-const pick = Object.entries(nodes).filter(([, n]) => ['ng', 'gh', 'za', 'ke', 'eg', 'ma', 'gb', 'de', 'fr', 'nl', 'us', 'in'].includes(String(n.location?.[0]).toLowerCase()));
-console.log(`NODES ${pick.map(([k, n]) => `${k}=${n.location.slice(0, 3).join('/')}`).join('; ')}`);
-const names = Object.fromEntries(pick.map(([k, n]) => [k, n.location.slice(1, 3).join(', ')]));
-for (const [kind, target] of [['http', 'https://getskyfly.com/login'], ['http', 'https://skyfly-gybf.onrender.com/login'], ['tcp', 'getskyfly.com:443']]) {
-  const q = new URLSearchParams({ host: target }); pick.forEach(([k]) => q.append('node', k));
-  const start = await j(`/check-${kind}?${q}`);
-  let res = {};
-  for (let i = 0; i < 12; i += 1) { await new Promise((r) => setTimeout(r, 5000)); res = await j(`/check-result/${start.request_id}`); if (Object.values(res).every((v) => v !== null)) break; }
-  for (const [k, v] of Object.entries(res)) {
-    const r = Array.isArray(v) ? v[0] : v;
-    const txt = r == null ? 'no answer yet' : kind === 'http' ? (Array.isArray(r) ? `ok=${r[0]} ${r[1]}s ${r[2]} ${r[3] ?? ''}` : JSON.stringify(r)) : (r.error ? `ERROR ${r.error}` : `connected ${r.time}s to ${r.address}`);
-    console.log(`REACH ${kind} ${target} from ${names[k] ?? k}: ${String(txt).slice(0, 160)}`);
-  }
+// Temporary branch only: who reaches Skyfly (Render request logs, last 12 h): per hour, client IP prefixes,
+// paths and statuses. IPs shortened to their first two parts. No secrets.
+const api = async (p) => { const r = await fetch(`https://api.render.com/v1${p}`, { headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, Accept: 'application/json' } }); if (!r.ok) throw new Error(`${p.split('?')[0]} HTTP ${r.status}`); return r.json(); };
+let svc = null;
+for (const o of (await api('/owners?limit=20')).map((x) => x.owner ?? x)) svc ||= (await api(`/services?ownerId=${o.id}&limit=100`)).map((x) => x.service ?? x).find((s) => s.name === 'skyfly');
+const label = (l, n) => (l.labels || []).find((x) => x.name === n)?.value ?? '';
+const start = new Date(Date.now() - 12 * 3600e3).toISOString();
+const logs = [];
+for (let page = 0, end = ''; page < 40; page += 1) {
+  const r = await api(`/logs?ownerId=${svc.ownerId}&resource=${svc.id}&type=request&limit=100&direction=backward&startTime=${encodeURIComponent(start)}${end}`);
+  logs.push(...(r.logs || []));
+  if (!r.hasMore || !r.nextEndTime) break;
+  end = `&endTime=${encodeURIComponent(r.nextEndTime)}`;
 }
+console.log(`LOGS ${logs.length} requests since ${start}; label names seen: ${[...new Set(logs.flatMap((l) => (l.labels || []).map((x) => x.name)))].join(', ')}`);
+const ipOf = (l) => label(l, 'clientIP') || label(l, 'clientIp') || label(l, 'ip') || '';
+const byHour = {};
+for (const l of logs) {
+  const h = l.timestamp.slice(0, 13);
+  const ip = ipOf(l).split('.').slice(0, 2).join('.') || '?';
+  byHour[h] ??= { n: 0, ips: {}, st: {} };
+  byHour[h].n += 1; byHour[h].ips[ip] = (byHour[h].ips[ip] || 0) + 1;
+  const s = label(l, 'statusCode'); byHour[h].st[s] = (byHour[h].st[s] || 0) + 1;
+}
+for (const [h, v] of Object.entries(byHour).sort()) console.log(`HOUR ${h}Z ${v.n} req; status ${JSON.stringify(v.st)}; top client prefixes ${Object.entries(v.ips).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k}.x.x×${n}`).join(' ')}`);
+const people = logs.filter((l) => /Mozilla.*(Android|iPhone)/.test(l.message || '') || /Android|iPhone/.test(label(l, 'userAgent')));
+console.log(`PHONES ${people.length} phone-browser requests; latest: ${people.slice(0, 10).map((l) => `${l.timestamp.slice(11, 19)} ${label(l, 'method')} ${label(l, 'path')} ${label(l, 'statusCode')} ${ipOf(l).split('.').slice(0, 2).join('.')}.x.x`).join(' | ')}`);
+const orders = logs.filter((l) => /\/api\/public\/orders/.test(label(l, 'path')) && label(l, 'method') === 'POST');
+console.log(`ORDERS ${orders.length} order submissions: ${orders.slice(0, 10).map((l) => `${l.timestamp.slice(0, 19)} ${label(l, 'statusCode')} ${ipOf(l).split('.').slice(0, 2).join('.')}.x.x`).join(' | ')}`);
+console.log(`SAMPLE ${JSON.stringify(logs[0]?.labels ?? []).slice(0, 600)}`);
