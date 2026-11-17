@@ -7,9 +7,9 @@ const label = (l, n) => (l.labels || []).find((x) => x.name === n)?.value ?? '';
 const start = new Date(Date.now() - 12 * 3600e3).toISOString();
 const logs = [];
 for (let page = 0, end = ''; page < 40; page += 1) {
-  const r = await api(`/logs?ownerId=${svc.ownerId}&resource=${svc.id}&type=request&limit=100&direction=backward&startTime=${encodeURIComponent(start)}${end}`);
+  const r = await api(`/logs?ownerId=${svc.ownerId}&resource=${svc.id}&type=request&limit=100&direction=backward${end}`);
   logs.push(...(r.logs || []));
-  if (!r.hasMore || !r.nextEndTime) break;
+  if (!r.hasMore || !r.nextEndTime || (r.logs?.at(-1)?.timestamp ?? '') < start) break;
   end = `&endTime=${encodeURIComponent(r.nextEndTime)}`;
 }
 console.log(`LOGS ${logs.length} requests since ${start}; label names seen: ${[...new Set(logs.flatMap((l) => (l.labels || []).map((x) => x.name)))].join(', ')}`);
