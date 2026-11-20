@@ -41,7 +41,7 @@ const people = [
   { key: 'threeInOne', label: '3-in-1 staff', email: E2E_3IN1 },
   { key: 'newbiz', label: 'new business owner', email: E2E_NEWBIZ },
 ];
-const SECTIONS = ['', '/activity', '/orders', '/customers', '/products', '/landing-pages', '/analytics', '/pixels', '/integrations', '/settings', '/team', '/subscription', '/email', '/email-contacts', '/checkouts', '/google-sheets', '/api-keys', '/payments', '/orders/export.csv', '/customers/export.csv'];
+const SECTIONS = ['', '/activity', '/media-buyer', '/media-buyer?tab=campaigns', '/orders', '/customers', '/products', '/landing-pages', '/analytics', '/pixels', '/integrations', '/settings', '/team', '/subscription', '/email', '/email-contacts', '/checkouts', '/google-sheets', '/api-keys', '/payments', '/orders/export.csv', '/customers/export.csv'];
 const WRITES = [['/products', { name: 'Isolation probe', price: '1000', code: 'iso-probe' }], ['/settings', { name: 'Isolation probe' }], ['/team/invite', { email: 'e2e-iso-probe@skyfly.invalid', role: 'owner' }], ['/landing-pages/template', { name: 'Isolation probe' }], ['/pixels', { platform: 'meta', name: 'probe', pixel_id: '1234567890123456' }]];
 
 await fetch(`${SKYFLY}/healthz`, { signal: AbortSignal.timeout(90000) }).catch(() => {});
@@ -66,7 +66,7 @@ ok(new Set(people.map((p) => p.business)).size === 3, 'the three accounts are no
 // Permitted operations work inside one's own business, within the role: staff (Larose, 3-in-1) may work
 // on orders and customers only; the owner of the new business may open every section.
 const STAFF_OK = ['', '/orders', '/customers', '/checkouts', '/subscription'];
-const STAFF_NO = ['/products', '/landing-pages', '/analytics', '/settings', '/team', '/payments', '/pixels', '/integrations', '/api-keys', '/email', '/google-sheets'];
+const STAFF_NO = ['/media-buyer', '/products', '/landing-pages', '/analytics', '/settings', '/team', '/payments', '/pixels', '/integrations', '/api-keys', '/email', '/google-sheets'];
 for (const p of people) {
   const owner = p.key === 'newbiz';
   await step(`${p.label}: permitted sections of its own business #${p.business} open (${owner ? 'Owner: all' : 'Staff: orders and customers only'})`, async () => {
