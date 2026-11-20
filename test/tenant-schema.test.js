@@ -6,7 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, resetDatabase } from './helpers.js';
 
-const BUSINESS_OWNED = ['additional_pixels', 'api_keys', 'business_invites', 'business_members', 'checkout_sessions', 'email_automation_steps', 'email_automations',
+const BUSINESS_OWNED = ['ad_connections', 'ad_creatives', 'ad_items', 'ad_messages', 'ad_profiles', 'additional_pixels', 'api_keys', 'business_invites', 'business_members', 'checkout_sessions', 'email_automation_steps', 'email_automations',
   'email_contacts', 'email_messages', 'email_settings', 'email_templates', 'landing_pages', 'orders', 'payment_connections', 'payment_oauth_states',
   'payment_transactions', 'pixel_settings', 'products', 'sheet_connections', 'sheet_recoveries', 'subscription_payments', 'subscription_reminders', 'tracking_pixels'];
 // child table → [column, parent table]

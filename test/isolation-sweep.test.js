@@ -24,7 +24,7 @@ async function signUp(server, { name, email, password = 'correct-horse-battery' 
   return agent;
 }
 const routesDir = new URL('../src/routes/', import.meta.url);
-const MARKERS = ['Alpha Secretcustomer', 'AlphaSecretProduct', 'AlphaSecretPage', 'AlphaSecretPixel', 'AlphaSecretSubject', 'alpha-contact@secret.test', 'AlphaSecretKey', 'AlphaSecretSheet', 'Alpha Checkoutname', 'AlphaSecretAutomation', 'alpha-staff@secret.test'];
+const MARKERS = ['Alpha Secretcustomer', 'AlphaSecretProduct', 'AlphaSecretPage', 'AlphaSecretPixel', 'AlphaSecretSubject', 'alpha-contact@secret.test', 'AlphaSecretKey', 'AlphaSecretSheet', 'Alpha Checkoutname', 'AlphaSecretAutomation', 'alpha-staff@secret.test', 'AlphaSecretCreative', 'AlphaSecretDraft', 'AlphaSecretIndustry', 'AlphaSecretChat', 'AlphaSecretAdAccount'];
 let admin; let ownerA; let ownerB;
 const A = {}; const B = {};
 
@@ -43,7 +43,7 @@ function workspaceRoutes() {
   const groups = [
     ['orders.js', '/orders'], ['checkouts.js', '/checkouts'], ['googleSheets.js', '/google-sheets'], ['products.js', '/products'],
     ['insights.js', ''], ['pageEditor.js', '/landing-pages'], ['landingPages.js', '/landing-pages'], ['settings.js', '/settings'],
-    ['apiKeys.js', '/api-keys'], ['pixels.js', '/pixels'], ['team.js', '/team'],
+    ['apiKeys.js', '/api-keys'], ['pixels.js', '/pixels'], ['team.js', '/team'], ['mediaBuyer.js', '/media-buyer'],
   ];
   const list = groups.flatMap(([f, prefix]) => routesOf(f).map(([m, p]) => [m, prefix + (p === '/' ? '' : p), prefix]));
   list.push(...routesOf('email.js', { to: split }).map(([m, p]) => [m, `/email${p === '/' ? '' : p}`, '/email']));
@@ -110,6 +110,12 @@ async function seed(ids, business, tag) {
   ids.checkout = await q("INSERT INTO checkout_sessions (business_id, token, customer_name, status) VALUES ($1, $2, $3, 'abandoned') RETURNING id", [business, `chk-${tag}-0123456789abcd`, `${tag} Checkoutname`]);
   ids.sheet = await q("INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint) VALUES ($1, $2, 'enc', $3, 'hint') RETURNING id", [business, `${tag}SecretSheet`, `hash-sheet-${tag}`]);
   ids.inviteId = await q("INSERT INTO business_invites (business_id, email, role, token_hash, expires_at) VALUES ($1, $2, 'staff', $3, now() + interval '7 days') RETURNING id", [business, `${tag.toLowerCase()}-invitee@secret.test`, `hash-invite-${tag}`]);
+  ids.task = 'audit';
+  ids.creativeId = await q("INSERT INTO ad_creatives (business_id, kind, name, mime, size_bytes, data) VALUES ($1, 'image', $2, 'text/plain', 5, '\\x68656c6c6f') RETURNING id", [business, `${tag}SecretCreative.txt`]);
+  ids.itemId = await q("INSERT INTO ad_items (business_id, kind, title, body, status) VALUES ($1, 'campaign_draft', $2, '{}', 'proposed') RETURNING id", [business, `${tag}SecretDraft`]);
+  await pool.query("INSERT INTO ad_profiles (business_id, industry) VALUES ($1, $2)", [business, `${tag}SecretIndustry`]);
+  await pool.query("INSERT INTO ad_messages (business_id, role, content) VALUES ($1, 'assistant', $2)", [business, `${tag}SecretChat`]);
+  await pool.query("INSERT INTO ad_connections (business_id, ad_account_id, ad_account_name, token_enc, status) VALUES ($1, $2, $3, 'enc', 'verified')", [business, tag === 'Alpha' ? '111222333' : '444555666', `${tag}SecretAdAccount`]);
   ids.userId = await q("INSERT INTO users (email, password_hash, name) VALUES ($1, 'x', 'Staff') RETURNING id", [`${tag.toLowerCase()}-staff@secret.test`]);
   await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'staff')", [business, ids.userId]);
 }

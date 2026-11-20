@@ -1,0 +1,138 @@
+<%- include('partials/head', { title: 'AI Media Buyer' }) %>
+<%- include('partials/nav') %>
+<%
+  const TAB_LABELS = { overview: 'AI Media Buyer', campaigns: 'Campaigns', creatives: 'Creative Library', recommendations: 'AI Recommendations', briefs: 'Video Briefs', approvals: 'Approvals', reports: 'Reports', settings: 'Advertising Settings' };
+  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Meta ad account disconnected; its token was deleted.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.' };
+  const cur = connection?.currency || business.currency;
+  const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+  const num = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: d });
+  const byKind = (k) => items.filter((i) => i.kind === k);
+  const pending = items.filter((i) => i.status === 'proposed');
+  const PERIODS = { today: 'Today', yesterday: 'Yesterday', last_7d: 'Last 7 days', last_30d: 'Last 30 days' };
+  const statusPill = (s) => ({ proposed: 'pending', approved: 'confirmed', executed: 'delivered', rejected: 'cancelled', failed: 'cancelled', info: 'processing' }[s] || 'pending');
+  const genBtn = (task, label, secondary = true) => `<form method="post" action="${mbBase}/generate/${task}" style="display:inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="btn${secondary ? ' secondary' : ''}" type="submit" ${aiOn ? '' : 'disabled title="Cloudy is not switched on yet"'} data-generate="${task}">${label}</button></form>`;
+%>
+<main data-media-buyer>
+  <div class="page-head"><div><h1>AI Media Buyer</h1><p>Cloudy works only with <%= business.name %>'s own profile, Meta ad account and creatives. Draft-first: nothing goes live or spends money without your approval.</p></div></div>
+  <% if (notice && NOTICES[notice]) { %><div class="notice" role="status"><%= NOTICES[notice] %></div><% } %>
+  <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
+  <% if (!aiOn) { %><div class="warn-box" data-ai-off>Cloudy's AI answers are not switched on yet (the server has no ANTHROPIC_API_KEY). Your profile, Meta connection, live numbers and creative library work now.</div><% } %>
+
+  <nav class="row" role="tablist" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <% Object.entries(TAB_LABELS).forEach(([k, l]) => { %><a role="tab" class="btn <%= k === tab ? '' : 'secondary' %>" aria-selected="<%= k === tab %>" href="<%= mbBase %>?tab=<%= k %>" data-tab="<%= k %>"><%= l %><%= k === 'approvals' && pending.length ? ` (${pending.length})` : '' %></a><% }) %>
+  </nav>
+
+  <% if (tab === 'overview' || tab === 'campaigns') { %>
+    <% if (!connection) { %>
+      <div class="card"><p style="margin:0">No Meta ad account connected yet. <a href="<%= mbBase %>?tab=settings">Connect this business's own ad account</a> to see live numbers.</p></div>
+    <% } else if (connection.status !== 'verified') { %>
+      <div class="warn-box">The Meta connection stopped working: <%= connection.last_error %>. <a href="<%= mbBase %>?tab=settings">Reconnect</a>.</div>
+    <% } else if (perf?.error) { %>
+      <div class="warn-box" data-meta-error>Meta did not return data: <%= perf.error %></div>
+    <% } else if (perf) { const t = perf.totals; %>
+      <div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap"><% Object.entries(PERIODS).forEach(([k, l]) => { %><a class="btn <%= k === period ? '' : 'secondary' %>" href="<%= mbBase %>?tab=<%= tab %>&period=<%= k %>"><%= l %></a><% }) %></div>
+      <div class="grid" data-kpis>
+        <div class="stat"><div class="n"><%= money(t.spend) %></div><div class="l">Spend · <%= PERIODS[period] %></div></div>
+        <div class="stat"><div class="n"><%= num(t.results, 0) %></div><div class="l">Results (purchases <%= num(t.purchases, 0) %>)</div></div>
+        <div class="stat"><div class="n"><%= t.cpa == null ? '—' : money(t.cpa) %></div><div class="l">Cost per result</div></div>
+        <div class="stat"><div class="n"><%= t.roas == null ? 'n/a' : num(t.roas) + '×' %></div><div class="l">ROAS<%= t.roas == null ? ' (no purchase value tracked)' : '' %></div></div>
+        <div class="stat"><div class="n"><%= num(t.ctr) %>%</div><div class="l">CTR · CPC <%= money(t.cpc) %> · CPM <%= money(t.cpm) %></div></div>
+      </div>
+      <% const active = perf.campaigns.filter((c) => c.status === 'ACTIVE'); const spending = perf.campaigns.filter((c) => c.stats); const worst = spending.filter((c) => c.stats.spend > 0 && !c.stats.results); const bestAd = [...perf.ads].filter((a) => a.results).sort((a, b) => a.cpa - b.cpa)[0]; %>
+      <% if (tab === 'overview') { %>
+        <div class="card"><p style="margin:0">Account <strong><%= perf.account.name %></strong> (act_<%= perf.account.id %>): <strong><%= active.length %></strong> active campaign(s) of <%= perf.campaigns.length %>.
+          <% if (worst.length) { %><br>Spending with no results: <%= worst.map((c) => c.name).join(', ') %>.<% } %>
+          <% if (bestAd) { %><br>Best ad by cost per result: <strong><%= bestAd.name %></strong> (<%= money(bestAd.cpa) %>).<% } %></p></div>
+      <% } else { %>
+        <% [['Campaigns', perf.campaigns.map((c) => ({ ...(c.stats || {}), name: c.name, status: c.status, budget: c.daily_budget }))], ['Ad sets', perf.adsets], ['Ads', perf.ads]].forEach(([label, rows]) => { %>
+        <div class="card"><h2><%= label %></h2><% if (!rows.length) { %><p class="muted">None in this period.</p><% } else { %>
+          <div class="table-wrap"><table data-level="<%= label %>"><thead><tr><th>Name</th><% if (label === 'Campaigns') { %><th>Status (Meta)</th><th>Daily budget</th><% } %><th>Spend</th><th>Results</th><th>Cost/result</th><th>ROAS</th><th>CTR</th><th>CPC</th><th>CPM</th><th>Freq.</th></tr></thead><tbody>
+          <% rows.forEach((r) => { %><tr><td><%= r.name %></td><% if (label === 'Campaigns') { %><td><%= r.status %></td><td><%= r.budget == null ? '—' : money(r.budget) %></td><% } %><td><%= money(r.spend) %></td><td><%= num(r.results, 0) %></td><td><%= r.cpa == null ? '—' : money(r.cpa) %></td><td><%= r.roas == null ? '—' : num(r.roas) %></td><td><%= num(r.ctr) %>%</td><td><%= money(r.cpc) %></td><td><%= money(r.cpm) %></td><td><%= num(r.frequency) %></td></tr><% }) %>
+          </tbody></table></div><% } %></div>
+        <% }) %>
+      <% } %>
+    <% } %>
+  <% } %>
+
+  <% if (tab === 'overview') { %>
+    <div class="card" data-chat>
+      <h2>Ask Cloudy</h2>
+      <div style="max-height:420px;overflow:auto">
+        <% messages.forEach((m) => { %><div style="margin:8px 0;<%= m.role === 'user' ? 'text-align:right' : '' %>"><div class="<%= m.role === 'user' ? 'pill' : '' %>" style="white-space:pre-wrap;display:inline-block;max-width:92%;text-align:left"><%= m.content %></div></div><% }) %>
+        <% if (answer && !messages.length) { %><div style="white-space:pre-wrap"><%= answer %></div><% } %>
+      </div>
+      <form method="post" action="<%= mbBase %>/ask" class="row" style="gap:8px;margin-top:10px"><%- include('partials/csrf') %>
+        <input name="question" required maxlength="2000" placeholder="How are my ads performing today? What is wasting my budget?" style="flex:1;min-width:220px" <%= aiOn ? '' : 'disabled' %>>
+        <button class="btn" type="submit" <%= aiOn ? '' : 'disabled' %>>Ask</button>
+      </form>
+      <p class="muted" style="font-size:13px">Try: What should we test next? · Why is my CPA increasing? · What creative do we need next? · Should we increase the budget?</p>
+    </div>
+    <div class="card"><h2>Quick actions</h2><div class="row" style="gap:8px;flex-wrap:wrap"><%- genBtn('audit', 'Run account audit', false) %><%- genBtn('recommendations', 'Get recommendations') %><%- genBtn('briefs', 'New creative briefs') %><%- genBtn('campaign_draft', 'Draft a campaign') %><%- genBtn('report_daily', 'Daily report') %></div>
+      <% if (pending.length) { %><p style="margin-bottom:0"><a href="<%= mbBase %>?tab=approvals"><%= pending.length %> item(s) waiting for your approval</a></p><% } %></div>
+    <div class="card"><h2>Recent AI work</h2><% if (!items.length) { %><p class="muted">Nothing yet.</p><% } else { %><ul><% items.slice(0, 8).forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <span class="pill <%= statusPill(i.status) %>"><%= i.status %></span> · <%= formatDate(i.created_at) %></li><% }) %></ul><% } %></div>
+  <% } %>
+
+  <% if (tab === 'creatives') { %>
+    <div class="card"><h2>Add to the creative library</h2>
+      <form method="post" action="<%= mbBase %>/creatives" enctype="multipart/form-data" data-upload-creative><%- include('partials/csrf') %>
+        <label for="file">File (images, logos and documents up to 8 MB; videos up to 40 MB)</label><input id="file" type="file" name="file" required accept="image/*,video/mp4,video/quicktime,video/webm,application/pdf,text/plain">
+        <label for="kind">Type</label><select id="kind" name="kind"><option value="image">Product image</option><option value="video">Advertising video</option><option value="logo">Logo</option><option value="document">Product description / marketing material</option><option value="reference">Creative reference</option></select>
+        <label for="notes">Notes (optional)</label><input id="notes" name="notes" maxlength="1000" placeholder="e.g. winning UGC video from March">
+        <button class="btn" type="submit" style="margin-top:10px">Upload</button>
+      </form></div>
+    <div class="card"><h2>Library</h2><% if (!creatives.length) { %><p class="muted">No creatives yet.</p><% } else { %>
+      <div class="table-wrap"><table data-creatives><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Cloudy's review</th><th></th></tr></thead><tbody>
+      <% creatives.forEach((c) => { %><tr><td><a href="<%= mbBase %>/creatives/<%= c.id %>/file" target="_blank" rel="noopener"><%= c.name %></a><% if (c.notes) { %><br><span class="muted"><%= c.notes %></span><% } %></td><td><%= c.kind %></td><td><%= (Number(c.size_bytes) / 1048576).toFixed(1) %> MB</td>
+        <td style="white-space:pre-wrap;max-width:420px"><%= c.ai_review || '—' %></td>
+        <td><form method="post" action="<%= mbBase %>/creatives/<%= c.id %>/review"><%- include('partials/csrf') %><button class="btn secondary" type="submit" <%= aiOn ? '' : 'disabled' %>>Review with Cloudy</button></form>
+            <form method="post" action="<%= mbBase %>/creatives/<%= c.id %>/delete"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Delete</button></form></td></tr><% }) %>
+      </tbody></table></div><% } %></div>
+  <% } %>
+
+  <% [['recommendations', 'recommendation', 'AI Recommendations', 'recommendations', 'Get new recommendations'], ['briefs', 'brief', 'Video & image briefs', 'briefs', 'Write new creative briefs'], ['reports', null, 'Reports & audits', null, null]].forEach(([t, kind, title, task, label]) => { if (tab !== t) return; const list = kind ? byKind(kind) : items.filter((i) => ['report', 'audit'].includes(i.kind)); %>
+    <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0"><%= title %></h2><div class="row" style="gap:8px"><% if (task) { %><%- genBtn(task, label, false) %><% } else { %><%- genBtn('report_daily', 'Daily report', false) %><%- genBtn('report_weekly', 'Weekly report') %><%- genBtn('audit', 'Full audit') %><% } %></div></div>
+      <% if (!list.length) { %><p class="muted">Nothing yet.</p><% } else { %><ul><% list.forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <span class="pill <%= statusPill(i.status) %>"><%= i.status %></span> · <%= formatDate(i.created_at) %> · <span class="muted"><%= i.data_basis %></span></li><% }) %></ul><% } %>
+      <% if (t === 'briefs') { %><p class="muted" style="font-size:13px;margin-bottom:0">Videos are produced outside Skyfly from these briefs; upload the finished video to the Creative Library and ask Cloudy to review it.</p><% } %>
+    </div>
+  <% }) %>
+
+  <% if (tab === 'approvals') { %>
+    <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Waiting for approval</h2><%- genBtn('campaign_draft', 'Draft a campaign', false) %></div>
+      <p class="muted">Approving a campaign draft creates it in your Meta account as <strong>PAUSED</strong>, with no ad set, ad or budget, so it cannot spend. You switch it on yourself in Ads Manager when ready.</p>
+      <% if (!pending.length) { %><p class="muted">Nothing is waiting.</p><% } else { %><ul data-pending><% pending.forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <%= formatDate(i.created_at) %></li><% }) %></ul><% } %>
+      <h2>Decided</h2><ul><% items.filter((i) => ['approved', 'executed', 'rejected', 'failed'].includes(i.status)).forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <span class="pill <%= statusPill(i.status) %>"><%= i.status %></span><% if (i.meta_result?.id) { %> · Meta campaign <%= i.meta_result.id %> (<%= i.meta_result.effective_status %>)<% } %></li><% }) %></ul>
+    </div>
+  <% } %>
+
+  <% if (tab === 'settings') { const p = profile; %>
+    <div class="card"><h2>Meta ad account (this business's own)</h2>
+      <% if (connection) { %>
+        <dl class="kv" data-connection><dt>Status</dt><dd><span class="pill <%= connection.status === 'verified' ? 'delivered' : 'cancelled' %>"><%= connection.status === 'verified' ? 'Verified with Meta' : 'Not working' %></span> <%= connection.verified_at ? formatDate(connection.verified_at) : '' %></dd>
+          <dt>Ad account</dt><dd><%= connection.ad_account_name || '—' %> (act_<%= connection.ad_account_id %>, <%= connection.currency || '—' %>)</dd>
+          <dt>Facebook Page</dt><dd><%= connection.page_name ? `${connection.page_name} (${connection.page_id})` : 'none found' %></dd>
+          <dt>Pixel / dataset</dt><dd><%= connection.pixel_name ? `${connection.pixel_name} (${connection.pixel_id})` : 'none found' %></dd>
+          <dt>Access token</dt><dd>stored encrypted, ending <%= connection.token_hint %> (never shown)</dd>
+          <% if (connection.last_error) { %><dt>Last error</dt><dd><%= connection.last_error %></dd><% } %></dl>
+        <form method="post" action="<%= mbBase %>/disconnect"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Disconnect and delete the token</button></form>
+      <% } %>
+      <details <%= connection ? '' : 'open' %>><summary><%= connection ? 'Replace the connection' : 'Connect' %></summary>
+        <ol class="muted" style="font-size:14px"><li>In <strong>Meta Business Settings → Users → System users</strong>, add a system user (or use an existing one) and give it access to this business's ad account (and Page).</li><li>Click <strong>Generate new token</strong>, choose your app, tick <code>ads_read</code> (and <code>ads_management</code> for campaign drafts), copy the token.</li><li>Paste it below with the ad account ID (the number after <code>act_</code> in Ads Manager). Skyfly checks it with Meta before saving.</li></ol>
+        <form method="post" action="<%= mbBase %>/connect" autocomplete="off"><%- include('partials/csrf') %>
+          <label for="ad_account_id">Ad account ID</label><input id="ad_account_id" name="ad_account_id" required inputmode="numeric" placeholder="act_1234567890">
+          <label for="token">Access token</label><input id="token" name="token" type="password" required autocomplete="off">
+          <button class="btn" type="submit" style="margin-top:10px">Verify and connect</button>
+        </form></details>
+    </div>
+    <div class="card"><h2>Business advertising profile</h2><p class="muted">Short answers are fine; Cloudy uses them as context. Products and landing pages come from Skyfly automatically.</p>
+      <form method="post" action="<%= mbBase %>/profile" data-profile><%- include('partials/csrf') %>
+        <% [['industry', 'Industry'], ['website', 'Website'], ['offer', 'Products and services'], ['prices', 'Prices (if not in Products)'], ['locations', 'Target locations'], ['audience', 'Target audience'], ['customer_profile', 'Customer profile'], ['goals', 'Advertising goals'], ['platforms', 'Preferred platforms'], ['brand_description', 'Brand description'], ['brand_voice', 'Brand voice']].forEach(([k, l]) => { %>
+          <label for="<%= k %>"><%= l %></label><input id="<%= k %>" name="<%= k %>" maxlength="2000" value="<%= p[k] || '' %>">
+        <% }) %>
+        <label for="daily_budget">Daily advertising budget (<%= cur %>)</label><input id="daily_budget" name="daily_budget" inputmode="decimal" value="<%= p.daily_budget_minor == null ? '' : Number(p.daily_budget_minor) / 100 %>">
+        <button class="btn" type="submit" style="margin-top:10px">Save profile</button>
+      </form>
+      <p class="muted" style="font-size:13px;margin-bottom:0">Brand assets (logos, product images, videos, documents) go in the <a href="<%= mbBase %>?tab=creatives">Creative Library</a>. Approval mode: draft-first (nothing goes live without you).</p>
+    </div>
+  <% } %>
+</main>
+</body></html>

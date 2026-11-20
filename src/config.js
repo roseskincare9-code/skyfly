@@ -132,6 +132,13 @@ export function loadConfig() {
       tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
     metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
+    // Cloudy, the AI media buyer (Anthropic Messages API). Server-side only; without the key the AI
+    // Media Buyer pages still work (profile, Meta connection, live numbers, creatives) and say AI is off.
+    cloudy: process.env.ANTHROPIC_API_KEY ? {
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      model: process.env.CLOUDY_MODEL || 'claude-sonnet-5-5',
+      apiBase: !isProduction && process.env.ANTHROPIC_API_BASE ? process.env.ANTHROPIC_API_BASE : 'https://api.anthropic.com',
+    } : null,
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
     // Must match the browser event (the SDK sends CompletePayment) so TikTok deduplicates them.
     tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'CompletePayment',
