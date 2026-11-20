@@ -17,6 +17,7 @@ import { audit } from '../lib/audit.js';
 import { adminVerified } from '../lib/adminSession.js';
 import { workspaceAccess, subscriptionState, expireSubscriptions, platformSettings, can } from '../services/tenancy.js';
 import { teamRoutes } from './team.js';
+import { mediaBuyerRoutes } from './mediaBuyer.js';
 import { PLANS } from '../lib/plans.js';
 import { billingReady, startCheckout, BillingError } from '../services/billing.js';
 import { checkoutRoutes } from './checkouts.js';
@@ -172,6 +173,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   scoped.use('/pixels', need('integrations'), pixelRoutes({ pool, config }));
   scoped.use('/team', need('team'), teamRoutes({ pool, config }));
   scoped.use('/email', need('marketing'), emailRoutes({ pool, config }));
+  scoped.use('/media-buyer', need('marketing'), mediaBuyerRoutes({ pool, config }));
   scoped.use('/email-contacts', need('marketing'), emailContactRoutes({ pool }));
   scoped.get('/subscription', asyncHandler(async (req, res) => {
     // This business's own payments only.

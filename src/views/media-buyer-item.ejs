@@ -1,0 +1,28 @@
+<%- include('partials/head', { title: item.title }) %>
+<%- include('partials/nav') %>
+<% const b = item.body || {}; const list = Array.isArray(b.items) ? b.items : null;
+   const LABELS = { objective: 'Objective', audience: 'Audience', angle: 'Angle', hook: 'Hook', format: 'Format', duration: 'Duration', script: 'Script', scenes: 'Scenes', voiceover: 'Voiceover', caption: 'Caption', headline: 'Headline', cta: 'CTA', notes: 'Notes', why: 'Why', action: 'Action', impact: 'Expected impact', needs_approval: 'Needs approval',
+     name: 'Name', daily_budget: 'Daily budget', locations: 'Locations', placements: 'Placements', creatives: 'Creatives', primary_text: 'Primary text', landing_page: 'Landing page', reasoning: 'Reasoning', test_plan: 'Test plan' };
+   const show = (v) => Array.isArray(v) ? v.map((x, i) => `${i + 1}. ${x}`).join('\n') : String(v); %>
+<main class="narrow" data-ai-item="<%= item.kind %>">
+  <p><a href="<%= mbBase %>?tab=<%= { campaign_draft: 'approvals', brief: 'briefs', recommendation: 'recommendations' }[item.kind] || 'reports' %>">← AI Media Buyer</a></p>
+  <div class="page-head"><div><h1><%= item.title %></h1><p class="muted">Status: <strong data-status><%= item.status %></strong> · <%= formatDate(item.created_at) %> · Based on: <%= item.data_basis %></p></div></div>
+  <% if (notice === 'approved') { %><div class="notice" role="status">Approved.</div><% } %>
+  <% if (notice === 'rejected') { %><div class="notice" role="status">Rejected: nothing was changed in Meta.</div><% } %>
+  <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
+  <% if (item.meta_result?.id) { %><div class="notice" data-meta-result>Created in Meta as campaign <strong><%= item.meta_result.id %></strong>; Meta reports its status as <strong><%= item.meta_result.effective_status || item.meta_result.status %></strong>. It has no ad set or ad yet and cannot spend until you complete and switch it on in Ads Manager.</div><% } %>
+
+  <% if (b.text) { %><div class="card" style="white-space:pre-wrap" data-ai-text><%= b.text %></div><% } %>
+  <% (list || (b.text ? [] : [b])).forEach((x, n) => { %>
+    <div class="card"><% if (x.title) { %><h2><%= list ? `${n + 1}. ` : '' %><%= x.title %></h2><% } %>
+      <dl class="kv"><% Object.entries(x).filter(([k, v]) => k !== 'title' && v !== '' && v != null && !(Array.isArray(v) && !v.length)).forEach(([k, v]) => { %><dt><%= LABELS[k] || k %></dt><dd style="white-space:pre-wrap"><%= show(v) %></dd><% }) %></dl></div>
+  <% }) %>
+
+  <% if (item.status === 'proposed') { %>
+    <div class="card row" style="gap:8px">
+      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/approve"><%- include('partials/csrf') %><button class="btn" type="submit" data-approve><%= item.kind === 'campaign_draft' ? 'Approve: create in Meta as PAUSED' : 'Approve' %></button></form>
+      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/reject"><%- include('partials/csrf') %><button class="btn secondary" type="submit" data-reject>Reject</button></form>
+    </div>
+  <% } %>
+</main>
+</body></html>
