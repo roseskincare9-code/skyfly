@@ -40,11 +40,13 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
   const page = (pageId && pages.find((p) => p.id === String(pageId))) || pages[0] || null;
   const pixel = pixels[0] || null;
   const enc = encrypt(config.encryptionKey, token);
+  // Adds the account (or refreshes it if already connected). The first account becomes the selected one.
   await pool.query(
     `INSERT INTO ad_connections (business_id, ad_account_id, ad_account_name, currency, account_status, page_id, page_name, pixel_id, pixel_name,
-                                 token_enc, token_hint, status, verified_at, last_error, connected_by, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'verified', now(), NULL, $12, now())
-     ON CONFLICT (business_id) DO UPDATE SET ad_account_id = EXCLUDED.ad_account_id, ad_account_name = EXCLUDED.ad_account_name, currency = EXCLUDED.currency,
+                                 token_enc, token_hint, status, verified_at, last_error, connected_by, updated_at, selected)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'verified', now(), NULL, $12, now(),
+             NOT EXISTS (SELECT 1 FROM ad_connections WHERE business_id = $1 AND selected))
+     ON CONFLICT (business_id, ad_account_id) DO UPDATE SET ad_account_name = EXCLUDED.ad_account_name, currency = EXCLUDED.currency,
        account_status = EXCLUDED.account_status, page_id = EXCLUDED.page_id, page_name = EXCLUDED.page_name, pixel_id = EXCLUDED.pixel_id,
        pixel_name = EXCLUDED.pixel_name, token_enc = EXCLUDED.token_enc, token_hint = EXCLUDED.token_hint, status = 'verified', verified_at = now(),
        last_error = NULL, connected_by = EXCLUDED.connected_by, updated_at = now()`,
@@ -53,8 +55,49 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
   return { account: { id: act, name: account.name, currency: account.currency, status: account.account_status }, page, pixel, pages, pixels };
 }
 
-export async function connectionFor(pool, businessId) {
-  const { rows: [c] } = await pool.query('SELECT * FROM ad_connections WHERE business_id = $1', [businessId]);
+// This business's connected ad accounts (never another business's), selected first. Tokens are not returned.
+export async function listConnections(pool, businessId) {
+  const { rows } = await pool.query(
+    `SELECT id, business_id, ad_account_id, ad_account_name, currency, account_status, page_id, page_name, pixel_id, pixel_name, token_hint,
+            status, verified_at, last_error, selected, created_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
+  return rows;
+}
+
+// Makes one of this business's accounts the selected one. False when the account is not this business's.
+export async function selectAccount(pool, businessId, adAccountId) {
+  const act = clean(adAccountId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [found] } = await client.query('SELECT id FROM ad_connections WHERE business_id = $1 AND ad_account_id = $2 FOR UPDATE', [businessId, act]);
+    if (!found) { await client.query('ROLLBACK'); return false; }
+    await client.query('UPDATE ad_connections SET selected = false WHERE business_id = $1 AND selected', [businessId]);
+    await client.query('UPDATE ad_connections SET selected = true, updated_at = now() WHERE id = $1', [found.id]);
+    await client.query('COMMIT');
+    return true;
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+}
+
+// Removes one account and its token (only from this business). If it was selected, the oldest remaining one is selected.
+export async function disconnectAccount(pool, businessId, adAccountId) {
+  const act = clean(adAccountId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [gone] } = await client.query('DELETE FROM ad_connections WHERE business_id = $1 AND ad_account_id = $2 RETURNING selected', [businessId, act]);
+    if (gone?.selected) {
+      await client.query(`UPDATE ad_connections SET selected = true WHERE id = (SELECT id FROM ad_connections WHERE business_id = $1 ORDER BY created_at LIMIT 1)`, [businessId]);
+    }
+    await client.query('COMMIT');
+    return Boolean(gone);
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+}
+
+// One of this business's accounts: the one named, or else the selected one.
+export async function connectionFor(pool, businessId, adAccountId = null) {
+  const { rows: [c] } = adAccountId
+    ? await pool.query('SELECT * FROM ad_connections WHERE business_id = $1 AND ad_account_id = $2', [businessId, clean(adAccountId)])
+    : await pool.query('SELECT * FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at LIMIT 1', [businessId]);
   return c ?? null;
 }
 const tokenOf = (config, c) => {
@@ -83,8 +126,8 @@ function shape(row) {
 }
 
 // The business's live numbers (read-only). period: Meta date preset (today, yesterday, last_7d, last_30d).
-export async function performance(pool, config, businessId, period = 'last_7d') {
-  const c = await connectionFor(pool, businessId);
+export async function performance(pool, config, businessId, period = 'last_7d', adAccountId = null) {
+  const c = await connectionFor(pool, businessId, adAccountId);
   if (!c || c.status !== 'verified') return { connected: false };
   let token;
   try { token = tokenOf(config, c); } catch (err) { return { connected: true, error: err.message }; }
@@ -106,20 +149,23 @@ export async function performance(pool, config, businessId, period = 'last_7d') 
       adsets: (adsets.data ?? []).map(shape), ads: (ads.data ?? []).map(shape),
     };
   } catch (err) {
-    if (err.status === 401) await pool.query("UPDATE ad_connections SET status = 'failed', last_error = $2, updated_at = now() WHERE business_id = $1", [businessId, err.message]);
+    if (err.status === 401) await pool.query("UPDATE ad_connections SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1", [c.id, err.message]);
     return { connected: true, error: err.message };
   }
 }
 
 // After approval: a campaign SHELL, status PAUSED (no ad set, no ad, no budget). Meta's own status is read back.
-export async function createPausedCampaign(pool, config, businessId, draft) {
-  const c = await connectionFor(pool, businessId);
-  if (!c || c.status !== 'verified') throw new MetaError('Connect this business\'s Meta ad account first.', 409);
+// Only ever in the ad account the draft was prepared for, and only while it is still this business's account.
+export async function createPausedCampaign(pool, config, businessId, draft, adAccountId) {
+  if (!adAccountId) throw new MetaError('This draft does not say which ad account it is for: prepare a new draft.', 409);
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError(`This draft was prepared for ad account act_${clean(adAccountId)}, which is no longer connected to this business. Nothing was created.`, 409);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first. Nothing was created.`, 409);
   const token = tokenOf(config, c);
   const objective = ['OUTCOME_SALES', 'OUTCOME_LEADS', 'OUTCOME_TRAFFIC', 'OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT'].includes(draft.objective) ? draft.objective : 'OUTCOME_SALES';
   const made = await graph(config, token, `act_${c.ad_account_id}/campaigns`, {
     method: 'POST', body: { name: `[Skyfly draft] ${String(draft.name ?? 'Campaign').slice(0, 180)}`, objective, status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false },
   });
   const check = await graph(config, token, made.id, { params: { fields: 'id,name,status,effective_status,objective' } });
-  return { id: check.id, name: check.name, status: check.status, effective_status: check.effective_status, objective: check.objective };
+  return { id: check.id, name: check.name, status: check.status, effective_status: check.effective_status, objective: check.objective, ad_account_id: c.ad_account_id };
 }

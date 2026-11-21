@@ -111,6 +111,7 @@ async function seed(ids, business, tag) {
   ids.sheet = await q("INSERT INTO sheet_connections (business_id, name, api_url_enc, api_url_hash, api_hint) VALUES ($1, $2, 'enc', $3, 'hint') RETURNING id", [business, `${tag}SecretSheet`, `hash-sheet-${tag}`]);
   ids.inviteId = await q("INSERT INTO business_invites (business_id, email, role, token_hash, expires_at) VALUES ($1, $2, 'staff', $3, now() + interval '7 days') RETURNING id", [business, `${tag.toLowerCase()}-invitee@secret.test`, `hash-invite-${tag}`]);
   ids.task = 'audit';
+  ids.accountId = tag === 'Alpha' ? '111222333' : '444555666';
   ids.creativeId = await q("INSERT INTO ad_creatives (business_id, kind, name, mime, size_bytes, data) VALUES ($1, 'image', $2, 'text/plain', 5, '\\x68656c6c6f') RETURNING id", [business, `${tag}SecretCreative.txt`]);
   ids.itemId = await q("INSERT INTO ad_items (business_id, kind, title, body, status) VALUES ($1, 'campaign_draft', $2, '{}', 'proposed') RETURNING id", [business, `${tag}SecretDraft`]);
   await pool.query("INSERT INTO ad_profiles (business_id, industry) VALUES ($1, $2)", [business, `${tag}SecretIndustry`]);
