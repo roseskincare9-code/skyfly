@@ -13,6 +13,7 @@ import yazl from 'yazl';
 import { createPool } from '../../src/db.js';
 import { seedLarose } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+import { signUpInBrowser } from './signup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots');
@@ -102,12 +103,7 @@ try {
   let liveUrl;
 
   await step('owner signs up; business seeded', async () => {
-    await dash.goto(`${DASH}/signup`);
-    await dash.fill('#name', 'Rose Owner');
-    await dash.fill('#email', 'owner@larose.test');
-    await dash.fill('#password', 'a-very-long-password');
-    await dash.click('button[type=submit]');
-    await dash.waitForURL(`${DASH}/`);
+    await signUpInBrowser(dash, DASH, { name: 'Rose Owner', email: 'owner@larose.test', password: 'a-very-long-password' });
     await seedLarose(pool, 'owner@larose.test');
     await pool.query('DELETE FROM tracking_pixels'); // this test adds its own IDs (tracking.e2e.js covers many IDs per platform)
   });

@@ -15,6 +15,7 @@ import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
 import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS, LAROSE_SKINCARE_PIXEL } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl, addTrackingPixel } from '../helpers.js';
+import { signUpInBrowser } from './signup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots/tracking');
@@ -99,10 +100,7 @@ try {
   let pageId; let laroseId; let liveUrl;
 
   await step('owner signs up; Larose (6 Meta pixels) is set up; a new page is imported, connected and published', async () => {
-    await dash.goto(`${DASH}/signup`);
-    await dash.fill('#name', 'Rose Owner'); await dash.fill('#email', 'owner@larose.test'); await dash.fill('#password', 'a-very-long-password');
-    await dash.click('button[type=submit]');
-    await dash.waitForURL(`${DASH}/`);
+    await signUpInBrowser(dash, DASH, { name: 'Rose Owner', email: 'owner@larose.test', password: 'a-very-long-password' });
     await seedLarose(pool, 'owner@larose.test');
     laroseId = (await pool.query("SELECT id FROM landing_pages WHERE slug = 'larosenigeria'")).rows[0].id;
     await dash.goto(`${DASH}/businesses/1/landing-pages`);

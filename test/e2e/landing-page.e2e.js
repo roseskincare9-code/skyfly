@@ -14,6 +14,7 @@ import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
 import { seedLarose, LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, LAROSE_AD_ACCOUNT_PIXELS, LAROSE_SKINCARE_PIXEL } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+import { signUpInBrowser } from './signup.js';
 
 const LAROSE_PIXELS = [LAROSE_META_PIXEL_ID, LAROSE_PIXEL_NEW_ID, ...LAROSE_AD_ACCOUNT_PIXELS.map((x) => x.id), LAROSE_SKINCARE_PIXEL.id];
 
@@ -102,12 +103,7 @@ try {
   });
 
   await step('owner signs up and the Larose business is seeded', async () => {
-    await page.goto(`${SKYFLY}/signup`);
-    await page.fill('#name', 'Rose Owner');
-    await page.fill('#email', 'owner@larose.test');
-    await page.fill('#password', 'a-very-long-password');
-    await page.click('button[type=submit]');
-    await page.waitForURL(`${SKYFLY}/`);
+    await signUpInBrowser(page, SKYFLY, { name: 'Rose Owner', email: 'owner@larose.test', password: 'a-very-long-password' });
     await seedLarose(pool, 'owner@larose.test');
   });
 

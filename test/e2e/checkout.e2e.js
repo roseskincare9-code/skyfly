@@ -13,6 +13,7 @@ import { chromium, devices } from 'playwright-core';
 import { createPool } from '../../src/db.js';
 import { seedLarose } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
+import { signUpInBrowser } from './signup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots/checkout');
@@ -53,10 +54,7 @@ try {
   let businessId; let pageUrl; let pageId;
 
   await step('owner imports a page that has no order form; Skyfly says so and adds its checkout', async () => {
-    await dash.goto(`${DASH}/signup`);
-    await dash.fill('#name', 'Rose Owner'); await dash.fill('#email', 'owner@larose.test'); await dash.fill('#password', 'a-very-long-password');
-    await dash.click('button[type=submit]');
-    await dash.waitForURL(`${DASH}/`);
+    await signUpInBrowser(dash, DASH, { name: 'Rose Owner', email: 'owner@larose.test', password: 'a-very-long-password' });
     businessId = await seedLarose(pool, 'owner@larose.test');
     await pool.query("DELETE FROM tracking_pixels WHERE business_id = $1 AND name <> 'Main Meta pixel'", [businessId]); // this test covers one pixel (tracking.e2e.js covers many)
     await dash.goto(`${DASH}/businesses/${businessId}/landing-pages`);
