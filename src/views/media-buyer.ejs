@@ -2,7 +2,7 @@
 <%- include('partials/nav') %>
 <%
   const TAB_LABELS = { overview: 'AI Media Buyer', campaigns: 'Campaigns', creatives: 'Creative Library', recommendations: 'AI Recommendations', briefs: 'Video Briefs', approvals: 'Approvals', reports: 'Reports', settings: 'Advertising Settings' };
-  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Meta ad account disconnected; its token was deleted.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.' };
+  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Ad account disconnected; its token was deleted. Nothing was changed in Meta.', selected: 'Ad account switched.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.' };
   const cur = connection?.currency || business.currency;
   const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
   const num = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: d });
@@ -18,6 +18,16 @@
   <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
   <% if (!aiOn) { %><div class="warn-box" data-ai-off>Cloudy's AI answers are not switched on yet (the server has no ANTHROPIC_API_KEY). Your profile, Meta connection, live numbers and creative library work now.</div><% } %>
 
+  <% if (accounts.length) { %>
+  <form method="post" action="<%= mbBase %>/accounts/select" class="row" data-account-switcher style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <%- include('partials/csrf') %><input type="hidden" name="tab" value="<%= tab %>">
+    <label for="account" style="margin:0">Ad account</label>
+    <select id="account" name="account" onchange="this.form.requestSubmit()" style="max-width:320px">
+      <% accounts.forEach((a) => { %><option value="<%= a.ad_account_id %>" <%= a.selected ? 'selected' : '' %>><%= a.ad_account_name || 'Ad account' %> · act_<%= a.ad_account_id %></option><% }) %>
+    </select>
+    <noscript><button class="btn secondary" type="submit">Switch</button></noscript>
+  </form>
+  <% } %>
   <nav class="row" role="tablist" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <% Object.entries(TAB_LABELS).forEach(([k, l]) => { %><a role="tab" class="btn <%= k === tab ? '' : 'secondary' %>" aria-selected="<%= k === tab %>" href="<%= mbBase %>?tab=<%= k %>" data-tab="<%= k %>"><%= l %><%= k === 'approvals' && pending.length ? ` (${pending.length})` : '' %></a><% }) %>
   </nav>
@@ -105,18 +115,20 @@
   <% } %>
 
   <% if (tab === 'settings') { const p = profile; %>
-    <div class="card"><h2>Meta ad account (this business's own)</h2>
-      <% if (connection) { %>
-        <dl class="kv" data-connection><dt>Status</dt><dd><span class="pill <%= connection.status === 'verified' ? 'delivered' : 'cancelled' %>"><%= connection.status === 'verified' ? 'Verified with Meta' : 'Not working' %></span> <%= connection.verified_at ? formatDate(connection.verified_at) : '' %></dd>
-          <dt>Ad account</dt><dd><%= connection.ad_account_name || '—' %> (act_<%= connection.ad_account_id %>, <%= connection.currency || '—' %>)</dd>
-          <dt>Facebook Page</dt><dd><%= connection.page_name ? `${connection.page_name} (${connection.page_id})` : 'none found' %></dd>
-          <dt>Pixel / dataset</dt><dd><%= connection.pixel_name ? `${connection.pixel_name} (${connection.pixel_id})` : 'none found' %></dd>
-          <dt>Access token</dt><dd>stored encrypted, ending <%= connection.token_hint %> (never shown)</dd>
-          <% if (connection.last_error) { %><dt>Last error</dt><dd><%= connection.last_error %></dd><% } %></dl>
-        <form method="post" action="<%= mbBase %>/disconnect"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Disconnect and delete the token</button></form>
-      <% } %>
-      <details <%= connection ? '' : 'open' %>><summary><%= connection ? 'Replace the connection' : 'Connect' %></summary>
-        <ol class="muted" style="font-size:14px"><li>In <strong>Meta Business Settings → Users → System users</strong>, add a system user (or use an existing one) and give it access to this business's ad account (and Page).</li><li>Click <strong>Generate new token</strong>, choose your app, tick <code>ads_read</code> (and <code>ads_management</code> for campaign drafts), copy the token.</li><li>Paste it below with the ad account ID (the number after <code>act_</code> in Ads Manager). Skyfly checks it with Meta before saving.</li></ol>
+    <div class="card"><h2>Meta ad accounts (this business's own)</h2>
+      <% if (!accounts.length) { %><p class="muted">No ad account connected yet.</p><% } else { %>
+      <div class="table-wrap"><table data-accounts><thead><tr><th>Ad account</th><th>Status</th><th>Facebook Page</th><th>Pixel / dataset</th><th>Token</th><th></th></tr></thead><tbody>
+      <% accounts.forEach((a) => { %><tr data-account="<%= a.ad_account_id %>">
+        <td><strong><%= a.ad_account_name || '—' %></strong><br><span class="muted">act_<%= a.ad_account_id %> · <%= a.currency || '—' %></span><% if (a.selected) { %><br><span class="pill delivered" data-selected>Selected</span><% } %></td>
+        <td><span class="pill <%= a.status === 'verified' ? 'delivered' : 'cancelled' %>"><%= a.status === 'verified' ? 'Verified with Meta' : 'Not working' %></span><% if (a.last_error) { %><br><span class="muted"><%= a.last_error %></span><% } %></td>
+        <td><%= a.page_name ? `${a.page_name} (${a.page_id})` : 'none found' %></td>
+        <td><%= a.pixel_id ? `${a.pixel_name || ''} (${a.pixel_id})` : 'none found' %></td>
+        <td>encrypted, ending <%= a.token_hint %></td>
+        <td><% if (!a.selected) { %><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/select"><%- include('partials/csrf') %><input type="hidden" name="tab" value="settings"><button class="btn secondary" type="submit">Use this account</button></form><% } %>
+            <% if (isOwner) { %><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/disconnect" onsubmit="return confirm('Disconnect act_<%= a.ad_account_id %> and delete its token? Nothing changes in Meta.')"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Disconnect</button></form><% } %></td></tr><% }) %>
+      </tbody></table></div><% } %>
+      <details <%= accounts.length ? '' : 'open' %>><summary><%= accounts.length ? 'Connect another ad account' : 'Connect an ad account' %></summary>
+        <ol class="muted" style="font-size:14px"><li>In <strong>Meta Business Settings → Users → System users</strong>, add a system user (or use an existing one) and give it access to the ad account (and Page).</li><li>Click <strong>Generate new token</strong>, choose your app, tick <code>ads_read</code> (and <code>ads_management</code> for campaign drafts), copy the token.</li><li>Paste it below with the ad account ID (the number after <code>act_</code> in Ads Manager). Skyfly checks it with Meta before saving. Connecting an account that is already listed refreshes its token.</li></ol>
         <form method="post" action="<%= mbBase %>/connect" autocomplete="off"><%- include('partials/csrf') %>
           <label for="ad_account_id">Ad account ID</label><input id="ad_account_id" name="ad_account_id" required inputmode="numeric" placeholder="act_1234567890">
           <label for="token">Access token</label><input id="token" name="token" type="password" required autocomplete="off">

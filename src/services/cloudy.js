@@ -2,7 +2,7 @@
 // advertising profile, its own Meta account's live numbers, its creative library and its own conversation),
 // loaded by business ID here, so one business's data can never reach another business's answer.
 // Cloudy recommends and drafts; it never spends money, activates anything or changes live campaigns.
-import { performance } from './metaAds.js';
+import { performance, listConnections } from './metaAds.js';
 
 export class CloudyError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -13,6 +13,7 @@ export const OPERATING_RULES = `You are Cloudy, the AI media buyer inside Skyfly
 Operating rules:
 - Use ONLY the data provided in this message. Never invent metrics, results, benchmarks, testimonials or account details. If data is missing (for example no Meta account connected, no purchases tracked, ROAS unavailable), say so plainly and say what is needed.
 - Quote numbers exactly as given, with the account currency. Say which period they cover.
+- Work on the SELECTED ad account only (selected_ad_account). Other connected accounts are listed by name only; never mix their data or suggest actions on them unless the owner switches accounts.
 - Draft-first: you recommend and prepare drafts. You never claim anything is live, launched, paused or changed: only Meta's own status shown in the data counts. Activation, budget increases and account-wide changes always need the business owner's approval in Skyfly.
 - Never recommend spending above the business's stated daily budget without flagging it as a proposal for approval.
 - Be practical and specific: what to keep, cut, test or create next, and why, in plain language for a busy business owner.
@@ -26,14 +27,19 @@ async function context(pool, config, businessId) {
   ]);
   const { rows: products } = await pool.query('SELECT name, price_minor FROM products WHERE business_id = $1 AND active IS NOT FALSE ORDER BY sort_order NULLS LAST, id LIMIT 30', [businessId]).catch(() => ({ rows: [] }));
   const { rows: pages } = await pool.query("SELECT name, slug, status FROM landing_pages WHERE business_id = $1 AND status <> 'archived' ORDER BY id DESC LIMIT 10", [businessId]);
-  const perf = await performance(pool, config, businessId, 'last_7d');
-  const today = perf.connected && !perf.error ? await performance(pool, config, businessId, 'today') : null;
+  // The business's SELECTED ad account is the one Cloudy works on (read once, used for every call below).
+  const accounts = await listConnections(pool, businessId);
+  const sel = accounts.find((a) => a.selected) ?? accounts[0] ?? null;
+  const perf = sel ? await performance(pool, config, businessId, 'last_7d', sel.ad_account_id) : { connected: false };
+  const today = perf.connected && !perf.error ? await performance(pool, config, businessId, 'today', sel.ad_account_id) : null;
   return {
     business: { name: b.name, currency: b.currency, website: p?.website ?? b.website ?? null },
     profile: p ? Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && !['business_id', 'updated_at'].includes(k))) : 'not filled in yet',
     skyfly_products: products.map((x) => ({ name: x.name, price: Number(x.price_minor) / 100 })),
     skyfly_landing_pages: pages.map((x) => ({ name: x.name, url: `${config.publicBaseUrl ?? ''}/p/${x.slug}/`, status: x.status })),
     creative_library: creatives.map((c) => ({ id: c.id, kind: c.kind, name: c.name, notes: c.notes, review: c.ai_review?.slice(0, 400) ?? null })),
+    selected_ad_account: sel ? { id: sel.ad_account_id, name: sel.ad_account_name, currency: sel.currency, facebook_page: sel.page_name, pixel: sel.pixel_id } : null,
+    other_connected_ad_accounts: accounts.filter((a) => a !== sel).map((a) => ({ id: a.ad_account_id, name: a.ad_account_name })),
     meta_ads: perf.connected ? (perf.error ? { connected: true, error: perf.error } : { last_7_days: perf, today: today?.error ? { error: today.error } : today?.totals }) : 'No Meta ad account connected: no advertising data is available.',
   };
 }
@@ -92,8 +98,8 @@ export async function generate(pool, config, { businessId, userId, task, note = 
   const status = t.kind === 'campaign_draft' ? 'proposed' : t.kind === 'recommendation' ? 'proposed' : 'info';
   const title = t.kind === 'campaign_draft' && parsed?.name ? `Campaign draft: ${String(parsed.name).slice(0, 120)}` : t.title;
   const { rows: [item] } = await pool.query(
-    'INSERT INTO ad_items (business_id, kind, title, body, status, data_basis, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-    [businessId, t.kind, title, JSON.stringify(body), status, basis, userId]);
+    'INSERT INTO ad_items (business_id, kind, title, body, status, data_basis, created_by, ad_account_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+    [businessId, t.kind, title, JSON.stringify(body), status, basis, userId, ctx.selected_ad_account?.id ?? null]);
   return item.id;
 }
 

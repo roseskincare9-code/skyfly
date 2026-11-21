@@ -13,7 +13,9 @@ import { hashPassword } from '../src/lib/passwords.js';
 
 // ---------- stand-in Meta Marketing API: token "tokA…" sees act_111 only; "tokB…" act_222 only.
 const meta = { calls: [], created: [] };
-const ACCOUNTS = { tokA: '111111111', tokB: '222222222' };
+// Token "tokA" (business A's) may use two ad accounts; "tokB" only its own.
+const ACCOUNTS = { tokA: ['111111111', '333333333'], tokB: ['222222222'] };
+const NAMES = { 111111111: 'Alpha Ads', 333333333: 'Alpha Abuja Ads', 222222222: 'Beta Ads' };
 const insights = (spend, purchases, value) => ({ spend: String(spend), impressions: '10000', clicks: '200', ctr: '2', cpc: '50', cpm: '1000', frequency: '1.4',
   actions: purchases ? [{ action_type: 'purchase', value: String(purchases) }] : [], action_values: value ? [{ action_type: 'purchase', value: String(value) }] : [] });
 const metaServer = createServer(async (req, res) => {
@@ -21,11 +23,12 @@ const metaServer = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const token = u.searchParams.get('access_token') ?? ''; const p = u.pathname.replace(/^\/v\d+\.\d+/, '');
   meta.calls.push({ method: req.method, path: p, token: token.slice(0, 4), level: u.searchParams.get('level'), body: raw ? JSON.parse(raw) : null });
   const send = (o, s = 200) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
-  const act = ACCOUNTS[token.slice(0, 4)];
-  if (!act) return send({ error: { message: 'Invalid OAuth access token.', code: 190 } }, 401);
+  const allowed = ACCOUNTS[token.slice(0, 4)];
+  if (!allowed) return send({ error: { message: 'Invalid OAuth access token.', code: 190 } }, 401);
   const m = /^\/act_(\d+)(\/[a-z_]+)?$/.exec(p);
-  if (m && m[1] !== act) return send({ error: { message: '(#200) Ad account owner has NOT grant ads_management or ads_read permission', code: 200 } }, 403);
-  if (m && !m[2]) return send({ id: `act_${act}`, name: act === '111111111' ? 'Alpha Ads' : 'Beta Ads', currency: 'NGN', account_status: 1 });
+  const act = m ? m[1] : allowed[0];
+  if (m && !allowed.includes(m[1])) return send({ error: { message: '(#200) Ad account owner has NOT grant ads_management or ads_read permission', code: 200 } }, 403);
+  if (m && !m[2]) return send({ id: `act_${act}`, name: NAMES[act], currency: 'NGN', account_status: 1 });
   if (m?.[2] === '/promote_pages') return send({ data: [{ id: `page${act}`, name: `Page ${act}` }] });
   if (m?.[2] === '/adspixels') return send({ data: [{ id: `px${act}`, name: `Pixel ${act}` }] });
   if (m?.[2] === '/campaigns' && req.method === 'GET') return send({ data: [{ id: 'c1', name: 'Winner campaign', status: 'ACTIVE', effective_status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '500000' }, { id: 'c2', name: 'Waste campaign', status: 'ACTIVE', effective_status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '300000' }] });
@@ -176,6 +179,67 @@ describe('dashboard, Cloudy and approvals', () => {
     await post(ownerA, `${r.headers.location}/reject`);
     assert.equal(meta.created.length, 1);
     assert.equal((await pool.query("SELECT status FROM ad_items WHERE business_id = $1 ORDER BY id DESC LIMIT 1", [A])).rows[0].status, 'rejected');
+  });
+});
+
+describe('several ad accounts per business', () => {
+  test('a second account is added (not replaced); the first stays selected; the list shows both, tokens never shown', async () => {
+    assert.equal((await post(ownerA, `${mb(A)}/connect`, { ad_account_id: '333333333', token: TOK_A })).status, 302);
+    const { rows } = await pool.query('SELECT ad_account_id, selected FROM ad_connections WHERE business_id = $1 ORDER BY created_at', [A]);
+    assert.deepEqual(rows.map((r) => [r.ad_account_id, r.selected]), [['111111111', true], ['333333333', false]]);
+    const page = await ownerA.get(`${mb(A)}?tab=settings`).expect(200);
+    assert.match(page.text, /Alpha Ads/); assert.match(page.text, /Alpha Abuja Ads/); assert.match(page.text, /data-account-switcher/);
+    assert.ok(!page.text.includes(TOK_A.slice(0, 20)));
+    // Business B still has only its own account, and cannot see A's.
+    const b = await ownerB.get(`${mb(B)}?tab=settings`).expect(200);
+    assert.doesNotMatch(b.text, /Alpha|333333333|111111111/);
+  });
+
+  test('switching the account: numbers, Cloudy and new drafts all use the selected account only', async () => {
+    let r = await post(ownerA, `${mb(A)}/accounts/select`, { account: '333333333', tab: 'overview' });
+    assert.equal(r.headers.location, `${mb(A)}?tab=overview&done=selected`);
+    meta.calls.length = 0;
+    await ownerA.get(mb(A)).expect(200);
+    assert.ok(meta.calls.length && meta.calls.every((c) => !c.path.startsWith('/act_') || c.path.startsWith('/act_333333333')), 'only the selected account is read');
+    ai.requests.length = 0;
+    r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    const data = JSON.parse(ai.requests[0].body.system.split('BUSINESS DATA (JSON, this business only):\n')[1]);
+    assert.equal(data.selected_ad_account.id, '333333333');
+    assert.equal(data.meta_ads.last_7_days.account.id, '333333333');
+    assert.deepEqual(data.other_connected_ad_accounts, [{ id: '111111111', name: 'Alpha Ads' }], 'the other account by name only, no numbers');
+    const itemId = r.headers.location.split('/').pop();
+    assert.equal((await pool.query('SELECT ad_account_id FROM ad_items WHERE id = $1', [itemId])).rows[0].ad_account_id, '333333333');
+    // Switch back to the first account: approving the draft still creates it in 333333333 (the account it was made for).
+    await post(ownerA, `${mb(A)}/accounts/111111111/select`);
+    const before = meta.created.length;
+    await post(ownerA, `${mb(A)}/items/${itemId}/approve`);
+    assert.equal(meta.created.length, before + 1);
+    assert.deepEqual([meta.created.at(-1).act, meta.created.at(-1).status], ['333333333', 'PAUSED']);
+    assert.match((await ownerA.get(`${mb(A)}/items/${itemId}`)).text, /act_333333333/);
+  });
+
+  test('a draft for an account that was disconnected is refused, nothing is created; only the owner can disconnect', async () => {
+    await post(ownerA, `${mb(A)}/accounts/333333333/select`);
+    const r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    const itemId = r.headers.location.split('/').pop();
+    // A manager may use the media buyer but not disconnect accounts.
+    const { rows: [m] } = await pool.query("INSERT INTO users (email, password_hash, name, email_verified_at) VALUES ('manager@alpha.test', $1, 'Manager', now()) RETURNING id", [await hashPassword('correct-horse-battery')]);
+    await pool.query("INSERT INTO business_members (business_id, user_id, role) VALUES ($1, $2, 'manager')", [A, m.id]);
+    const manager = request.agent(app); const c = await csrfToken(manager, '/login');
+    await manager.post('/login').type('form').send({ _csrf: c, email: 'manager@alpha.test', password: 'correct-horse-battery' }).expect(302);
+    assert.equal((await post(manager, `${mb(A)}/accounts/333333333/disconnect`)).status, 403);
+    // Another business cannot select or disconnect A's account.
+    assert.equal((await post(ownerB, `${mb(B)}/accounts/333333333/select`)).status, 404);
+    const bToken = await csrfToken(ownerB, `/businesses/${B}/subscription`);
+    assert.equal((await ownerB.post(`${mb(A)}/accounts/333333333/disconnect`).type('form').send({ _csrf: bToken })).status, 404);
+    assert.equal((await post(ownerA, `${mb(A)}/accounts/333333333/disconnect`)).headers.location, `${mb(A)}?tab=settings&done=disconnected`);
+    const { rows } = await pool.query('SELECT ad_account_id, selected FROM ad_connections WHERE business_id = $1', [A]);
+    assert.deepEqual(rows.map((x) => [x.ad_account_id, x.selected]), [['111111111', true]], 'the remaining account becomes selected');
+    const before = meta.created.length;
+    const ok = await post(ownerA, `${mb(A)}/items/${itemId}/approve`);
+    assert.equal(ok.status, 409);
+    assert.match(ok.text, /no longer connected to this business/);
+    assert.equal(meta.created.length, before, 'nothing created in the other account');
   });
 });
 

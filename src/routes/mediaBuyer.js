@@ -6,7 +6,7 @@ import multer from 'multer';
 import { asyncHandler } from '../lib/http.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { audit } from '../lib/audit.js';
-import { connectAccount, connectionFor, performance, createPausedCampaign, MetaError } from '../services/metaAds.js';
+import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, MetaError } from '../services/metaAds.js';
 import { ask, generate, reviewCreative, cloudyReady, CloudyError, TASK_NAMES } from '../services/cloudy.js';
 
 export const TABS = ['overview', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
@@ -25,19 +25,20 @@ export function mediaBuyerRoutes({ pool, config }) {
   async function page(req, res, extra = {}, status = 200) {
     const tab = TABS.includes(req.query.tab) ? req.query.tab : (extra.tab ?? 'overview');
     const id = req.business.id;
-    const [{ rows: [profile] }, connection, { rows: items }, { rows: creatives }, { rows: messages }] = await Promise.all([
+    const [{ rows: [profile] }, accounts, { rows: items }, { rows: creatives }, { rows: messages }] = await Promise.all([
       pool.query('SELECT * FROM ad_profiles WHERE business_id = $1', [id]),
-      connectionFor(pool, id),
-      pool.query('SELECT id, kind, title, body, status, data_basis, meta_result, created_at, decided_at FROM ad_items WHERE business_id = $1 ORDER BY id DESC LIMIT 60', [id]),
+      listConnections(pool, id),
+      pool.query('SELECT id, kind, title, body, status, data_basis, meta_result, ad_account_id, created_at, decided_at FROM ad_items WHERE business_id = $1 ORDER BY id DESC LIMIT 60', [id]),
       pool.query('SELECT id, kind, name, mime, size_bytes, notes, ai_review, created_at FROM ad_creatives WHERE business_id = $1 ORDER BY id DESC LIMIT 60', [id]),
       pool.query('SELECT role, content, created_at FROM ad_messages WHERE business_id = $1 ORDER BY id DESC LIMIT 20', [id]),
     ]);
     // Live Meta numbers only on the pages that show them (each page load reads Meta; nothing is cached).
     const period = ['today', 'yesterday', 'last_7d', 'last_30d'].includes(req.query.period) ? req.query.period : 'last_7d';
-    const perf = ['overview', 'campaigns'].includes(tab) && connection?.status === 'verified' ? await performance(pool, config, id, period) : null;
+    const connection = accounts.find((a) => a.selected) ?? accounts[0] ?? null; // the selected account
+    const perf = ['overview', 'campaigns'].includes(tab) && connection?.status === 'verified' ? await performance(pool, config, id, period, connection.ad_account_id) : null;
     res.set('Cache-Control', 'no-store');
     res.status(status).render('media-buyer', {
-      active: 'mediabuyer', tab, period, profile: profile ?? {}, connection: connection ? { ...connection, token_enc: undefined } : null,
+      active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
       perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), mbBase: base(req),
       notice: typeof req.query.done === 'string' ? req.query.done : null, error: null, answer: null, ...extra,
     });
@@ -70,9 +71,19 @@ export function mediaBuyerRoutes({ pool, config }) {
     }
   }));
 
-  router.post('/disconnect', asyncHandler(async (req, res) => {
-    await pool.query('DELETE FROM ad_connections WHERE business_id = $1', [req.business.id]);
-    await audit(pool, req, { action: 'media_buyer.meta_disconnected', businessId: req.business.id });
+  // Switches the account the AI Media Buyer works on (only among this business's own accounts).
+  router.post(['/accounts/select', '/accounts/:accountId/select'], asyncHandler(async (req, res) => {
+    const accountId = String(req.params.accountId ?? req.body.account ?? '');
+    if (!/^\d{5,20}$/.test(accountId) || !(await selectAccount(pool, req.business.id, accountId))) return res.status(404).render('error', { message: 'Not found.' });
+    await audit(pool, req, { action: 'media_buyer.account_selected', businessId: req.business.id, details: { adAccount: accountId } });
+    res.redirect(`${base(req)}?tab=${TABS.includes(req.body.tab) ? req.body.tab : 'overview'}&done=selected`);
+  }));
+
+  // Removes one ad account and deletes its token. Owner only.
+  router.post('/accounts/:accountId/disconnect', asyncHandler(async (req, res) => {
+    if (req.role !== 'owner') return res.status(403).render('error', { message: 'Only the business owner can disconnect an ad account.' });
+    if (!/^\d{5,20}$/.test(req.params.accountId) || !(await disconnectAccount(pool, req.business.id, req.params.accountId))) return res.status(404).render('error', { message: 'Not found.' });
+    await audit(pool, req, { action: 'media_buyer.meta_disconnected', businessId: req.business.id, details: { adAccount: req.params.accountId } });
     res.redirect(`${base(req)}?tab=settings&done=disconnected`);
   }));
 
@@ -157,7 +168,7 @@ export function mediaBuyerRoutes({ pool, config }) {
     if (item.status !== 'proposed') return res.redirect(`${base(req)}/items/${item.id}`);
     if (item.kind === 'campaign_draft') {
       try {
-        const meta = await createPausedCampaign(pool, config, req.business.id, item.body);
+        const meta = await createPausedCampaign(pool, config, req.business.id, item.body, item.ad_account_id);
         await pool.query("UPDATE ad_items SET status = 'executed', meta_result = $3, decided_by = $4, decided_at = now() WHERE id = $1 AND business_id = $2", [item.id, req.business.id, JSON.stringify(meta), req.session.userId]);
         await audit(pool, req, { action: 'media_buyer.campaign_created_paused', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { campaign: meta.id, status: meta.effective_status } });
       } catch (err) {

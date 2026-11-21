@@ -6,7 +6,7 @@
    const show = (v) => Array.isArray(v) ? v.map((x, i) => `${i + 1}. ${x}`).join('\n') : String(v); %>
 <main class="narrow" data-ai-item="<%= item.kind %>">
   <p><a href="<%= mbBase %>?tab=<%= { campaign_draft: 'approvals', brief: 'briefs', recommendation: 'recommendations' }[item.kind] || 'reports' %>">← AI Media Buyer</a></p>
-  <div class="page-head"><div><h1><%= item.title %></h1><p class="muted">Status: <strong data-status><%= item.status %></strong> · <%= formatDate(item.created_at) %> · Based on: <%= item.data_basis %></p></div></div>
+  <div class="page-head"><div><h1><%= item.title %></h1><p class="muted">Status: <strong data-status><%= item.status %></strong> · <%= formatDate(item.created_at) %> · Based on: <%= item.data_basis %><% if (item.ad_account_id) { %> · Ad account: <strong data-item-account>act_<%= item.ad_account_id %></strong><% } %></p></div></div>
   <% if (notice === 'approved') { %><div class="notice" role="status">Approved.</div><% } %>
   <% if (notice === 'rejected') { %><div class="notice" role="status">Rejected: nothing was changed in Meta.</div><% } %>
   <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
