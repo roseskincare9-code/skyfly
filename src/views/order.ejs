@@ -58,7 +58,7 @@
       <% (payments || []).forEach((t) => { %><p class="muted" style="font-size:13px;margin:4px 0" data-payment-tx><%= t.kind === 'refund' ? 'Refund' : 'Payment' %> <%= t.provider_payment_id || t.provider_ref %> · <%= formatMoney(t.amount_minor, t.currency) %> · <strong><%= t.status %></strong><%= t.failure_reason ? ` · ${t.failure_reason}` : '' %> · <%= formatDate(t.updated_at) %></p><% }) %>
       <div class="row" style="gap:8px;margin-top:8px">
         <% if (['pending', 'failed'].includes(order.payment_status)) { %><form method="post" action="<%= base %>/orders/<%= order.id %>/payment/check" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Check payment status</button></form><% } %>
-        <% if (order.payment_status === 'paid' && can('payments')) { %><form method="post" action="<%= base %>/orders/<%= order.id %>/payment/refund" style="margin:0" onsubmit="return confirm('Refund the full amount to the customer through <%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %>?')"><%- include('partials/csrf') %><button class="secondary" type="submit">Refund</button></form><% } %>
+        <% if (order.payment_status === 'paid' && can('payments')) { %><details data-refund style="display:inline-block"><summary class="btn secondary">Refund…</summary><p class="muted" style="font-size:13px;margin:6px 0">Refund the full amount to the customer through <%= order.payment_method === 'stripe' ? 'Stripe' : 'PayPal' %>? This cannot be undone.</p><form method="post" action="<%= base %>/orders/<%= order.id %>/payment/refund" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Yes, refund</button></form></details><% } %>
       </div>
     </div>
     <% } else { %>

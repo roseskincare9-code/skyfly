@@ -15,9 +15,10 @@
 
     <label for="platform">Platform</label>
     <% if (p) { %><p style="margin:0"><strong><%= PLATFORM_LABELS[platform] %></strong></p><% } else { %>
-    <select id="platform" name="platform" onchange="location.href='<%= base %>/pixels/new?platform='+this.value">
-      <% PLATFORMS.forEach((pl) => { %><option value="<%= pl %>" <%= pl === platform ? 'selected' : '' %>><%= PLATFORM_LABELS[pl] %></option><% }) %>
-    </select><% } %>
+    <input type="hidden" name="platform" value="<%= platform %>">
+    <div class="row" role="tablist" aria-label="Platform" style="gap:8px;flex-wrap:wrap" data-platform-choice>
+      <% PLATFORMS.forEach((pl) => { %><a role="tab" aria-selected="<%= pl === platform %>" class="btn <%= pl === platform ? '' : 'secondary' %>" href="<%= base %>/pixels/new?platform=<%= pl %>"><%= PLATFORM_LABELS[pl] %></a><% }) %>
+    </div><% } %>
 
     <label for="name">Tracking name</label>
     <input id="name" name="name" maxlength="60" value="<%= v.name %>" placeholder="e.g. Ad account 2" required>
