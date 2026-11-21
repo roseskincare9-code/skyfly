@@ -50,6 +50,25 @@ for (const slug of SLUGS) {
   const count = {}; for (const h of hits) count[h] = (count[h] || 0) + 1;
   console.log(`HITS ${slug}: ${Object.entries(count).map(([k, n]) => `${k}×${n}`).join(' | ') || 'none'}`);
   console.log(`ERRORS ${slug}: ${errs.join(' | ').slice(0, 300) || 'none'}`);
+  if (slug === 'exfoliating-3-in-1-combo') {
+    // Purchase: one labelled TEST ORDER through the page's own form (marked test: not counted as sales).
+    const before = hits.filter((h) => h.includes('event=Purchase')).length;
+    const leadBefore = hits.filter((h) => h.includes('event=Lead')).length;
+    await page.click('#pickList label[data-id="combo1"]');
+    await page.fill('#fullName', 'TEST ORDER Skyfly pixel check');
+    await page.fill('#address', 'Test only, do not deliver, 1 Test Street, Ikeja, Lagos');
+    await page.fill('#phone', '08000000000');
+    const preSubmitPurchase = hits.filter((h) => h.includes('event=Purchase')).length - before;
+    await Promise.all([page.waitForURL(/\/o\/[A-Z0-9-]+\?t=/, { timeout: 60000 }), page.click('#submitBtn')]);
+    await page.waitForSelector('#ref');
+    await page.waitForTimeout(5000);
+    const ref = (await page.textContent('#ref')).trim();
+    const afterOrder = hits.filter((h) => h.includes('event=Purchase')).map((h) => h.split(' id=')[1]);
+    console.log(`PURCHASE order ${ref}: Purchase before submit=${preSubmitPurchase}; after the saved order: ${afterOrder.length - before} (${afterOrder.slice(before).join(', ')}); Lead events: ${hits.filter((h) => h.includes('event=Lead')).length - leadBefore}`);
+    const n = hits.filter((h) => h.includes('event=Purchase')).length;
+    await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(5000);
+    console.log(`PURCHASE reload of the confirmation page: new Purchase events = ${hits.filter((h) => h.includes('event=Purchase')).length - n}`);
+  }
   await ctx.close();
 }
 await browser.close();
