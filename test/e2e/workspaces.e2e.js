@@ -13,6 +13,7 @@ import { createPool } from '../../src/db.js';
 import { seedLarose } from '../../src/scripts/seed-larose.js';
 import { resetDatabase, testDatabaseUrl } from '../helpers.js';
 import { superAdminSignIn } from './admin-signin.js';
+import { signUpInBrowser } from './signup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shots = path.join(root, 'test/e2e/screenshots/workspaces');
@@ -71,12 +72,7 @@ try {
 
   await step('the first account becomes the platform owner (Larose kept as an internal business)', async () => {
     const p = await owner.desktop.newPage();
-    await p.goto(`${DASH}/signup`);
-    await p.fill('#name', 'Platform Owner');
-    await p.fill('#email', 'owner@skyfly.test');
-    await p.fill('#password', 'owner-password-123');
-    await p.click('button[type=submit]');
-    await p.waitForLoadState('load');
+    await signUpInBrowser(p, DASH, { name: 'Platform Owner', email: 'owner@skyfly.test', password: 'owner-password-123' });
     await seedLarose(pool, 'owner@skyfly.test');
     await login(owner.mobile, 'owner@skyfly.test', 'owner-password-123');
     await superAdminSignIn(p, DASH, 'owner@skyfly.test', 'owner-password-123');
