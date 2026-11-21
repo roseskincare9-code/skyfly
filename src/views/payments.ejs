@@ -23,7 +23,7 @@
       <div class="row" style="gap:8px">
         <% if (c.status === 'connected') { %><form method="post" action="<%= base %>/payments/<%= p %>/enabled" style="margin:0"><%- include('partials/csrf') %><input type="hidden" name="enabled" value="<%= c.enabled ? 'false' : 'true' %>"><button class="secondary" type="submit"><%= c.enabled ? 'Turn off at checkout' : 'Turn on at checkout' %></button></form><% } %>
         <form method="post" action="<%= base %>/payments/<%= p %>/connect" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Reconnect</button></form>
-        <form method="post" action="<%= base %>/payments/<%= p %>/disconnect" style="margin:0" onsubmit="return confirm('Disconnect <%= PROVIDERS[p] %>? Customers will no longer be able to pay with it.')"><%- include('partials/csrf') %><button class="secondary" type="submit">Disconnect</button></form>
+        <details data-disconnect style="display:inline-block"><summary class="btn secondary">Disconnect…</summary><p class="muted" style="font-size:13px;margin:6px 0">Disconnect <%= PROVIDERS[p] %>? Customers will no longer be able to pay with it.</p><form method="post" action="<%= base %>/payments/<%= p %>/disconnect" style="margin:0"><%- include('partials/csrf') %><button class="secondary" type="submit">Yes, disconnect</button></form></details>
       </div>
     <% } %>
   </div>

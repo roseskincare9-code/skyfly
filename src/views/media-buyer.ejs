@@ -22,10 +22,10 @@
   <form method="post" action="<%= mbBase %>/accounts/select" class="row" data-account-switcher style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <%- include('partials/csrf') %><input type="hidden" name="tab" value="<%= tab %>">
     <label for="account" style="margin:0">Ad account</label>
-    <select id="account" name="account" onchange="this.form.requestSubmit()" style="max-width:320px">
+    <select id="account" name="account" style="max-width:320px">
       <% accounts.forEach((a) => { %><option value="<%= a.ad_account_id %>" <%= a.selected ? 'selected' : '' %>><%= a.ad_account_name || 'Ad account' %> · act_<%= a.ad_account_id %></option><% }) %>
     </select>
-    <noscript><button class="btn secondary" type="submit">Switch</button></noscript>
+    <button class="btn secondary" type="submit" data-switch>Switch</button>
   </form>
   <% } %>
   <nav class="row" role="tablist" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -125,7 +125,7 @@
         <td><%= a.pixel_id ? `${a.pixel_name || ''} (${a.pixel_id})` : 'none found' %></td>
         <td>encrypted, ending <%= a.token_hint %></td>
         <td><% if (!a.selected) { %><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/select"><%- include('partials/csrf') %><input type="hidden" name="tab" value="settings"><button class="btn secondary" type="submit">Use this account</button></form><% } %>
-            <% if (isOwner) { %><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/disconnect" onsubmit="return confirm('Disconnect act_<%= a.ad_account_id %> and delete its token? Nothing changes in Meta.')"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Disconnect</button></form><% } %></td></tr><% }) %>
+            <% if (isOwner) { %><details data-disconnect><summary>Disconnect…</summary><p class="muted" style="font-size:13px;margin:6px 0">Removes act_<%= a.ad_account_id %> from this business and deletes its token. Nothing changes in Meta.</p><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/disconnect"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Yes, disconnect</button></form></details><% } %></td></tr><% }) %>
       </tbody></table></div><% } %>
       <details <%= accounts.length ? '' : 'open' %>><summary><%= accounts.length ? 'Connect another ad account' : 'Connect an ad account' %></summary>
         <ol class="muted" style="font-size:14px"><li>In <strong>Meta Business Settings → Users → System users</strong>, add a system user (or use an existing one) and give it access to the ad account (and Page).</li><li>Click <strong>Generate new token</strong>, choose your app, tick <code>ads_read</code> (and <code>ads_management</code> for campaign drafts), copy the token.</li><li>Paste it below with the ad account ID (the number after <code>act_</code> in Ads Manager). Skyfly checks it with Meta before saving. Connecting an account that is already listed refreshes its token.</li></ol>
