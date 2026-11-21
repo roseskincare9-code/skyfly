@@ -160,40 +160,20 @@ try {
 try {
   await client.query('BEGIN TRANSACTION READ ONLY');
   const one = async (sql) => (await client.query(sql)).rows;
-  line('database size', (await one('SELECT pg_size_pretty(pg_database_size(current_database())) AS s'))[0].s);
-  line('migrations applied', (await one('SELECT string_agg(name, \', \' ORDER BY name) AS m FROM schema_migrations'))[0].m);
-  for (const t of ['users', 'businesses', 'business_members', 'products', 'landing_pages', 'orders', 'order_items', 'order_status_history',
-    'pixel_settings', 'sheet_connections', 'email_contacts', 'email_automations', 'email_messages', 'audit_log']) {
-    try { line(`rows: ${t}`, (await one(`SELECT count(*)::int AS n FROM ${t}`))[0].n); } catch (err) { line(`rows: ${t}`, `n/a (${err.message.slice(0, 60)})`); }
+  line('migrations 056-058', (await one("SELECT string_agg(name, ', ' ORDER BY name) AS m FROM schema_migrations WHERE name ~ '^05[678]_'"))[0].m);
+  for (const t of ['ad_profiles', 'ad_connections', 'ad_creatives', 'ad_items', 'ad_messages']) line(`rows: ${t}`, (await one(`SELECT count(*)::int AS n FROM ${t}`))[0].n);
+  for (const r of await one(`SELECT b.slug, c.ad_account_id, c.ad_account_name, c.currency, c.account_status, c.status, c.selected, c.verified_at, c.page_id IS NOT NULL AS has_page, c.pixel_id IS NOT NULL AS has_pixel, left(coalesce(c.last_error,''), 120) AS err, length(c.token_enc) > 0 AS token_stored
+                               FROM ad_connections c JOIN businesses b ON b.id = c.business_id ORDER BY c.id`)) {
+    line(`connection: ${r.slug}`, `act_${r.ad_account_id} "${r.ad_account_name ?? ''}" ${r.currency ?? ''} account_status=${r.account_status} status=${r.status} selected=${r.selected} verified_at=${r.verified_at?.toISOString?.() ?? '-'} page=${r.has_page} pixel=${r.has_pixel} token_stored=${r.token_stored} last_error="${r.err}"`);
   }
-  for (const r of await one(`SELECT b.name, b.subscription_status, count(o.id)::int AS orders,
-                                    count(o.id) FILTER (WHERE o.is_test)::int AS test_orders, min(o.created_at)::date AS first, max(o.created_at)::date AS last
-                               FROM businesses b LEFT JOIN orders o ON o.business_id = b.id GROUP BY b.id ORDER BY b.id`)) {
-    line(`business: ${r.name}`, `${r.subscription_status}; ${r.orders} orders (${r.test_orders} test), ${r.first ?? '-'} .. ${r.last ?? '-'}`);
-  }
-  for (const r of await one('SELECT sheet_sync_status AS s, count(*)::int AS n FROM orders GROUP BY 1 ORDER BY 1')) line(`sheet copy: ${r.s}`, r.n);
-  try {
-    for (const r of await one("SELECT table_name FROM information_schema.tables WHERE table_schema = 'backup_before_012' ORDER BY 1")) {
-      line(`safety copy: ${r.table_name}`, (await one(`SELECT count(*)::int AS n FROM backup_before_012.${r.table_name}`))[0].n);
-    }
-  } catch (err) { line('safety copy', err.message.slice(0, 80)); }
-  console.log('\n== Landing pages (published = has a public address)');
-  for (const r of await one(`SELECT lp.slug, b.slug AS business, lp.status, lp.published_version_id IS NOT NULL AS hosted, lp.test_mode, lp.url IS NOT NULL AS external
-                               FROM landing_pages lp JOIN businesses b ON b.id = lp.business_id ORDER BY lp.id`)) {
-    const where = r.status === 'active' && r.hosted ? `PUBLISHED at /p/${r.slug}/` : r.hosted ? 'hosted, not published' : r.external ? 'external page (not hosted by Skyfly)' : 'not hosted';
-    line(`page: ${r.slug}`, `business ${r.business}; status ${r.status}; ${where}${r.test_mode ? '; test mode' : ''}`);
-  }
-  // Labelled TEST ORDERs only (never real customers): what the business's Orders page lists for them.
-  console.log('\n== Latest TEST ORDERs (as listed in each business\'s Orders page)');
-  for (const r of await one(`SELECT o.reference, b.slug AS business, lp.slug AS page, o.status, o.total_minor, o.currency, o.sheet_sync_status, o.created_at,
-                                    (SELECT string_agg(i.product_name || ' x' || i.quantity || CASE WHEN i.is_upsell THEN ' (add-on)' ELSE '' END, ', ' ORDER BY i.id)
-                                       FROM order_items i WHERE i.order_id = o.id) AS items,
-                                    (SELECT count(*)::int FROM orders d WHERE d.business_id = o.business_id AND d.idempotency_key = o.idempotency_key) AS copies
-                               FROM orders o JOIN businesses b ON b.id = o.business_id LEFT JOIN landing_pages lp ON lp.id = o.landing_page_id
-                              WHERE o.is_test ORDER BY o.id DESC LIMIT 6`)) {
-    line(`order: ${r.reference}`, `business ${r.business}; page ${r.page ?? '-'}; ${r.items}; total ${(r.total_minor / 100).toLocaleString('en-NG')} ${r.currency}; status ${r.status}; sheet ${r.sheet_sync_status}; orders for this submission: ${r.copies}; ${r.created_at.toISOString()}`);
-  }
+  for (const r of await one(`SELECT b.slug, i.kind, i.status, count(*)::int AS n, count(i.meta_result)::int AS with_meta FROM ad_items i JOIN businesses b ON b.id = i.business_id GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`)) line(`items: ${r.slug}`, `${r.kind} ${r.status} x${r.n} (meta_result ${r.with_meta})`);
+  for (const r of await one(`SELECT b.slug, count(*)::int AS n FROM ad_profiles p JOIN businesses b ON b.id = p.business_id GROUP BY 1`)) line(`profile: ${r.slug}`, r.n);
+  for (const r of await one(`SELECT action, count(*)::int AS n, max(created_at) AS last FROM audit_log WHERE action ~ '^(media_buyer|ad_|meta|cloudy)' GROUP BY 1 ORDER BY 1`)) line(`audit: ${r.action}`, `${r.n}, last ${r.last.toISOString()}`);
   await client.query('ROLLBACK');
 } finally {
   await client.end();
+}
+for (const p of ['/businesses/1/media-buyer', '/businesses/1/media-buyer?tab=campaigns']) {
+  const r = await fetch(`https://getskyfly.com${p}`, { redirect: 'manual' });
+  console.log(`HTTP ${p} (signed out): ${r.status} -> ${r.headers.get('location') ?? '-'}`);
 }
