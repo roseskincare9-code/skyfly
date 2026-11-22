@@ -3,6 +3,7 @@
 // loaded by business ID here, so one business's data can never reach another business's answer.
 // Cloudy recommends and drafts; it never spends money, activates anything or changes live campaigns.
 import { performance, listConnections } from './metaAds.js';
+import { analystReady, latestAnalysis } from './analyst.js';
 
 export class CloudyError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -17,6 +18,7 @@ Operating rules:
 - Draft-first: you recommend and prepare drafts. You never claim anything is live, launched, paused or changed: only Meta's own status shown in the data counts. Activation, budget increases and account-wide changes always need the business owner's approval in Skyfly.
 - Never recommend spending above the business's stated daily budget without flagging it as a proposal for approval.
 - Be practical and specific: what to keep, cut, test or create next, and why, in plain language for a busy business owner.
+- If latest_performance_analysis_by_chatgpt is present, it is this business's primary performance analysis (by the ChatGPT analyst in Skyfly): build on it and do not contradict it unless you point to specific figures in the data.
 - Consider spend, results/purchases, CPA, ROAS (only if purchase value exists), CPM, CTR, CPC, frequency, creative fatigue, audience and location, landing page and tracking (pixel) quality.`;
 
 async function context(pool, config, businessId) {
@@ -32,7 +34,9 @@ async function context(pool, config, businessId) {
   const sel = accounts.find((a) => a.selected) ?? accounts[0] ?? null;
   const perf = sel ? await performance(pool, config, businessId, 'last_7d', sel.ad_account_id) : { connected: false };
   const today = perf.connected && !perf.error ? await performance(pool, config, businessId, 'today', sel.ad_account_id) : null;
+  const latest = sel ? await latestAnalysis(pool, businessId, sel.ad_account_id) : null;
   return {
+    ...(latest ? { latest_performance_analysis_by_chatgpt: { dates: `${latest.scope.since} to ${latest.scope.until}`, data_fetched_at: latest.data_fetched_at, summary: latest.result.summary, priority_actions: latest.result.priority_actions } } : {}),
     business: { name: b.name, currency: b.currency, website: p?.website ?? b.website ?? null },
     profile: p ? Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && !['business_id', 'updated_at'].includes(k))) : 'not filled in yet',
     skyfly_products: products.map((x) => ({ name: x.name, price: Number(x.price_minor) / 100 })),
@@ -83,12 +87,17 @@ const TASKS = {
   report_weekly: { kind: 'report', title: 'Weekly advertising report', prompt: 'Write the weekly report for the last 7 days: total spend, results/purchases, CPA, ROAS if available, best and worst campaigns and ads, creative insights, recommended next actions, new creatives needed. Use markdown.' },
 };
 export const TASK_NAMES = Object.keys(TASKS);
+// Performance analysis belongs to the ChatGPT analyst when it is switched on (one recommendation system,
+// no duplicate AI spend). Cloudy keeps these only while ChatGPT is off.
+export const PERFORMANCE_TASKS = ['audit', 'recommendations', 'report_daily', 'report_weekly'];
+export const cloudyHandles = (config, task) => !(PERFORMANCE_TASKS.includes(task) && analystReady(config));
 
 // Audit / recommendations / briefs / campaign draft / report, saved as this business's items.
 export async function generate(pool, config, { businessId, userId, task, note = '' }) {
   if (!cloudyReady(config)) throw new CloudyError('Cloudy is not switched on yet: ANTHROPIC_API_KEY is not set on the server.', 409);
   const t = TASKS[task];
   if (!t) throw new CloudyError('Unknown task.', 404);
+  if (!cloudyHandles(config, task)) throw new CloudyError('Performance analysis is done by ChatGPT: use "Analyze my campaigns" in the Performance Analysis tab.', 409);
   const ctx = await context(pool, config, businessId);
   const text = await callClaude(config, { system: systemFor(ctx), messages: [{ role: 'user', content: `${t.prompt}${note ? `\nOwner's note: ${String(note).slice(0, 500)}` : ''}` }], maxTokens: 4000 });
   const parsed = t.json ? jsonFrom(text) : null;

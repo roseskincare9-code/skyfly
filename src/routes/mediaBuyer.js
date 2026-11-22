@@ -6,10 +6,11 @@ import multer from 'multer';
 import { asyncHandler } from '../lib/http.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { audit } from '../lib/audit.js';
-import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, MetaError } from '../services/metaAds.js';
-import { ask, generate, reviewCreative, cloudyReady, CloudyError, TASK_NAMES } from '../services/cloudy.js';
+import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, listCampaigns, ANALYSIS_PERIODS, MetaError } from '../services/metaAds.js';
+import { ask, generate, reviewCreative, cloudyReady, cloudyHandles, CloudyError, TASK_NAMES } from '../services/cloudy.js';
+import { analyze, analystReady, AnalystError, META_CHANGING } from '../services/analyst.js';
 
-export const TABS = ['overview', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
+export const TABS = ['overview', 'analysis', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
 const KINDS = ['image', 'video', 'logo', 'document', 'reference'];
 const MAX = { video: 40 * 1024 * 1024, other: 8 * 1024 * 1024 };
 const ALLOWED_MIME = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|quicktime|webm)|application\/pdf|text\/plain)$/;
@@ -20,7 +21,7 @@ export function mediaBuyerRoutes({ pool, config }) {
   const router = Router();
   const base = (req) => `${res0(req)}/media-buyer`;
   const res0 = (req) => `/businesses/${req.business.id}`;
-  const known = (err) => err instanceof MetaError || err instanceof CloudyError;
+  const known = (err) => err instanceof MetaError || err instanceof CloudyError || err instanceof AnalystError;
 
   async function page(req, res, extra = {}, status = 200) {
     const tab = TABS.includes(req.query.tab) ? req.query.tab : (extra.tab ?? 'overview');
@@ -36,10 +37,19 @@ export function mediaBuyerRoutes({ pool, config }) {
     const period = ['today', 'yesterday', 'last_7d', 'last_30d'].includes(req.query.period) ? req.query.period : 'last_7d';
     const connection = accounts.find((a) => a.selected) ?? accounts[0] ?? null; // the selected account
     const perf = ['overview', 'campaigns'].includes(tab) && connection?.status === 'verified' ? await performance(pool, config, id, period, connection.ad_account_id) : null;
+    // Performance Analysis tab (ChatGPT): past analyses, monitoring alerts and settings, scope choices.
+    const { rows: alerts } = await pool.query('SELECT * FROM ad_alerts WHERE business_id = $1 AND dismissed_at IS NULL ORDER BY id DESC LIMIT 30', [id]);
+    const analysis = tab === 'analysis' ? {
+      runs: (await pool.query('SELECT id, ad_account_id, scope, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 ORDER BY id DESC LIMIT 15', [id])).rows,
+      monitor: (await pool.query('SELECT * FROM ad_monitor_settings WHERE business_id = $1', [id])).rows[0] ?? null,
+      products: (await pool.query('SELECT id, name FROM products WHERE business_id = $1 ORDER BY id LIMIT 50', [id])).rows,
+      campaigns: connection?.status === 'verified' ? await listCampaigns(pool, config, id, connection.ad_account_id) : [],
+      periods: ANALYSIS_PERIODS,
+    } : null;
     res.set('Cache-Control', 'no-store');
     res.status(status).render('media-buyer', {
       active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
-      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), mbBase: base(req),
+      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, mbBase: base(req),
       notice: typeof req.query.done === 'string' ? req.query.done : null, error: null, answer: null, ...extra,
     });
   }
@@ -146,6 +156,76 @@ export function mediaBuyerRoutes({ pool, config }) {
       const tab = { audit: 'reports', report_daily: 'reports', report_weekly: 'reports', briefs: 'briefs', campaign_draft: 'approvals', recommendations: 'recommendations' }[req.params.task];
       return page(req, res, { tab, error: err.message }, err.status);
     }
+  }));
+
+  // ---------- ChatGPT performance analysis (reads Meta only; never changes it)
+  router.post('/analysis', asyncHandler(async (req, res) => {
+    const b = req.body;
+    const custom = b.period === 'custom';
+    try {
+      const id = await analyze(pool, config, {
+        businessId: req.business.id, userId: req.session.userId, adAccountId: b.account || null,
+        period: ANALYSIS_PERIODS.includes(b.period) ? b.period : 'last_7d', since: custom ? b.since : null, until: custom ? b.until : null,
+        campaignId: b.campaign || null, productId: /^\d+$/.test(b.product ?? '') ? b.product : null,
+      });
+      await audit(pool, req, { action: 'media_buyer.analysis_run', businessId: req.business.id, entityType: 'ad_analysis', entityId: id });
+      res.redirect(`${base(req)}/analysis/${id}`);
+    } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'analysis', error: err.message }, err.status); }
+  }));
+
+  const loadAnalysis = async (req) => {
+    if (!/^\d+$/.test(req.params.analysisId)) return null;
+    const { rows: [a] } = await pool.query('SELECT * FROM ad_analyses WHERE id = $1 AND business_id = $2', [req.params.analysisId, req.business.id]);
+    return a ?? null;
+  };
+  router.get('/analysis/:analysisId', asyncHandler(async (req, res) => {
+    const a = await loadAnalysis(req);
+    if (!a) return res.status(404).render('error', { message: 'Not found.' });
+    const { rows: proposed } = await pool.query("SELECT id, body->>'rec_index' AS n, status FROM ad_items WHERE business_id = $1 AND body->>'analysis_id' = $2", [req.business.id, String(a.id)]);
+    res.set('Cache-Control', 'no-store');
+    res.render('media-buyer-analysis', { active: 'mediabuyer', a, mbBase: base(req), proposed, metaChanging: META_CHANGING, notice: typeof req.query.done === 'string' ? req.query.done : null });
+  }));
+
+  // A recommendation goes to Approvals (ANALYZE → RECOMMEND → REVIEW → APPROVAL). Approving it records the
+  // decision; Skyfly does not change the campaign itself (the owner applies it in Ads Manager).
+  router.post('/analysis/:analysisId/recommendations/:n/propose', asyncHandler(async (req, res) => {
+    const a = await loadAnalysis(req);
+    const n = Number(req.params.n);
+    const r = a?.status === 'ok' && Number.isInteger(n) ? a.result?.recommendations?.[n] : null;
+    if (!r) return res.status(404).render('error', { message: 'Not found.' });
+    const { rows: [dup] } = await pool.query("SELECT id FROM ad_items WHERE business_id = $1 AND body->>'analysis_id' = $2 AND body->>'rec_index' = $3", [req.business.id, String(a.id), String(n)]);
+    if (dup) return res.redirect(`${base(req)}/items/${dup.id}`);
+    const body = { source: 'ChatGPT analysis', analysis_id: String(a.id), rec_index: String(n), action: r.recommended_action, why: r.why_it_matters, observed: r.observed,
+      supporting_metrics: r.supporting_metrics.map((m) => `${m.name}: ${m.value}`), expected_objective: r.expected_objective, confidence: r.confidence, risks: r.risks,
+      needs_more_data: r.needs_more_data, needs_approval: true, applies_to: `${r.entity_level} ${r.entity_name} (${r.entity_id})` };
+    const { rows: [item] } = await pool.query(
+      "INSERT INTO ad_items (business_id, kind, title, body, status, data_basis, created_by, ad_account_id) VALUES ($1, 'recommendation', $2, $3, 'proposed', $4, $5, $6) RETURNING id",
+      [req.business.id, `${r.action.replace(/_/g, ' ')}: ${r.entity_name}`.slice(0, 200), JSON.stringify(body), `ChatGPT analysis #${a.id}, ${a.scope.since} to ${a.scope.until}`, req.session.userId, a.ad_account_id]);
+    await audit(pool, req, { action: 'media_buyer.recommendation_proposed', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { analysis: a.id } });
+    res.redirect(`${base(req)}/items/${item.id}`);
+  }));
+
+  // Monitoring: rule-based alerts only (never pauses, edits or spends).
+  router.post('/monitoring', asyncHandler(async (req, res) => {
+    const b = req.body;
+    const minor = (v) => { const n = Number(String(v ?? '').replace(/,/g, '')); return v === '' || v == null || !Number.isFinite(n) || n <= 0 ? null : Math.round(n * 100); };
+    const ctr = Math.min(90, Math.max(5, Number(b.ctr_drop_pct) || 30));
+    const freq = Math.min(20, Math.max(1, Number(b.frequency_max) || 3.5));
+    const hours = [6, 12, 24].includes(Number(b.interval_hours)) ? Number(b.interval_hours) : 24;
+    await pool.query(
+      `INSERT INTO ad_monitor_settings (business_id, enabled, cpa_threshold_minor, no_conversion_spend_minor, ctr_drop_pct, frequency_max, interval_hours, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       ON CONFLICT (business_id) DO UPDATE SET enabled = EXCLUDED.enabled, cpa_threshold_minor = EXCLUDED.cpa_threshold_minor, no_conversion_spend_minor = EXCLUDED.no_conversion_spend_minor,
+         ctr_drop_pct = EXCLUDED.ctr_drop_pct, frequency_max = EXCLUDED.frequency_max, interval_hours = EXCLUDED.interval_hours, updated_at = now()`,
+      [req.business.id, b.enabled === 'on' || b.enabled === 'true', minor(b.cpa_threshold), minor(b.no_conversion_spend), ctr, freq, hours]);
+    await audit(pool, req, { action: 'media_buyer.monitoring_saved', businessId: req.business.id, details: { enabled: b.enabled === 'on' || b.enabled === 'true' } });
+    res.redirect(`${base(req)}?tab=analysis&done=monitoring`);
+  }));
+  router.post('/alerts/:alertId/dismiss', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.alertId)) return res.status(404).render('error', { message: 'Not found.' });
+    const { rowCount } = await pool.query('UPDATE ad_alerts SET dismissed_at = now() WHERE id = $1 AND business_id = $2 AND dismissed_at IS NULL', [req.params.alertId, req.business.id]);
+    if (!rowCount) return res.status(404).render('error', { message: 'Not found.' });
+    res.redirect(`${base(req)}?tab=analysis&done=dismissed`);
   }));
 
   const loadItem = async (req) => {

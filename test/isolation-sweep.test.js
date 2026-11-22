@@ -114,6 +114,15 @@ async function seed(ids, business, tag) {
   ids.accountId = tag === 'Alpha' ? '111222333' : '444555666';
   ids.creativeId = await q("INSERT INTO ad_creatives (business_id, kind, name, mime, size_bytes, data) VALUES ($1, 'image', $2, 'text/plain', 5, '\\x68656c6c6f') RETURNING id", [business, `${tag}SecretCreative.txt`]);
   ids.itemId = await q("INSERT INTO ad_items (business_id, kind, title, body, status) VALUES ($1, 'campaign_draft', $2, '{}', 'proposed') RETURNING id", [business, `${tag}SecretDraft`]);
+  // ChatGPT analysis (with one recommendation), a monitoring alert and monitoring settings.
+  const rec = { priority: 1, category: 'budget', action: 'pause', entity_level: 'campaign', entity_id: '1', entity_name: `${tag}SecretCampaign`, observed: `${tag}SecretObserved`,
+    supporting_metrics: [], why_it_matters: '', recommended_action: '', expected_objective: '', confidence: 'low', risks: '', needs_more_data: true, evidence: 'speculation', grounded: true, entity_known: true };
+  ids.analysisId = await q("INSERT INTO ad_analyses (business_id, ad_account_id, scope, data, result, status) VALUES ($1, $2, $3, $4, $5, 'ok') RETURNING id",
+    [business, ids.accountId, JSON.stringify({ since: '2026-01-01', until: '2026-01-07' }), JSON.stringify({ account: { id: ids.accountId, name: `${tag}SecretAdAccount` }, totals: {} }),
+      JSON.stringify({ summary: `${tag}SecretSummary`, recommendations: [rec], priority_actions: [] })]);
+  ids.n = 0;
+  ids.alertId = await q("INSERT INTO ad_alerts (business_id, ad_account_id, kind, severity, message, dedupe_key) VALUES ($1, $2, 'tracking', 'high', $3, 'k') RETURNING id", [business, ids.accountId, `${tag}SecretAlert`]);
+  await pool.query('INSERT INTO ad_monitor_settings (business_id, enabled, cpa_threshold_minor) VALUES ($1, true, 123400)', [business]);
   await pool.query("INSERT INTO ad_profiles (business_id, industry) VALUES ($1, $2)", [business, `${tag}SecretIndustry`]);
   await pool.query("INSERT INTO ad_messages (business_id, role, content) VALUES ($1, 'assistant', $2)", [business, `${tag}SecretChat`]);
   await pool.query("INSERT INTO ad_connections (business_id, ad_account_id, ad_account_name, token_enc, status) VALUES ($1, $2, $3, 'enc', 'verified')", [business, tag === 'Alpha' ? '111222333' : '444555666', `${tag}SecretAdAccount`]);
