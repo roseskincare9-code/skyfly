@@ -1,0 +1,74 @@
+<%- include('partials/head', { title: `Performance analysis #${a.id}` }) %>
+<%- include('partials/nav') %>
+<%
+  const r = a.result || {}; const d = a.data || {}; const t = d.totals || {}; const p = d.previous_totals || {};
+  const cur = d.account?.currency || business.currency;
+  const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+  const num = (v, dg = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: dg });
+  const ageH = a.data_fetched_at ? (Date.now() - new Date(a.data_fetched_at).getTime()) / 3600000 : null;
+  const EV = { statistical: 'Statistical evidence', observed_pattern: 'Observed pattern', probable_cause: 'Probable cause', speculation: 'Speculation' };
+  const done = Object.fromEntries((proposed || []).map((x) => [x.n, x]));
+  const GROUPS = [['creative', 'Creative recommendations'], ['budget', 'Budget recommendations'], ['audience', 'Audience recommendations'], ['testing', 'Testing recommendations'], ['other', 'Campaign, structure, tracking, landing page & offer recommendations']];
+  const groupOf = (c) => ['creative', 'budget', 'audience', 'testing'].includes(c) ? c : 'other';
+  const recs = (r.recommendations || []).map((x, n) => ({ ...x, n }));
+  const chips = (ms) => (ms || []).map((m) => `${m.name}: ${m.value}`).join(' · ');
+%>
+<main data-analysis="<%= a.id %>">
+  <p><a href="<%= mbBase %>?tab=analysis">← Performance Analysis</a></p>
+  <div class="page-head"><div><h1>Performance analysis #<%= a.id %></h1>
+    <p class="muted">Ad account <strong data-analysis-account>act_<%= a.ad_account_id %></strong><%= d.account?.name ? ` (${d.account.name})` : '' %> · <%= a.scope.since %> → <%= a.scope.until %><%= a.scope.campaign_id ? ` · campaign ${a.scope.campaign_id}` : ' · all campaigns' %><%= d.business?.focus_product ? ` · product focus: ${d.business.focus_product.name}` : '' %> · analysed by ChatGPT (<%= a.model %>)</p></div></div>
+  <div class="<%= ageH != null && ageH > 6 ? 'warn-box' : 'notice' %>" data-freshness>Data fetched from Meta: <strong><%= a.data_fetched_at ? formatDate(a.data_fetched_at) : 'unknown' %></strong><% if (ageH != null && ageH > 6) { %>, <%= Math.round(ageH) %> hours ago. These are not current numbers: run a new analysis for fresh data.<% } %><% if (d.partial_day) { %> Today's figures are incomplete (the day is not over).<% } %><% if (d.truncated) { %> Very large account: only the highest-spend ads and ad sets were analysed.<% } %></div>
+  <% if (a.status !== 'ok') { %><div class="error" role="alert" data-analysis-error>This analysis failed: <%= a.error %>. Nothing was changed in Meta.</div><% } %>
+  <form method="post" action="<%= mbBase %>/analysis" style="margin:8px 0"><%- include('partials/csrf') %>
+    <input type="hidden" name="account" value="<%= a.ad_account_id %>"><input type="hidden" name="period" value="custom"><input type="hidden" name="since" value="<%= a.scope.since %>"><input type="hidden" name="until" value="<%= a.scope.until %>">
+    <input type="hidden" name="campaign" value="<%= a.scope.campaign_id || '' %>"><input type="hidden" name="product" value="<%= a.scope.product_id || '' %>">
+    <button class="btn secondary" type="submit" data-refresh>Refresh: analyse again with fresh Meta data</button></form>
+
+  <div class="card" data-summary><h2>Overall account performance</h2>
+    <div class="grid">
+      <div class="stat"><div class="n"><%= money(t.spend) %></div><div class="l">Spend (previous period <%= money(p.spend) %>)</div></div>
+      <div class="stat"><div class="n"><%= num(t.purchases, 0) %></div><div class="l">Purchases (previous <%= num(p.purchases, 0) %>)</div></div>
+      <div class="stat"><div class="n"><%= money(t.cpa) %></div><div class="l">Cost per purchase (previous <%= money(p.cpa) %>)</div></div>
+      <div class="stat"><div class="n"><%= t.roas == null ? 'n/a' : num(t.roas) + '×' %></div><div class="l">ROAS<%= t.roas == null ? ' (no purchase value tracked)' : '' %></div></div>
+      <div class="stat"><div class="n"><%= num(t.link_ctr) %>%</div><div class="l">Link CTR · CPC <%= money(t.cpc) %> · CPM <%= money(t.cpm) %></div></div>
+      <div class="stat"><div class="n"><%= num(t.frequency) %></div><div class="l">Frequency · reach <%= num(t.reach, 0) %> · impressions <%= num(t.impressions, 0) %></div></div>
+      <div class="stat"><div class="n"><%= t.conversion_rate == null ? '—' : num(t.conversion_rate) + '%' %></div><div class="l">Conversion rate (purchases / link clicks)<%= t.landing_page_conversion_rate == null ? '' : ` · landing page ${num(t.landing_page_conversion_rate)}%` %></div></div>
+    </div>
+    <p class="muted" style="font-size:13px">Figures computed by Skyfly from Meta for <%= d.window?.since %> → <%= d.window?.until %>; previous period <%= d.previous_window?.since %> → <%= d.previous_window?.until %>.</p>
+    <% if (r.summary) { %><p style="white-space:pre-wrap" data-ai-summary><%= r.summary %></p><% } %>
+    <% if (r.data_quality) { %><p class="muted" data-sufficiency>Data sufficiency: <strong><%= r.data_quality.sufficiency %></strong><%= r.data_quality.notes.length ? ` · ${r.data_quality.notes.join(' · ')}` : '' %></p><% } %>
+  </div>
+
+  <% if (r.priority_actions?.length) { %><div class="card" data-priority><h2>Priority action list</h2><ol><% r.priority_actions.forEach((x) => { %><li><%= x %></li><% }) %></ol></div><% } %>
+
+  <% [['working', 'What is working'], ['not_working', 'What is not working'], ['campaigns_needing_attention', 'Campaigns needing attention'], ['winning_ads', 'Winning ads'], ['weak_ads', 'Weak ads'], ['tracking_concerns', 'Tracking concerns']].forEach(([k, label]) => { if (!r[k]) return; %>
+    <div class="card" data-section="<%= k %>"><h2><%= label %></h2><% if (!r[k].length) { %><p class="muted">Nothing found.</p><% } else { %><ul>
+      <% r[k].forEach((f) => { %><li><strong><%= f.entity_name %></strong> <span class="muted">(<%= f.entity_level %> <%= f.entity_id %>)</span>: <%= f.observation %><% if (f.metrics.length) { %><br><span class="muted"><%= chips(f.metrics) %></span><% } %><br><span class="pill pending"><%= EV[f.evidence] %></span><% if (!f.grounded) { %> <span class="pill cancelled" data-ungrounded>figures not matched to the Meta data: check before acting</span><% } %></li><% }) %>
+    </ul><% } %></div>
+  <% }) %>
+
+  <% GROUPS.forEach(([g, label]) => { const list = recs.filter((x) => groupOf(x.category) === g); if (!list.length) return; %>
+    <div class="card" data-recs="<%= g %>"><h2><%= label %></h2>
+      <% list.forEach((x) => { %><div class="card" style="margin:10px 0" data-rec="<%= x.n %>">
+        <h3 style="margin-top:0"><%= x.priority %>. <%= x.action.replace(/_/g, ' ') %>: <%= x.entity_name %> <span class="muted" style="font-size:13px">(<%= x.entity_level %> <%= x.entity_id %>)</span></h3>
+        <dl class="kv">
+          <dt>Observed</dt><dd><%= x.observed %></dd>
+          <dt>Supporting metrics</dt><dd><%= chips(x.supporting_metrics) || '—' %><% if (!x.grounded) { %> <span class="pill cancelled" data-ungrounded>not matched to the Meta data</span><% } %></dd>
+          <dt>Why it matters</dt><dd><%= x.why_it_matters %></dd>
+          <dt>Recommended action</dt><dd><strong><%= x.recommended_action %></strong></dd>
+          <dt>Expected objective</dt><dd><%= x.expected_objective %></dd>
+          <dt>Confidence</dt><dd><%= x.confidence %> · <%= EV[x.evidence] %></dd>
+          <dt>Risks / limitations</dt><dd><%= x.risks %></dd>
+          <dt>More data needed</dt><dd><%= x.needs_more_data ? 'Yes: treat as provisional' : 'No' %></dd>
+        </dl>
+        <% if (x.needs_approval) { %><p class="muted" style="font-size:13px" data-needs-approval>This would change your Meta campaign. Skyfly never does it automatically: send it to Approvals to review and decide; you then apply it in Ads Manager.</p><% } %>
+        <% if (done[String(x.n)]) { %><p><a href="<%= mbBase %>/items/<%= done[String(x.n)].id %>">In Approvals (<%= done[String(x.n)].status %>)</a></p>
+        <% } else { %><form method="post" action="<%= mbBase %>/analysis/<%= a.id %>/recommendations/<%= x.n %>/propose"><%- include('partials/csrf') %><button class="btn secondary" type="submit" data-propose>Send to Approvals</button></form><% } %>
+      </div><% }) %>
+    </div>
+  <% }) %>
+
+  <% if (r.removed_unverifiable?.length) { %><p class="muted" data-removed>Removed <%= r.removed_unverifiable.length %> point(s) that referred to campaigns or ads not in this account's data.</p><% } %>
+  <% if (d.signals?.length) { %><div class="card" data-signals><h2>Skyfly's rule-based checks on this data</h2><ul><% d.signals.forEach((s) => { %><li><span class="pill <%= s.severity === 'opportunity' ? 'delivered' : s.severity === 'high' ? 'cancelled' : 'pending' %>"><%= s.severity %></span> <%= s.message %> <span class="muted"><%= s.suggestion %></span></li><% }) %></ul></div><% } %>
+</main>
+</body></html>

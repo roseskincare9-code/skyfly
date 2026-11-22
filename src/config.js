@@ -139,6 +139,17 @@ export function loadConfig() {
       model: process.env.CLOUDY_MODEL || 'claude-sonnet-5-5',
       apiBase: !isProduction && process.env.ANTHROPIC_API_BASE ? process.env.ANTHROPIC_API_BASE : 'https://api.anthropic.com',
     } : null,
+    // ChatGPT, the Media Buyer's performance analyst (OpenAI Responses API). Server-side only. The model is
+    // a setting (OPENAI_MODEL) so it can be upgraded without a code change. Without the key the Analysis
+    // tab still shows Skyfly's own computed metrics and rule-based signals, and says ChatGPT is off.
+    analyst: process.env.OPENAI_API_KEY ? {
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL || 'gpt-5',
+      reasoningEffort: ['minimal', 'low', 'medium', 'high'].includes(process.env.OPENAI_REASONING_EFFORT) ? process.env.OPENAI_REASONING_EFFORT : 'medium',
+      apiBase: !isProduction && process.env.OPENAI_API_BASE ? process.env.OPENAI_API_BASE : 'https://api.openai.com',
+      timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS) || 120000,
+      dailyLimit: Number(process.env.OPENAI_DAILY_ANALYSES) || 30,
+    } : null,
     tiktokApiBase: process.env.TIKTOK_API_BASE || 'https://business-api.tiktok.com/open_api/v1.3',
     // Must match the browser event (the SDK sends CompletePayment) so TikTok deduplicates them.
     tiktokPurchaseEvent: process.env.TIKTOK_PURCHASE_EVENT || 'CompletePayment',

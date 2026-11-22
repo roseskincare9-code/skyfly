@@ -1,8 +1,8 @@
 <%- include('partials/head', { title: 'AI Media Buyer' }) %>
 <%- include('partials/nav') %>
 <%
-  const TAB_LABELS = { overview: 'AI Media Buyer', campaigns: 'Campaigns', creatives: 'Creative Library', recommendations: 'AI Recommendations', briefs: 'Video Briefs', approvals: 'Approvals', reports: 'Reports', settings: 'Advertising Settings' };
-  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Ad account disconnected; its token was deleted. Nothing was changed in Meta.', selected: 'Ad account switched.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.' };
+  const TAB_LABELS = { overview: 'AI Media Buyer', analysis: 'Performance Analysis', campaigns: 'Campaigns', creatives: 'Creative Library', recommendations: 'AI Recommendations', briefs: 'Video Briefs', approvals: 'Approvals', reports: 'Reports', settings: 'Advertising Settings' };
+  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Ad account disconnected; its token was deleted. Nothing was changed in Meta.', selected: 'Ad account switched.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.', monitoring: 'Monitoring settings saved.', dismissed: 'Alert dismissed.' };
   const cur = connection?.currency || business.currency;
   const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
   const num = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: d });
@@ -10,13 +10,17 @@
   const pending = items.filter((i) => i.status === 'proposed');
   const PERIODS = { today: 'Today', yesterday: 'Yesterday', last_7d: 'Last 7 days', last_30d: 'Last 30 days' };
   const statusPill = (s) => ({ proposed: 'pending', approved: 'confirmed', executed: 'delivered', rejected: 'cancelled', failed: 'cancelled', info: 'processing' }[s] || 'pending');
-  const genBtn = (task, label, secondary = true) => `<form method="post" action="${mbBase}/generate/${task}" style="display:inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="btn${secondary ? ' secondary' : ''}" type="submit" ${aiOn ? '' : 'disabled title="Cloudy is not switched on yet"'} data-generate="${task}">${label}</button></form>`;
+  const analyzeLink = (secondary = false) => `<a class="btn${secondary ? ' secondary' : ''}" href="${mbBase}?tab=analysis" data-analyze-link>Analyze my campaigns (ChatGPT)</a>`;
+  // Performance tasks belong to ChatGPT when it is on: Cloudy's buttons for them give way to "Analyze my campaigns".
+  const genBtn = (task, label, secondary = true) => !cloudyHandles(task) ? '' : `<form method="post" action="${mbBase}/generate/${task}" style="display:inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="btn${secondary ? ' secondary' : ''}" type="submit" ${aiOn ? '' : 'disabled title="Cloudy is not switched on yet"'} data-generate="${task}">${label}</button></form>`;
 %>
 <main data-media-buyer>
   <div class="page-head"><div><h1>AI Media Buyer</h1><p>Cloudy works only with <%= business.name %>'s own profile, Meta ad account and creatives. Draft-first: nothing goes live or spends money without your approval.</p></div></div>
   <% if (notice && NOTICES[notice]) { %><div class="notice" role="status"><%= NOTICES[notice] %></div><% } %>
   <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
+  <p class="muted" style="font-size:13px" data-ai-engines>AI engines · <strong>ChatGPT</strong> (performance analysis &amp; recommendations): <span data-analyst-status><%= analystOn ? 'on' : 'off' %></span> · <strong>Cloudy</strong> (Ask, creative briefs, campaign drafts, creative review): <span data-cloudy-status><%= aiOn ? 'on' : 'off' %></span></p>
   <% if (!aiOn) { %><div class="warn-box" data-ai-off>Cloudy's AI answers are not switched on yet (the server has no ANTHROPIC_API_KEY). Your profile, Meta connection, live numbers and creative library work now.</div><% } %>
+  <% if (!analystOn) { %><div class="warn-box" data-analyst-off>ChatGPT analysis is not switched on yet (the server has no OPENAI_API_KEY). The Performance Analysis tab still shows Skyfly's own rule-based checks.</div><% } %>
 
   <% if (accounts.length) { %>
   <form method="post" action="<%= mbBase %>/accounts/select" class="row" data-account-switcher style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
@@ -77,9 +81,60 @@
       </form>
       <p class="muted" style="font-size:13px">Try: What should we test next? · Why is my CPA increasing? · What creative do we need next? · Should we increase the budget?</p>
     </div>
-    <div class="card"><h2>Quick actions</h2><div class="row" style="gap:8px;flex-wrap:wrap"><%- genBtn('audit', 'Run account audit', false) %><%- genBtn('recommendations', 'Get recommendations') %><%- genBtn('briefs', 'New creative briefs') %><%- genBtn('campaign_draft', 'Draft a campaign') %><%- genBtn('report_daily', 'Daily report') %></div>
+    <% if (alerts.length) { %><div class="warn-box" data-alerts-count><a href="<%= mbBase %>?tab=analysis"><%= alerts.length %> monitoring alert(s)</a> waiting in Performance Analysis.</div><% } %>
+    <div class="card"><h2>Quick actions</h2><div class="row" style="gap:8px;flex-wrap:wrap"><% if (analystOn) { %><%- analyzeLink() %><% } %><%- genBtn('audit', 'Run account audit', false) %><%- genBtn('recommendations', 'Get recommendations') %><%- genBtn('briefs', 'New creative briefs') %><%- genBtn('campaign_draft', 'Draft a campaign') %><%- genBtn('report_daily', 'Daily report') %></div>
       <% if (pending.length) { %><p style="margin-bottom:0"><a href="<%= mbBase %>?tab=approvals"><%= pending.length %> item(s) waiting for your approval</a></p><% } %></div>
     <div class="card"><h2>Recent AI work</h2><% if (!items.length) { %><p class="muted">Nothing yet.</p><% } else { %><ul><% items.slice(0, 8).forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <span class="pill <%= statusPill(i.status) %>"><%= i.status %></span> · <%= formatDate(i.created_at) %></li><% }) %></ul><% } %></div>
+  <% } %>
+
+  <% if (tab === 'analysis') { const A = analysis; const mon = A.monitor || {}; const PL = { today: 'Today (so far)', yesterday: 'Yesterday', last_7d: 'Last 7 days', last_14d: 'Last 14 days', last_30d: 'Last 30 days' }; %>
+    <div class="card" data-analysis-form><h2>Analyze my campaigns</h2>
+      <p class="muted">ChatGPT analyses the selected ad account's real Meta numbers (fetched fresh from Meta each time) and recommends what to keep, change or test, with the figures behind each point. It never changes anything in Meta: actions that would change a campaign go to Approvals.</p>
+      <% if (!connection) { %><p>No Meta ad account connected yet. <a href="<%= mbBase %>?tab=settings">Connect one</a> first.</p>
+      <% } else { %>
+      <form method="post" action="<%= mbBase %>/analysis"><%- include('partials/csrf') %>
+        <div class="grid">
+          <div><label for="an-account">Ad account</label><select id="an-account" name="account"><% accounts.forEach((a) => { %><option value="<%= a.ad_account_id %>" <%= a.selected ? 'selected' : '' %>><%= a.ad_account_name || 'Ad account' %> · act_<%= a.ad_account_id %></option><% }) %></select></div>
+          <div><label for="an-period">Date range</label><select id="an-period" name="period"><% A.periods.forEach((p) => { %><option value="<%= p %>" <%= p === 'last_7d' ? 'selected' : '' %>><%= PL[p] %></option><% }) %><option value="custom">Custom (dates below)</option></select></div>
+          <div><label for="an-since">From (custom)</label><input id="an-since" name="since" type="date"></div>
+          <div><label for="an-until">To (custom)</label><input id="an-until" name="until" type="date"></div>
+          <div><label for="an-campaign">Campaign</label><select id="an-campaign" name="campaign"><option value="">All campaigns</option><% A.campaigns.forEach((c) => { %><option value="<%= c.id %>"><%= c.name %> (<%= c.status %>)</option><% }) %></select></div>
+          <div><label for="an-product">Product focus (optional)</label><select id="an-product" name="product"><option value="">None</option><% A.products.forEach((p) => { %><option value="<%= p.id %>"><%= p.name %></option><% }) %></select></div>
+        </div>
+        <button class="btn" type="submit" style="margin-top:10px" data-analyze <%= analystOn ? '' : 'disabled title="ChatGPT is not switched on yet"' %>>Analyze my campaigns</button>
+        <p class="muted" style="font-size:13px;margin-bottom:0">Meta does not attribute purchases to individual products; product focus adds Skyfly's own orders for that product as context.</p>
+      </form><% } %>
+    </div>
+
+    <div class="card" data-alerts><h2>Monitoring alerts</h2>
+      <% if (!alerts.length) { %><p class="muted">No open alerts.<%= mon.enabled ? '' : ' Monitoring is off (settings below).' %></p><% } else { %>
+      <ul><% alerts.forEach((al) => { %><li data-alert="<%= al.kind %>"><span class="pill <%= al.severity === 'opportunity' ? 'delivered' : al.severity === 'high' ? 'cancelled' : 'pending' %>"><%= al.severity %></span> <%= al.message %><% if (al.suggestion) { %><br><span class="muted"><%= al.suggestion %></span><% } %><br><span class="muted">act_<%= al.ad_account_id %> · <%= formatDate(al.created_at) %></span>
+        <form method="post" action="<%= mbBase %>/alerts/<%= al.id %>/dismiss" style="display:inline"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Dismiss</button></form></li><% }) %></ul><% } %>
+    </div>
+
+    <div class="card" data-analyses><h2>Analyses</h2>
+      <% if (!A.runs.length) { %><p class="muted">No analyses yet.</p><% } else { %>
+      <div class="table-wrap"><table><thead><tr><th>Run</th><th>Ad account</th><th>Dates</th><th>Data fetched</th><th>Result</th></tr></thead><tbody>
+      <% A.runs.forEach((r) => { %><tr><td><a href="<%= mbBase %>/analysis/<%= r.id %>">#<%= r.id %></a> · <%= formatDate(r.created_at) %></td><td>act_<%= r.ad_account_id %></td><td><%= r.scope.since %> → <%= r.scope.until %><%= r.scope.campaign_id ? ` · campaign ${r.scope.campaign_id}` : '' %></td><td><%= r.data_fetched_at ? formatDate(r.data_fetched_at) : '—' %></td>
+        <td><% if (r.status === 'ok') { %><span class="pill delivered">ready</span><% } else { %><span class="pill cancelled">failed</span> <span class="muted"><%= r.error %></span><% } %></td></tr><% }) %>
+      </tbody></table></div><% } %>
+    </div>
+
+    <div class="card" data-monitoring><h2>Automatic monitoring</h2>
+      <p class="muted">Skyfly checks the selected ad account's last 7 days on a schedule and raises alerts. It never pauses, edits or spends; it only tells you. (Rule-based: no AI cost.)</p>
+      <form method="post" action="<%= mbBase %>/monitoring"><%- include('partials/csrf') %>
+        <label><input type="checkbox" name="enabled" <%= mon.enabled ? 'checked' : '' %>> Monitor this business's selected ad account</label>
+        <div class="grid">
+          <div><label for="mon-cpa">Alert when cost per purchase is above (<%= cur %>)</label><input id="mon-cpa" name="cpa_threshold" inputmode="decimal" value="<%= mon.cpa_threshold_minor ? Number(mon.cpa_threshold_minor) / 100 : '' %>"></div>
+          <div><label for="mon-noconv">Alert when a campaign spends this with no conversions (<%= cur %>)</label><input id="mon-noconv" name="no_conversion_spend" inputmode="decimal" placeholder="default: 2 × average CPA" value="<%= mon.no_conversion_spend_minor ? Number(mon.no_conversion_spend_minor) / 100 : '' %>"></div>
+          <div><label for="mon-ctr">Alert when link CTR drops by (%)</label><input id="mon-ctr" name="ctr_drop_pct" inputmode="numeric" value="<%= mon.ctr_drop_pct ?? 30 %>"></div>
+          <div><label for="mon-freq">Alert when frequency reaches</label><input id="mon-freq" name="frequency_max" inputmode="decimal" value="<%= mon.frequency_max ?? 3.5 %>"></div>
+          <div><label for="mon-int">Check every</label><select id="mon-int" name="interval_hours"><% [6, 12, 24].forEach((h) => { %><option value="<%= h %>" <%= (mon.interval_hours ?? 24) === h ? 'selected' : '' %>><%= h %> hours</option><% }) %></select></div>
+        </div>
+        <button class="btn" type="submit" style="margin-top:10px">Save monitoring</button>
+        <% if (mon.last_run_at) { %><p class="muted" style="font-size:13px;margin-bottom:0">Last check <%= formatDate(mon.last_run_at) %><%= mon.last_error ? ` · ${mon.last_error}` : '' %></p><% } %>
+      </form>
+    </div>
   <% } %>
 
   <% if (tab === 'creatives') { %>
@@ -100,7 +155,7 @@
   <% } %>
 
   <% [['recommendations', 'recommendation', 'AI Recommendations', 'recommendations', 'Get new recommendations'], ['briefs', 'brief', 'Video & image briefs', 'briefs', 'Write new creative briefs'], ['reports', null, 'Reports & audits', null, null]].forEach(([t, kind, title, task, label]) => { if (tab !== t) return; const list = kind ? byKind(kind) : items.filter((i) => ['report', 'audit'].includes(i.kind)); %>
-    <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0"><%= title %></h2><div class="row" style="gap:8px"><% if (task) { %><%- genBtn(task, label, false) %><% } else { %><%- genBtn('report_daily', 'Daily report', false) %><%- genBtn('report_weekly', 'Weekly report') %><%- genBtn('audit', 'Full audit') %><% } %></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0"><%= title %></h2><div class="row" style="gap:8px"><% if (analystOn && t !== 'briefs') { %><%- analyzeLink() %><% } %><% if (task) { %><%- genBtn(task, label, false) %><% } else { %><%- genBtn('report_daily', 'Daily report', false) %><%- genBtn('report_weekly', 'Weekly report') %><%- genBtn('audit', 'Full audit') %><% } %></div></div>
       <% if (!list.length) { %><p class="muted">Nothing yet.</p><% } else { %><ul><% list.forEach((i) => { %><li><a href="<%= mbBase %>/items/<%= i.id %>"><%= i.title %></a> · <span class="pill <%= statusPill(i.status) %>"><%= i.status %></span> · <%= formatDate(i.created_at) %> · <span class="muted"><%= i.data_basis %></span></li><% }) %></ul><% } %>
       <% if (t === 'briefs') { %><p class="muted" style="font-size:13px;margin-bottom:0">Videos are produced outside Skyfly from these briefs; upload the finished video to the Creative Library and ask Cloudy to review it.</p><% } %>
     </div>
