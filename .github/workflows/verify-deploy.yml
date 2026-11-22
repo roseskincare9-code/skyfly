@@ -44,3 +44,7 @@ jobs:
           LINK_ENV_GROUP: ${{ inputs.link_env_group }}
           FIND_ORDER: ${{ inputs.find_order }}
           FIND_AT: ${{ inputs.find_at }}
+      - run: node scripts/activation-diag.mjs
+        if: always()
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
