@@ -66,3 +66,6 @@ for (const slug of ['larosenigeria', 'larose-skincare']) {
   if (b?.upsell) console.log(`CATALOG ${slug}  upsell: ${b.upsell.code} | ${b.upsell.name} | ${b.upsell.price ?? b.upsell.price_minor}`);
   if (!list.length) console.log(`CATALOG ${slug} raw: ${t.slice(0, 400)}`);
 }
+{ const r = await fetch('https://getskyfly.com/p/larose-skincare/'); const h = await r.text();
+  const opts = [...h.matchAll(/data-product="([^"]+)" data-price="(\d+)"/g)].map((m) => `${m[1]}=${m[2]}`);
+  console.log(`HOSTED /p/larose-skincare/ HTTP ${r.status} options: ${opts.join(', ')} | facial-set as package: ${/data-product="facial-set"/.test(h)} | old packages: ${/package-1/.test(h)}`); }
