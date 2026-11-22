@@ -326,10 +326,15 @@ describe('actions: prepare → approve → re-check → execute → verify → l
     const id = idOf(ok);
     const view = await ownerA.get(`${mb(A)}/items/${id}`).expect(200);
     assert.match(view.text, /Daily budget 6,000 \(now 5,000\)/);
+    assert.match(view.text, /data-limit-confirm/, 'an increase above the approved limit asks for the limit');
     meta.calls.length = 0;
-    const r = await post(ownerA, `${mb(A)}/items/${id}/approve`);
+    const refused = await post(ownerA, `${mb(A)}/items/${id}/approve`);
+    assert.equal(refused.status, 400); assert.match(refused.text, /approved daily limit/);
+    assert.deepEqual(writes(), [], 'nothing applied without authorising the limit');
+    const r = await post(ownerA, `${mb(A)}/items/${id}/approve`, { raise_limit: 'yes' });
     assert.match(r.headers.location, /done=executed/);
     assert.deepEqual(writes().map((c) => [c.path, c.body]), [['/601', { daily_budget: '600000' }]]);
+    assert.equal(Number((await pool.query('SELECT approved_daily_limit_minor FROM ad_profiles WHERE business_id = $1', [A])).rows[0].approved_daily_limit_minor), 600000);
     assert.equal(meta.objects['601'].daily_budget, '600000');
   });
 

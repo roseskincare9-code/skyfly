@@ -2,7 +2,7 @@
 <%- include('partials/nav') %>
 <%
   const TAB_LABELS = { overview: 'AI Media Buyer', analysis: 'Performance Analysis', whatsapp: 'WhatsApp Conversion Audit', campaigns: 'Campaigns', creatives: 'Creative Library', recommendations: 'AI Recommendations', briefs: 'Video Briefs', approvals: 'Approvals', reports: 'Reports', settings: 'Advertising Settings' };
-  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Ad account disconnected; its token was deleted. Nothing was changed in Meta.', selected: 'Ad account switched.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.', monitoring: 'Monitoring settings saved.', dismissed: 'Alert dismissed.', leads: 'WhatsApp lead log imported.' };
+  const NOTICES = { profile: 'Business profile saved.', connected: 'Meta ad account connected and verified with Meta.', disconnected: 'Ad account disconnected; its token was deleted. Nothing was changed in Meta.', selected: 'Ad account switched.', uploaded: 'Added to the creative library.', reviewed: 'Cloudy reviewed the creative.', deleted: 'Creative deleted.', monitoring: 'Monitoring settings saved.', dismissed: 'Alert dismissed.', leads: 'WhatsApp lead log imported.', onboarding: 'Saved.', onboarded: 'Your profile is complete. Skyfly is now analysing the business and preparing a campaign plan.', auto: 'Skyfly started the analysis and campaign plan.', health: 'Connection re-checked with Meta.' };
   const cur = connection?.currency || business.currency;
   const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
   const num = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: d });
@@ -12,10 +12,10 @@
   const statusPill = (s) => ({ proposed: 'pending', approved: 'confirmed', executed: 'delivered', rejected: 'cancelled', failed: 'cancelled', info: 'processing' }[s] || 'pending');
   const analyzeLink = (secondary = false) => `<a class="btn${secondary ? ' secondary' : ''}" href="${mbBase}?tab=analysis" data-analyze-link>Analyze my campaigns</a>`;
   // Performance tasks belong to ChatGPT when it is on: Cloudy's buttons for them give way to "Analyze my campaigns".
-  const genBtn = (task, label, secondary = true) => !cloudyHandles(task) ? '' : `<form method="post" action="${mbBase}/generate/${task}" style="display:inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="btn${secondary ? ' secondary' : ''}" type="submit" ${aiOn ? '' : 'disabled title="Cloudy is not switched on yet"'} data-generate="${task}">${label}</button></form>`;
+  const genBtn = (task, label, secondary = true) => !cloudyHandles(task) ? '' : `<form method="post" action="${mbBase}/generate/${task}" style="display:inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="btn${secondary ? ' secondary' : ''}" type="submit" ${aiOn || (task === 'campaign_draft' && aiEngine) ? '' : 'disabled title="Cloudy is not switched on yet"'} data-generate="${task}">${label}</button></form>`;
 %>
 <main data-media-buyer>
-  <div class="page-head"><div><h1>AI Media Buyer</h1><p>Cloudy works only with <%= business.name %>'s own profile, Meta ad account and creatives. Draft-first: nothing goes live or spends money without your approval.</p></div></div>
+  <div class="page-head"><div><h1>AI Media Buyer</h1><p>Skyfly's AI media buyer works only with <%= business.name %>'s own profile, Meta ad account and creatives. Nothing goes live or spends money without your explicit approval.</p></div></div>
   <% if (notice && NOTICES[notice]) { %><div class="notice" role="status"><%= NOTICES[notice] %></div><% } %>
   <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
   <p class="muted" style="font-size:13px" data-ai-engines>Analysis engines (Performance Analysis, WhatsApp audit) · <strong>ChatGPT</strong>: <span data-analyst-status><%= engineOn.chatgpt ? 'on' : 'off (OPENAI_API_KEY)' %></span> · <strong>Claude</strong>: <span data-claude-status><%= engineOn.claude ? 'on' : 'off (ANTHROPIC_API_KEY)' %></span> · <strong>Cloudy</strong> assistant (Ask, creative briefs, campaign drafts, creative review): <span data-cloudy-status><%= aiOn ? 'on' : 'off' %></span></p>
@@ -35,6 +35,35 @@
   <nav class="row" role="tablist" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <% Object.entries(TAB_LABELS).forEach(([k, l]) => { %><a role="tab" class="btn <%= k === tab ? '' : 'secondary' %>" aria-selected="<%= k === tab %>" href="<%= mbBase %>?tab=<%= k %>" data-tab="<%= k %>"><%= l %><%= k === 'approvals' && pending.length ? ` (${pending.length})` : '' %></a><% }) %>
   </nav>
+
+  <% if (tab === 'overview') { const O = onb; const st = O.onboarding; const steps = [
+      ['Business profile', O.complete, O.complete ? 'complete' : `missing: ${O.missing.map((k) => onboardingFields[k]).join(', ')}`],
+      ['Meta ad account', Boolean(O.connected), O.connected ? `act_${O.connected.ad_account_id}${O.connected.health?.problems?.length ? ` · ${O.connected.health.problems.length} issue(s), see Advertising Settings` : ''}` : 'not connected (Advertising Settings)'],
+      ['Business analysis', Boolean(st.analysis_id), st.analysis_id ? 'ready' : '—'],
+      ['Campaign plan', Boolean(st.plan_item_id), st.plan_item_id ? 'ready for your review' : '—'],
+      ['Built in Meta (PAUSED)', builds.some((b) => ['built', 'launched'].includes(b.status)), builds[0] ? builds[0].status : '—'],
+      ['Launched', builds.some((b) => b.status === 'launched'), builds.some((b) => b.status === 'launched') ? 'yes' : 'only after your authorisation'],
+    ]; %>
+    <div class="card" data-getting-started id="onboarding"><h2>Getting started</h2>
+      <ol class="checklist" style="padding-left:18px"><% steps.forEach(([l, ok, d]) => { %><li data-step-ok="<%= ok %>"><%= ok ? '✅' : '⬜' %> <strong><%= l %></strong> <span class="muted">· <%= d %></span></li><% }) %></ol>
+      <p data-auto-status>Automatic analysis and plan: <strong><%= st.auto_status %></strong><%= st.auto_detail ? ` · ${st.auto_detail}` : '' %>
+        <% if (st.plan_item_id) { %> · <a href="<%= mbBase %>/items/<%= st.plan_item_id %>">open the plan</a><% } %><% if (st.analysis_id) { %> · <a href="<%= mbBase %>/analysis/<%= st.analysis_id %>">open the analysis</a><% } %></p>
+      <% if (O.complete && st.auto_status !== 'running') { %><form method="post" action="<%= mbBase %>/onboarding/run" style="display:inline"><%- include('partials/csrf') %><button class="btn secondary" type="submit" data-run-auto <%= aiEngine && O.connected ? '' : 'disabled' %>>Run analysis and plan now</button></form><% } %>
+      <div data-onboarding-chat style="margin-top:12px">
+        <div style="max-height:380px;overflow:auto">
+          <% if (!onbMessages.length) { %><div class="card" style="margin:6px 0"><strong>Skyfly media buyer:</strong> Hi! I'll set up your advertising in a few messages. Tell me about your business: what you sell, at what price, where your customers are, and your daily ad budget.<%= O.missing.length ? '' : ' Your profile is already complete.' %></div><% } %>
+          <% onbMessages.forEach((m) => { %><div style="margin:8px 0;<%= m.role === 'user' ? 'text-align:right' : '' %>"><div class="<%= m.role === 'user' ? 'pill' : 'card' %>" style="white-space:pre-wrap;display:inline-block;max-width:92%;text-align:left;margin:0"><%= m.content %></div></div><% }) %>
+        </div>
+        <% if (aiEngine) { %><form method="post" action="<%= mbBase %>/onboarding/message" class="row" style="gap:8px;margin-top:8px"><%- include('partials/csrf') %>
+          <input name="message" required maxlength="2000" placeholder="<%= O.missing.length ? `e.g. ${onboardingFields[O.missing[0]]}…` : 'Anything to add or change?' %>" style="flex:1;min-width:200px">
+          <button class="btn" type="submit" data-onboarding-send>Send</button></form>
+        <% } else { %><p class="muted" data-onboarding-form-fallback>The AI conversation switches on when the server has an AI key. Meanwhile fill in the <a href="<%= mbBase %>?tab=settings#profile">business profile</a>; Skyfly uses it the same way.</p><% } %>
+      </div>
+    </div>
+    <% if (builds.length || activity.length) { %><div class="card" data-activity><h2>Media buyer activity</h2>
+      <% if (builds.length) { %><ul><% builds.slice(0, 5).forEach((b) => { %><li><a href="<%= mbBase %>/items/<%= b.ad_item_id %>"><%= b.title %></a> · build <span class="pill <%= ['built', 'launched'].includes(b.status) ? 'delivered' : b.status.includes('fail') ? 'cancelled' : 'pending' %>"><%= b.status %></span><%= b.error ? ` · ${b.error.slice(0, 120)}` : '' %></li><% }) %></ul><% } %>
+      <ul class="muted" style="font-size:13px"><% activity.forEach((x) => { %><li><%= formatDate(x.created_at) %> · <%= x.action.replace('media_buyer.', '').replace(/_/g, ' ') %></li><% }) %></ul></div><% } %>
+  <% } %>
 
   <% if (tab === 'overview' || tab === 'campaigns') { %>
     <% if (!connection) { %>
@@ -200,6 +229,7 @@
         <h3><%= title %> (<%= list.length %>)</h3><% if (!list.length) { %><p class="muted">None.</p><% } else { %><ul <%= attr %>><%- list.map(row).join('') %></ul><% } %>
       <% }) %>
     </div>
+    <div class="card" data-builds><h2>Campaigns built by Skyfly</h2><% if (!builds.length) { %><p class="muted">None yet. Approve a campaign plan to build it in Meta (PAUSED).</p><% } else { %><ul><% builds.forEach((b) => { %><li><a href="<%= mbBase %>/items/<%= b.ad_item_id %>"><%= b.title %></a> · <span class="pill <%= ['built', 'launched'].includes(b.status) ? 'delivered' : b.status.includes('fail') ? 'cancelled' : 'pending' %>"><%= b.status %></span> · <%= cur %> <%= (Number(b.daily_budget_minor) / 100).toLocaleString('en-NG') %>/day<%= b.error ? ` · ${b.error.slice(0, 140)}` : '' %></li><% }) %></ul><% } %></div>
     <div class="card" data-action-log><h2>Action log</h2><% if (!actionLog.length) { %><p class="muted">No change has been applied to Meta by Skyfly.</p><% } else { %>
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Action</th><th>Object</th><th>Before</th><th>Requested</th><th>After (Meta)</th><th>Outcome</th></tr></thead><tbody>
       <% actionLog.forEach((l) => { %><tr><td><%= formatDate(l.created_at) %></td><td><%= l.operation %></td><td><%= l.object_level %> <%= l.object_id %> · act_<%= l.ad_account_id %></td><td><%= JSON.stringify(l.before_state) %></td><td><%= JSON.stringify(l.requested) %></td><td><%= JSON.stringify(l.after_state) %></td><td><%= l.outcome %><%= l.error ? `: ${l.error}` : '' %></td></tr><% }) %>
@@ -215,7 +245,10 @@
         <td><span class="pill <%= a.status === 'verified' ? 'delivered' : 'cancelled' %>"><%= a.status === 'verified' ? 'Verified with Meta' : 'Not working' %></span><% if (a.last_error) { %><br><span class="muted"><%= a.last_error %></span><% } %></td>
         <td><%= a.page_name ? `${a.page_name} (${a.page_id})` : 'none found' %></td>
         <td><%= a.pixel_id ? `${a.pixel_name || ''} (${a.pixel_id})` : 'none found' %></td>
-        <td>encrypted, ending <%= a.token_hint %></td>
+        <td>encrypted, ending <%= a.token_hint %>
+          <% const H = a.health; if (H) { %><br><span class="muted" style="font-size:12px" data-health>Checked <%= formatDate(a.health_checked_at) %><% if (H.account) { %> · account <%= H.account.status %><% } %><% if (H.permissions) { %> · ads_management <%= H.permissions.ads_management || 'not granted' %><% } %><% if (H.capabilities) { %> · drafts <%= H.capabilities.build_drafts ? 'yes' : 'no' %>, launch <%= H.capabilities.launch ? 'yes' : 'no' %>, tracking <%= H.capabilities.conversion_tracking ? 'yes' : 'no' %>, Instagram <%= H.capabilities.instagram ? 'yes' : 'no' %><% } %></span>
+          <% (H.problems || []).forEach((pr) => { %><br><span class="pill cancelled" style="font-size:12px" data-health-problem><%= pr %></span><% }) %><% if (H.error) { %><br><span class="pill cancelled"><%= H.error %></span><% } %><% } %>
+          <form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/health"><%- include('partials/csrf') %><button class="btn secondary" type="submit" data-recheck>Check with Meta</button></form></td>
         <td><% if (!a.selected) { %><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/select"><%- include('partials/csrf') %><input type="hidden" name="tab" value="settings"><button class="btn secondary" type="submit">Use this account</button></form><% } %>
             <% if (isOwner) { %><details data-disconnect><summary>Disconnect…</summary><p class="muted" style="font-size:13px;margin:6px 0">Removes act_<%= a.ad_account_id %> from this business and deletes its token. Nothing changes in Meta.</p><form method="post" action="<%= mbBase %>/accounts/<%= a.ad_account_id %>/disconnect"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Yes, disconnect</button></form></details><% } %></td></tr><% }) %>
       </tbody></table></div><% } %>
@@ -227,9 +260,9 @@
           <button class="btn" type="submit" style="margin-top:10px">Verify and connect</button>
         </form></details>
     </div>
-    <div class="card"><h2>Business advertising profile</h2><p class="muted">Short answers are fine; Cloudy uses them as context. Products and landing pages come from Skyfly automatically.</p>
+    <div class="card" id="profile"><h2>Business advertising profile</h2><p class="muted">Short answers are fine. The onboarding conversation fills this in for you; products and landing pages come from Skyfly automatically.<% if (p.approved_daily_limit_minor) { %> Approved daily limit for Skyfly-launched campaigns: <strong data-approved-limit><%= cur %> <%= (Number(p.approved_daily_limit_minor) / 100).toLocaleString('en-NG') %></strong>.<% } %></p>
       <form method="post" action="<%= mbBase %>/profile" data-profile><%- include('partials/csrf') %>
-        <% [['industry', 'Industry'], ['website', 'Website'], ['offer', 'Products and services'], ['prices', 'Prices (if not in Products)'], ['locations', 'Target locations'], ['audience', 'Target audience'], ['customer_profile', 'Customer profile'], ['goals', 'Advertising goals'], ['platforms', 'Preferred platforms'], ['brand_description', 'Brand description'], ['brand_voice', 'Brand voice']].forEach(([k, l]) => { %>
+        <% [['industry', 'Business category'], ['business_location', 'Where the business is based'], ['website', 'Website or landing page'], ['social_accounts', 'Social accounts'], ['offer', 'Products and services'], ['prices', 'Prices (if not in Products)'], ['locations', 'Target markets'], ['audience', 'Target customer'], ['customer_profile', 'Customer profile'], ['goals', 'Advertising goals'], ['platforms', 'Preferred platforms'], ['fulfilment', 'Delivery / fulfilment'], ['payment_methods', 'How customers pay'], ['constraints', 'Anything to avoid'], ['brand_description', 'Brand description'], ['brand_voice', 'Brand voice']].forEach(([k, l]) => { %>
           <label for="<%= k %>"><%= l %></label><input id="<%= k %>" name="<%= k %>" maxlength="2000" value="<%= p[k] || '' %>">
         <% }) %>
         <label for="daily_budget">Daily advertising budget (<%= cur %>)</label><input id="daily_budget" name="daily_budget" inputmode="decimal" value="<%= p.daily_budget_minor == null ? '' : Number(p.daily_budget_minor) / 100 %>">

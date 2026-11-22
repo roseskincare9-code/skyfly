@@ -41,6 +41,14 @@ export async function prepareAction(pool, config, { businessId, userId, adAccoun
     if (minor === current.daily_budget) throw new ActionError('The proposed budget is the same as the current one.', 400);
     if (minor < current.daily_budget * 0.5 || minor > current.daily_budget * 1.5) throw new ActionError(`Change the budget by at most 50% at a time (current ${current.daily_budget / 100}). Large jumps reset Meta's learning and are hard to undo.`, 400);
     proposed = { daily_budget: minor };
+    // Spending limit: an increase that would take Skyfly-launched daily budgets above the owner's approved
+    // daily limit needs the owner to authorise the higher limit explicitly on the approval screen.
+    if (minor > current.daily_budget) {
+      const { rows: [l] } = await pool.query(`SELECT p.approved_daily_limit_minor AS lim,
+          (SELECT coalesce(sum(daily_budget_minor), 0) FROM ad_builds WHERE business_id = $1 AND status = 'launched')::bigint AS launched FROM ad_profiles p WHERE p.business_id = $1`, [businessId]);
+      const newTotal = Number(l?.launched ?? 0) + (minor - current.daily_budget);
+      if (!l?.lim || newTotal > Number(l.lim)) proposed.requires_limit = Math.max(newTotal, minor);
+    }
   }
   const body = {
     op, level, object_id: String(o.id), object_name: o.name, current, proposed,
@@ -58,7 +66,11 @@ export async function prepareAction(pool, config, { businessId, userId, adAccoun
 }
 
 // Applies ONE approved action. Returns the updated item, or null if it was not waiting for approval.
-export async function executeAction(pool, config, { businessId, userId, itemId }) {
+export async function executeAction(pool, config, { businessId, userId, itemId, limitConfirmed = false }) {
+  const { rows: [pending] } = await pool.query("SELECT body FROM ad_items WHERE id = $1 AND business_id = $2 AND kind = 'action' AND status = 'proposed'", [itemId, businessId]);
+  if (pending?.body?.proposed?.requires_limit && !limitConfirmed) {
+    throw new ActionError(`This increase takes your approved daily limit to ${pending.body.proposed.requires_limit / 100}. Tick the box authorising that limit to apply it.`, 400);
+  }
   // Claim it atomically: a second click, or a second tab, cannot apply it twice.
   const { rows: [item] } = await pool.query(
     "UPDATE ad_items SET status = 'approved', decided_by = $3, decided_at = now() WHERE id = $1 AND business_id = $2 AND kind = 'action' AND status = 'proposed' RETURNING *",
@@ -98,6 +110,7 @@ export async function executeAction(pool, config, { businessId, userId, itemId }
   let after = null;
   try { after = stateOf(await readOwned(acc, b.object_id)); } catch { /* verified below as false */ }
   const verified = Boolean(after) && (b.op === 'pause' ? after.status === 'PAUSED' : after.daily_budget === b.proposed.daily_budget);
+  if (verified && b.proposed.requires_limit) await pool.query('UPDATE ad_profiles SET approved_daily_limit_minor = GREATEST(coalesce(approved_daily_limit_minor, 0), $2) WHERE business_id = $1', [businessId, b.proposed.requires_limit]);
   await log(verified ? 'executed' : 'failed', before, after, verified ? null : 'Meta accepted the request but reading the object back did not show the change.');
   return finish(verified ? 'executed' : 'failed', { verified, before, after, ...(verified ? {} : { error: 'Meta accepted the request, but reading it back did not show the change. Check it in Ads Manager.' }) });
 }

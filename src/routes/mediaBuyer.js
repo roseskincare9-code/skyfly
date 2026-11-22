@@ -11,6 +11,9 @@ import { ask, generate, reviewCreative, cloudyReady, cloudyHandles, CloudyError,
 import { analyze, analystReady, AnalystError, META_CHANGING, ENGINES, recommendationsOf } from '../services/analyst.js';
 import { prepareAction, executeAction, ActionError } from '../services/actions.js';
 import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
+import { connectionHealth } from '../services/metaAds.js';
+import { generatePlan, updatePlan, buildPlan, launchBuild, BuildError, planContext } from '../services/builder.js';
+import { onboardingState, onboardingTurn, completeOnboarding, startAutoWorkflow, engineFor, FIELDS as ONBOARDING_FIELDS } from '../services/mbOnboarding.js';
 
 export const TABS = ['overview', 'analysis', 'whatsapp', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
 const KINDS = ['image', 'video', 'logo', 'document', 'reference'];
@@ -18,13 +21,13 @@ const MAX = { video: 40 * 1024 * 1024, other: 8 * 1024 * 1024 };
 const ALLOWED_MIME = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|quicktime|webm)|application\/pdf|text\/plain)$/;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX.video, files: 1, fields: 10 } });
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 5 } });
-const PROFILE_FIELDS = ['industry', 'website', 'offer', 'prices', 'locations', 'audience', 'customer_profile', 'goals', 'platforms', 'brand_description', 'brand_voice'];
+const PROFILE_FIELDS = ['industry', 'business_location', 'website', 'social_accounts', 'offer', 'prices', 'locations', 'audience', 'customer_profile', 'goals', 'platforms', 'fulfilment', 'payment_methods', 'constraints', 'brand_description', 'brand_voice'];
 
 export function mediaBuyerRoutes({ pool, config }) {
   const router = Router();
   const base = (req) => `${res0(req)}/media-buyer`;
   const res0 = (req) => `/businesses/${req.business.id}`;
-  const known = (err) => err instanceof MetaError || err instanceof CloudyError || err instanceof AnalystError || err instanceof ActionError;
+  const known = (err) => err instanceof MetaError || err instanceof CloudyError || err instanceof AnalystError || err instanceof ActionError || err instanceof BuildError;
   const engineOn = Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, e.ready(config)]));
 
   async function page(req, res, extra = {}, status = 200) {
@@ -35,7 +38,7 @@ export function mediaBuyerRoutes({ pool, config }) {
       listConnections(pool, id),
       pool.query('SELECT id, kind, title, body, status, data_basis, meta_result, ad_account_id, created_at, decided_at FROM ad_items WHERE business_id = $1 ORDER BY id DESC LIMIT 60', [id]),
       pool.query('SELECT id, kind, name, mime, size_bytes, notes, ai_review, created_at FROM ad_creatives WHERE business_id = $1 ORDER BY id DESC LIMIT 60', [id]),
-      pool.query('SELECT role, content, created_at FROM ad_messages WHERE business_id = $1 ORDER BY id DESC LIMIT 20', [id]),
+      pool.query("SELECT role, content, created_at FROM ad_messages WHERE business_id = $1 AND topic = 'ask' ORDER BY id DESC LIMIT 20", [id]),
     ]);
     // Live Meta numbers only on the pages that show them (each page load reads Meta; nothing is cached).
     const period = ['today', 'yesterday', 'last_7d', 'last_30d'].includes(req.query.period) ? req.query.period : 'last_7d';
@@ -56,11 +59,15 @@ export function mediaBuyerRoutes({ pool, config }) {
       runs: (await pool.query("SELECT id, ad_account_id, engine, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 AND kind = 'whatsapp' ORDER BY id DESC LIMIT 10", [id])).rows,
       leads: await leadLogSummary(pool, id),
     } : null;
+    const onb = await onboardingState(pool, id);
+    const onbMessages = tab === 'overview' ? (await pool.query("SELECT role, content, created_at FROM ad_messages WHERE business_id = $1 AND topic = 'onboarding' ORDER BY id DESC LIMIT 30", [id])).rows.reverse() : [];
+    const builds = ['overview', 'approvals'].includes(tab) ? (await pool.query('SELECT b.id, b.ad_item_id, b.status, b.error, b.daily_budget_minor, b.launched_at, b.updated_at, i.title FROM ad_builds b JOIN ad_items i ON i.id = b.ad_item_id WHERE b.business_id = $1 ORDER BY b.id DESC LIMIT 20', [id])).rows : [];
+    const activity = tab === 'overview' ? (await pool.query("SELECT action, details, created_at FROM audit_log WHERE business_id = $1 AND action LIKE 'media_buyer.%' ORDER BY id DESC LIMIT 12", [id])).rows : [];
     const actionLog = tab === 'approvals' ? (await pool.query('SELECT * FROM ad_action_log WHERE business_id = $1 ORDER BY id DESC LIMIT 30', [id])).rows : [];
     res.set('Cache-Control', 'no-store');
     res.status(status).render('media-buyer', {
       active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
-      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, mbBase: base(req),
+      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, onb, onbMessages, onboardingFields: ONBOARDING_FIELDS, builds, activity, aiEngine: engineFor(config), mbBase: base(req),
       notice: typeof req.query.done === 'string' ? req.query.done : null, error: null, answer: null, ...extra,
     });
   }
@@ -76,6 +83,7 @@ export function mediaBuyerRoutes({ pool, config }) {
        VALUES ($1, ${PROFILE_FIELDS.map((_, i) => `$${i + 2}`).join(', ')}, $${PROFILE_FIELDS.length + 2}, now())
        ON CONFLICT (business_id) DO UPDATE SET ${PROFILE_FIELDS.map((k) => `${k} = EXCLUDED.${k}`).join(', ')}, daily_budget_minor = EXCLUDED.daily_budget_minor, updated_at = now()`,
       [req.business.id, ...PROFILE_FIELDS.map((k) => v[k]), Number.isFinite(budgetMinor) ? budgetMinor : null]);
+    if ((await onboardingState(pool, req.business.id)).complete) await completeOnboarding(pool, config, req.business.id, req.session.userId);
     await audit(pool, req, { action: 'media_buyer.profile_saved', businessId: req.business.id });
     res.redirect(`${base(req)}?tab=settings&done=profile`);
   }));
@@ -84,6 +92,9 @@ export function mediaBuyerRoutes({ pool, config }) {
     try {
       const r = await connectAccount(pool, config, { businessId: req.business.id, userId: req.session.userId, token: req.body.token, adAccountId: req.body.ad_account_id, pageId: req.body.page_id || null });
       await audit(pool, req, { action: 'media_buyer.meta_connected', businessId: req.business.id, details: { adAccount: r.account.id, page: r.page?.id ?? null, pixel: r.pixel?.id ?? null } });
+      await connectionHealth(pool, config, req.business.id, r.account.id).catch(() => null);
+      const st = await onboardingState(pool, req.business.id);
+      if (st.complete && st.onboarding.completed_at && st.onboarding.auto_status !== 'done') startAutoWorkflow(pool, config, req.business.id, req.session.userId);
       return res.redirect(`${base(req)}?tab=settings&done=connected`);
     } catch (err) {
       if (!(err instanceof MetaError)) throw err;
@@ -158,6 +169,14 @@ export function mediaBuyerRoutes({ pool, config }) {
   // Audit, recommendations, creative briefs, campaign draft, daily / weekly report.
   router.post('/generate/:task', asyncHandler(async (req, res) => {
     if (!TASK_NAMES.includes(req.params.task)) return res.status(404).render('error', { message: 'Not found.' });
+    // A campaign draft is a full plan (built later in Meta as PAUSED) when an analysis engine is on.
+    if (req.params.task === 'campaign_draft' && engineFor(config)) {
+      try {
+        const id = await generatePlan(pool, config, { businessId: req.business.id, userId: req.session.userId, note: req.body.note });
+        await audit(pool, req, { action: 'media_buyer.plan_generated', businessId: req.business.id, entityType: 'ad_item', entityId: id });
+        return res.redirect(`${base(req)}/items/${id}`);
+      } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'approvals', error: err.message }, err.status); }
+    }
     try {
       const id = await generate(pool, config, { businessId: req.business.id, userId: req.session.userId, task: req.params.task, note: req.body.note });
       await audit(pool, req, { action: 'media_buyer.generated', businessId: req.business.id, entityType: 'ad_item', entityId: id, details: { task: req.params.task } });
@@ -311,6 +330,65 @@ export function mediaBuyerRoutes({ pool, config }) {
     res.redirect(`${base(req)}?tab=analysis&done=dismissed`);
   }));
 
+  // ---------- Onboarding conversation and the automatic analysis → plan workflow
+  router.post('/onboarding/message', asyncHandler(async (req, res) => {
+    try {
+      const r = await onboardingTurn(pool, config, { businessId: req.business.id, userId: req.session.userId, message: req.body.message });
+      if (r.saved.length) await audit(pool, req, { action: 'media_buyer.onboarding_updated', businessId: req.business.id, details: { fields: r.saved } });
+      res.redirect(`${base(req)}?done=${r.started ? 'onboarded' : 'onboarding'}#onboarding`);
+    } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'overview', error: err.message }, err.status); }
+  }));
+  router.post('/onboarding/run', asyncHandler(async (req, res) => {
+    await pool.query(`INSERT INTO ad_onboarding (business_id, auto_status, updated_at) VALUES ($1, 'idle', now()) ON CONFLICT (business_id) DO NOTHING`, [req.business.id]);
+    startAutoWorkflow(pool, config, req.business.id, req.session.userId);
+    await audit(pool, req, { action: 'media_buyer.auto_workflow_started', businessId: req.business.id });
+    res.redirect(`${base(req)}?done=auto`);
+  }));
+
+  // ---------- Connection health (what the token can do), re-checked on request
+  router.post('/accounts/:accountId/health', asyncHandler(async (req, res) => {
+    try { await connectionHealth(pool, config, req.business.id, req.params.accountId); } catch (err) { if (!known(err)) throw err; return res.status(err.status === 404 ? 404 : 400).render('error', { message: err.message }); }
+    res.redirect(`${base(req)}?tab=settings&done=health`);
+  }));
+
+  // ---------- Campaign plans: generate, edit, build in Meta (PAUSED), launch (explicit authorisation)
+  router.post('/plan', asyncHandler(async (req, res) => {
+    try {
+      const id = await generatePlan(pool, config, { businessId: req.business.id, userId: req.session.userId, adAccountId: req.body.account || null, engine: ['chatgpt', 'claude'].includes(req.body.engine) ? req.body.engine : null, note: req.body.note });
+      await audit(pool, req, { action: 'media_buyer.plan_generated', businessId: req.business.id, entityType: 'ad_item', entityId: id });
+      res.redirect(`${base(req)}/items/${id}`);
+    } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'approvals', error: err.message }, err.status); }
+  }));
+  router.post('/items/:itemId/plan', asyncHandler(async (req, res) => {
+    if (!/^\d+$/.test(req.params.itemId)) return res.status(404).render('error', { message: 'Not found.' });
+    try { await updatePlan(pool, config, { businessId: req.business.id, itemId: req.params.itemId, changes: req.body }); } catch (err) { if (!known(err)) throw err; return res.status(err.status).render('error', { message: err.message }); }
+    res.redirect(`${base(req)}/items/${req.params.itemId}?done=edited`);
+  }));
+  const loadBuild = async (req) => {
+    if (!/^\d+$/.test(req.params.buildId)) return null;
+    return (await pool.query('SELECT * FROM ad_builds WHERE id = $1 AND business_id = $2', [req.params.buildId, req.business.id])).rows[0] ?? null;
+  };
+  router.post('/builds/:buildId/retry', asyncHandler(async (req, res) => {
+    const b = await loadBuild(req);
+    if (!b) return res.status(404).render('error', { message: 'Not found.' });
+    try { await buildPlan(pool, config, { businessId: req.business.id, userId: req.session.userId, itemId: b.ad_item_id }); } catch (err) { if (!known(err)) throw err; return res.status(err.status).render('error', { message: err.message }); }
+    await audit(pool, req, { action: 'media_buyer.build_retried', businessId: req.business.id, entityType: 'ad_build', entityId: b.id });
+    res.redirect(`${base(req)}/items/${b.ad_item_id}`);
+  }));
+  router.post('/builds/:buildId/launch', asyncHandler(async (req, res) => {
+    const b = await loadBuild(req);
+    if (!b) return res.status(404).render('error', { message: 'Not found.' });
+    try {
+      const r = await launchBuild(pool, config, { businessId: req.business.id, userId: req.session.userId, buildId: b.id, authorisedDaily: req.body.authorised_daily, confirmText: req.body.confirm });
+      await audit(pool, req, { action: r.failed ? 'media_buyer.launch_failed' : 'media_buyer.launched', businessId: req.business.id, entityType: 'ad_build', entityId: b.id, details: { daily_minor: b.daily_budget_minor, campaign: r.campaign?.id, effective_status: r.campaign?.effective_status, error: r.failed } });
+      res.redirect(`${base(req)}/items/${b.ad_item_id}?done=${r.failed ? 'launch_failed' : 'launched'}`);
+    } catch (err) {
+      if (!known(err)) throw err;
+      await audit(pool, req, { action: 'media_buyer.launch_refused', businessId: req.business.id, entityType: 'ad_build', entityId: b.id, details: { error: err.message } });
+      return res.redirect(`${base(req)}/items/${b.ad_item_id}?launch_error=${encodeURIComponent(err.message.slice(0, 300))}`);
+    }
+  }));
+
   const loadItem = async (req) => {
     if (!/^\d+$/.test(req.params.itemId)) return null;
     const { rows: [i] } = await pool.query('SELECT * FROM ad_items WHERE id = $1 AND business_id = $2', [req.params.itemId, req.business.id]);
@@ -320,7 +398,11 @@ export function mediaBuyerRoutes({ pool, config }) {
     const item = await loadItem(req);
     if (!item) return res.status(404).render('error', { message: 'Not found.' });
     res.set('Cache-Control', 'no-store');
-    res.render('media-buyer-item', { active: 'mediabuyer', item, mbBase: base(req), notice: typeof req.query.done === 'string' ? req.query.done : null, error: null });
+    const plan = item.kind === 'campaign_draft' && item.body?.format === 'plan';
+    const build = plan ? (await pool.query('SELECT * FROM ad_builds WHERE business_id = $1 AND ad_item_id = $2', [req.business.id, item.id])).rows[0] ?? null : null;
+    const images = plan ? (await planContext(pool, req.business.id)).images : [];
+    const conn = plan ? (await listConnections(pool, req.business.id)).find((c) => c.ad_account_id === item.ad_account_id) ?? null : null;
+    res.render('media-buyer-item', { active: 'mediabuyer', item, mbBase: base(req), notice: typeof req.query.done === 'string' ? req.query.done : null, error: typeof req.query.launch_error === 'string' ? req.query.launch_error.slice(0, 300) : null, build, images, conn });
   }));
 
   // Approval: a campaign draft becomes a PAUSED campaign shell in the business's own Meta account (nothing
@@ -331,10 +413,25 @@ export function mediaBuyerRoutes({ pool, config }) {
     if (item.status !== 'proposed') return res.redirect(`${base(req)}/items/${item.id}`);
     if (item.kind === 'action') {
       // Applies exactly the change shown on this item, re-checked against Meta, then verified and logged.
-      const done = await executeAction(pool, config, { businessId: req.business.id, userId: req.session.userId, itemId: item.id });
+      let done;
+      try { done = await executeAction(pool, config, { businessId: req.business.id, userId: req.session.userId, itemId: item.id, limitConfirmed: req.body.raise_limit === 'yes' }); } catch (err) {
+        if (!known(err)) throw err;
+        return res.status(err.status ?? 400).render('media-buyer-item', { active: 'mediabuyer', item, mbBase: base(req), notice: null, error: err.message, build: null, images: [], conn: null });
+      }
       if (!done) return res.redirect(`${base(req)}/items/${item.id}`);
       await audit(pool, req, { action: done.status === 'executed' ? 'media_buyer.action_executed' : 'media_buyer.action_failed', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { op: item.body.op, object: item.body.object_id, verified: Boolean(done.meta_result?.verified) } });
       return res.redirect(`${base(req)}/items/${item.id}?done=${done.status === 'executed' ? 'executed' : 'failed'}`);
+    }
+    if (item.kind === 'campaign_draft' && item.body?.format === 'plan') {
+      // Approval of a plan = build it in Meta, everything PAUSED (nothing can spend until a separate launch).
+      try {
+        const b = await buildPlan(pool, config, { businessId: req.business.id, userId: req.session.userId, itemId: item.id });
+        await audit(pool, req, { action: b.status === 'built' ? 'media_buyer.build_completed' : 'media_buyer.build_failed', businessId: req.business.id, entityType: 'ad_build', entityId: b.id, details: { error: b.error } });
+        return res.redirect(`${base(req)}/items/${item.id}?done=${b.status === 'built' ? 'built' : 'build_failed'}`);
+      } catch (err) {
+        if (!known(err)) throw err;
+        return res.status(err.status ?? 400).render('media-buyer-item', { active: 'mediabuyer', item, mbBase: base(req), notice: null, error: err.message, build: null, images: (await planContext(pool, req.business.id)).images, conn: null });
+      }
     }
     if (item.kind === 'campaign_draft') {
       try {
@@ -344,7 +441,7 @@ export function mediaBuyerRoutes({ pool, config }) {
       } catch (err) {
         if (!(err instanceof MetaError)) throw err;
         await pool.query("UPDATE ad_items SET meta_result = $3 WHERE id = $1 AND business_id = $2", [item.id, req.business.id, JSON.stringify({ error: err.message })]);
-        return res.status(err.status === 409 ? 409 : 502).render('media-buyer-item', { active: 'mediabuyer', item: { ...item, meta_result: { error: err.message } }, mbBase: base(req), notice: null, error: err.message });
+        return res.status(err.status === 409 ? 409 : 502).render('media-buyer-item', { active: 'mediabuyer', item: { ...item, meta_result: { error: err.message } }, mbBase: base(req), notice: null, error: err.message, build: null, images: [], conn: null });
       }
     } else {
       await pool.query("UPDATE ad_items SET status = 'approved', decided_by = $3, decided_at = now() WHERE id = $1 AND business_id = $2", [item.id, req.business.id, req.session.userId]);

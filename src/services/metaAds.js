@@ -22,7 +22,8 @@ async function graph(config, token, path, { params = {}, method = 'GET', body = 
   if (!res.ok || j.error) {
     const e = j.error ?? {};
     // Never echo the token: Meta's messages do not contain it, and the URL is not included.
-    throw new MetaError(`Meta: ${String(e.message ?? `HTTP ${res.status}`).slice(0, 220)}${e.code ? ` (code ${e.code})` : ''}`, res.status === 401 || e.code === 190 ? 401 : 502);
+    const detail = e.error_user_title || e.error_user_msg ? ` ${[e.error_user_title, e.error_user_msg].filter(Boolean).join(': ')}` : '';
+    throw new MetaError(`Meta: ${String(e.message ?? `HTTP ${res.status}`).slice(0, 220)}${detail.slice(0, 300)}${e.code ? ` (code ${e.code})` : ''}`, res.status === 401 || e.code === 190 ? 401 : res.status >= 500 ? 502 : res.status === 400 || res.status === 403 ? 400 : 502);
   }
   return j;
 }
@@ -59,7 +60,7 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
 export async function listConnections(pool, businessId) {
   const { rows } = await pool.query(
     `SELECT id, business_id, ad_account_id, ad_account_name, currency, account_status, page_id, page_name, pixel_id, pixel_name, token_hint,
-            status, verified_at, last_error, selected, created_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
+            status, verified_at, last_error, selected, created_at, health, health_checked_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
   return rows;
 }
 
@@ -300,6 +301,76 @@ export async function withAccount(pool, config, businessId, adAccountId) {
       const allowed = keys.length === 1 && ((keys[0] === 'status' && change.status === 'PAUSED') || (keys[0] === 'daily_budget' && /^\d+$/.test(String(change.daily_budget))));
       if (!allowed || !/^\d{1,30}$/.test(String(objectId))) throw new MetaError('Skyfly only pauses or sets a daily budget, after approval.', 400);
       return graph(config, token, String(objectId), { method: 'POST', body: change });
+    },
+  };
+}
+
+// ---------- Connection health: what this token can actually do in this account (read-only).
+const ACCOUNT_STATUS = { 1: 'active', 2: 'disabled', 3: 'unsettled (payment due)', 7: 'pending risk review', 8: 'pending settlement', 9: 'in grace period', 100: 'pending closure', 101: 'closed', 201: 'any active', 202: 'any closed' };
+export const NEEDED_PERMISSIONS = { ads_read: 'read campaigns and results', ads_management: 'create drafts, launch, pause and change budgets', pages_show_list: 'see your Facebook Pages', pages_read_engagement: 'use your Page in ads', business_management: 'access ad accounts owned by a Business Manager' };
+export async function connectionHealth(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  let token;
+  try { token = tokenOf(config, c); } catch (err) { return { ok: false, error: err.message }; }
+  const out = { checked_at: new Date().toISOString(), ok: true };
+  try {
+    const perms = await graph(config, token, 'me/permissions', { params: { limit: '100' } }).catch(() => null);
+    out.permissions = perms ? Object.fromEntries((perms.data ?? []).map((p) => [p.permission, p.status])) : null; // null: not reported for this kind of token
+    const acct = await graph(config, token, `act_${c.ad_account_id}`, { params: { fields: 'name,account_status,disable_reason,currency,timezone_name,amount_spent,spend_cap' } });
+    out.account = { name: acct.name, status: ACCOUNT_STATUS[acct.account_status] ?? String(acct.account_status), status_code: acct.account_status, disable_reason: acct.disable_reason ?? 0, currency: acct.currency, timezone: acct.timezone_name, spend_cap: acct.spend_cap ? Number(acct.spend_cap) / 100 : null };
+    const pages = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,name,instagram_business_account{id,username}', limit: '25' } }).catch((e) => ({ error: e.message }));
+    out.pages = pages.error ? { error: pages.error } : (pages.data ?? []).map((p) => ({ id: p.id, name: p.name, instagram: p.instagram_business_account ? { id: p.instagram_business_account.id, username: p.instagram_business_account.username } : null }));
+    const px = await graph(config, token, `act_${c.ad_account_id}/adspixels`, { params: { fields: 'id,name,last_fired_time', limit: '25' } }).catch((e) => ({ error: e.message }));
+    out.pixels = px.error ? { error: px.error } : (px.data ?? []).map((p) => ({ id: p.id, name: p.name, last_fired_time: p.last_fired_time ?? null }));
+    // What Skyfly can do with this connection, worked out from the above.
+    const granted = (p) => out.permissions == null ? null : out.permissions[p] === 'granted';
+    out.capabilities = {
+      read_results: true,
+      build_drafts: granted('ads_management') !== false && out.account.status_code === 1 && Array.isArray(out.pages) && out.pages.length > 0,
+      launch: granted('ads_management') !== false && out.account.status_code === 1,
+      conversion_tracking: Array.isArray(out.pixels) && out.pixels.length > 0,
+      instagram: Array.isArray(out.pages) && out.pages.some((p) => p.instagram),
+    };
+    out.problems = [
+      ...(out.account.status_code !== 1 ? [`The ad account is ${out.account.status}: Meta will not deliver ads until this is resolved in Ads Manager.`] : []),
+      ...(granted('ads_management') === false ? ['The token lacks ads_management: Skyfly can read results but cannot build drafts, launch or change budgets.'] : []),
+      ...(Array.isArray(out.pages) && !out.pages.length ? ['No Facebook Page is available to this ad account: ads cannot be created until a Page is assigned to it.'] : []),
+      ...(Array.isArray(out.pixels) && !out.pixels.length ? ['No pixel (dataset) on this ad account: sales campaigns cannot optimise for purchases.'] : []),
+    ];
+  } catch (err) {
+    out.ok = false; out.error = err.message;
+    if (err.status === 401) await pool.query("UPDATE ad_connections SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1", [c.id, err.message]);
+  }
+  await pool.query('UPDATE ad_connections SET health = $2, health_checked_at = now() WHERE id = $1', [c.id, JSON.stringify(out)]);
+  return out;
+}
+
+// ---------- Campaign builds. Creates objects ONLY as PAUSED (campaigns, ad sets, ads), plus images and
+// creatives (which cannot spend). Activation is a separate call used only by an authorised launch.
+const BUILD_EDGES = new Set(['campaigns', 'adsets', 'adimages', 'adcreatives', 'ads']);
+export async function buildAccess(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first.`, 409);
+  const token = tokenOf(config, c);
+  const act = `act_${c.ad_account_id}`;
+  return {
+    connection: c, act,
+    get: (path, params = {}) => graph(config, token, path, { params }),
+    create: (edge, body) => {
+      if (!BUILD_EDGES.has(edge)) throw new MetaError('Unsupported build step.', 400);
+      if (['campaigns', 'adsets', 'ads'].includes(edge) && body.status !== 'PAUSED') throw new MetaError('Skyfly creates campaigns, ad sets and ads only as PAUSED.', 400);
+      return graph(config, token, `${act}/${edge}`, { method: 'POST', body });
+    },
+    // Used only by launchBuild() after the owner's explicit authorisation.
+    setStatus: (objectId, status) => {
+      if (!['ACTIVE', 'PAUSED'].includes(status) || !/^\d{1,30}$/.test(String(objectId))) throw new MetaError('Invalid status change.', 400);
+      return graph(config, token, String(objectId), { method: 'POST', body: { status } });
+    },
+    geo: async (q, country) => {
+      const r = await graph(config, token, 'search', { params: { type: 'adgeolocation', q, location_types: ['city'], country_code: country, limit: '5' } });
+      return (r.data ?? []).find((x) => x.type === 'city' && (!country || x.country_code === country)) ?? null;
     },
   };
 }
