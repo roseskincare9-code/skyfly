@@ -1,3 +1,4 @@
+import { metaLoginCallbackRoutes } from './routes/metaLogin.js';
 import { billingRoutes } from './routes/billing.js';
 import { PLANS } from './lib/plans.js';
 import { SUPPORT } from './lib/support.js';
@@ -113,7 +114,7 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
 
   // Forms may lead only to Skyfly itself and the official payment pages (Pay now / Connect Stripe or PayPal).
   app.use(helmet({
-    contentSecurityPolicy: { directives: { 'form-action': ["'self'", 'https://checkout.stripe.com', 'https://connect.stripe.com', 'https://www.paypal.com', 'https://www.sandbox.paypal.com', 'https://checkout.paystack.com'] } },
+    contentSecurityPolicy: { directives: { 'form-action': ["'self'", 'https://checkout.stripe.com', 'https://connect.stripe.com', 'https://www.paypal.com', 'https://www.sandbox.paypal.com', 'https://checkout.paystack.com', 'https://www.facebook.com'] } },
   }));
 
   // Dashboard fonts (versioned file names, so they can be cached for a year).
@@ -216,6 +217,8 @@ export function createApp({ pool, config, transformHtml, onPaid, onOrderSaved = 
   app.use(businessRoutes({ pool }));
   // Stripe / PayPal send the owner back here after authorising (signed-in owner, one-time state).
   app.use(paymentCallbackRoutes({ pool, config }));
+  // Meta sends the owner back here after Facebook Login (AI Media Buyer).
+  app.use(metaLoginCallbackRoutes({ pool, config }));
   // Anything saved in the dashboard (pixels, products, pages, publishing) is visible to visitors at
   // once: the public caches are cleared after every successful change.
   app.use((req, res, next) => {
