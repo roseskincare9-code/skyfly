@@ -13,6 +13,7 @@ import { prepareAction, executeAction, ActionError } from '../services/actions.j
 import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
 import { connectionHealth } from '../services/metaAds.js';
 import { generatePlan, updatePlan, buildPlan, launchBuild, BuildError, planContext } from '../services/builder.js';
+import { startLogin, pendingGrant, connectFromGrant, cancelGrant, metaLoginReady, metaLoginMissing, redirectUri } from '../services/metaLogin.js';
 import { onboardingState, onboardingTurn, completeOnboarding, startAutoWorkflow, engineFor, FIELDS as ONBOARDING_FIELDS } from '../services/mbOnboarding.js';
 
 export const TABS = ['overview', 'analysis', 'whatsapp', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
@@ -68,7 +69,9 @@ export function mediaBuyerRoutes({ pool, config }) {
     res.status(status).render('media-buyer', {
       active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
       perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, onb, onbMessages, onboardingFields: ONBOARDING_FIELDS, builds, activity, aiEngine: engineFor(config), mbBase: base(req),
-      notice: typeof req.query.done === 'string' ? req.query.done : null, error: null, answer: null, ...extra,
+      lastConnectFailure: tab === 'settings' ? (await pool.query("SELECT details, created_at FROM audit_log WHERE business_id = $1 AND action = 'media_buyer.meta_connect_failed' AND created_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM audit_log s WHERE s.business_id = $1 AND s.action = 'media_buyer.meta_connected' AND s.id > audit_log.id) ORDER BY id DESC LIMIT 1", [id])).rows[0] ?? null : null,
+      metaLogin: { ready: metaLoginReady(config), missing: metaLoginMissing(config), redirectUri: config.publicBaseUrl ? redirectUri(config) : null, grant: tab === 'settings' && req.role === 'owner' ? await pendingGrant(pool, { businessId: id, userId: req.session.userId }) : null },
+      notice: typeof req.query.done === 'string' ? req.query.done : null, fbError: typeof req.query.fb_error === 'string' ? req.query.fb_error.slice(0, 300) : null, error: null, answer: null, ...extra,
     });
   }
 
@@ -101,6 +104,47 @@ export function mediaBuyerRoutes({ pool, config }) {
       await audit(pool, req, { action: 'media_buyer.meta_connect_failed', businessId: req.business.id, details: { error: err.message } });
       return page(req, res, { tab: 'settings', error: err.message }, err.status === 409 ? 409 : 400);
     }
+  }));
+
+  // Facebook Login (official Meta OAuth): only the business owner starts it; Meta sends them back to
+  // /meta/oauth/callback, then they pick which of their ad accounts to connect to THIS business.
+  router.post('/connect/facebook', asyncHandler(async (req, res) => {
+    if (req.role !== 'owner' || res.locals.viaAdmin) return res.status(403).render('error', { message: 'Only the business owner can connect ad accounts with Facebook Login (not a Super Admin visiting).' });
+    try {
+      const url = await startLogin(pool, config, { businessId: req.business.id, userId: req.session.userId });
+      await audit(pool, req, { action: 'media_buyer.facebook_login_started', businessId: req.business.id });
+      return res.redirect(303, url);
+    } catch (err) {
+      if (!(err instanceof MetaError)) throw err;
+      return page(req, res, { tab: 'settings', error: err.message }, err.status === 409 ? 409 : 400);
+    }
+  }));
+
+  router.post('/connect/facebook/accounts', asyncHandler(async (req, res) => {
+    if (req.role !== 'owner' || res.locals.viaAdmin) return res.status(403).render('error', { message: 'Only the business owner can connect ad accounts.' });
+    try {
+      const r = await connectFromGrant(pool, config, { businessId: req.business.id, userId: req.session.userId, grantId: String(req.body.grant ?? ''), accountIds: req.body.accounts });
+      for (const a of r.results.filter((x) => x.ok)) {
+        await audit(pool, req, { action: 'media_buyer.meta_connected', businessId: req.business.id, details: { adAccount: a.id, via: 'facebook_login' } });
+        await connectionHealth(pool, config, req.business.id, a.id).catch(() => null);
+      }
+      const failed = r.results.filter((x) => !x.ok);
+      if (failed.length) await audit(pool, req, { action: 'media_buyer.meta_connect_failed', businessId: req.business.id, details: { via: 'facebook_login', errors: failed.map((f) => `act_${f.id}: ${f.error}`).slice(0, 10) } });
+      if (r.results.some((x) => x.ok)) {
+        const st = await onboardingState(pool, req.business.id);
+        if (st.complete && st.onboarding.completed_at && st.onboarding.auto_status !== 'done') startAutoWorkflow(pool, config, req.business.id, req.session.userId);
+      }
+      if (!failed.length) return res.redirect(`${base(req)}?tab=settings&done=connected`);
+      return page(req, res, { tab: 'settings', error: `Not connected: ${failed.map((f) => `${f.name || ''} act_${f.id}: ${f.error}`).join(' · ')}${r.results.some((x) => x.ok) ? ' (the other selected accounts were connected)' : ''}` }, 400);
+    } catch (err) {
+      if (!(err instanceof MetaError)) throw err;
+      return page(req, res, { tab: 'settings', error: err.message }, err.status === 410 ? 410 : 400);
+    }
+  }));
+
+  router.post('/connect/facebook/cancel', asyncHandler(async (req, res) => {
+    await cancelGrant(pool, { businessId: req.business.id, userId: req.session.userId });
+    res.redirect(`${base(req)}?tab=settings`);
   }));
 
   // Switches the account the AI Media Buyer works on (only among this business's own accounts).

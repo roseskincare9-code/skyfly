@@ -132,6 +132,13 @@ export function loadConfig() {
       tokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
     metaGraphBase: process.env.META_GRAPH_BASE || 'https://graph.facebook.com/v26.0',
+    // Facebook Login for the AI Media Buyer (Skyfly's own Meta app). Without it, owners connect with a System
+    // User token. META_LOGIN_CONFIG_ID is optional (a "Facebook Login for Business" configuration).
+    metaLogin: process.env.META_APP_ID && process.env.META_APP_SECRET ? {
+      appId: String(process.env.META_APP_ID).trim(), appSecret: String(process.env.META_APP_SECRET).trim(),
+      configId: process.env.META_LOGIN_CONFIG_ID ? String(process.env.META_LOGIN_CONFIG_ID).trim() : null,
+    } : null,
+    metaDialogBase: !isProduction && process.env.META_DIALOG_BASE ? process.env.META_DIALOG_BASE : 'https://www.facebook.com',
     // Cloudy, the AI media buyer (Anthropic Messages API). Server-side only; without the key the AI
     // Media Buyer pages still work (profile, Meta connection, live numbers, creatives) and say AI is off.
     cloudy: process.env.ANTHROPIC_API_KEY ? {

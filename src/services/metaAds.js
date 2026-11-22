@@ -8,7 +8,7 @@ import { encrypt, decrypt } from '../lib/secrets.js';
 export class MetaError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
-const clean = (id) => String(id ?? '').replace(/^act_/, '').trim();
+const clean = (id) => String(id ?? '').replace(/\s/g, '').replace(/^act_/i, '');
 
 async function graph(config, token, path, { params = {}, method = 'GET', body = null } = {}) {
   const url = new URL(`${config.metaGraphBase}/${path.replace(/^\//, '')}`);
@@ -33,8 +33,9 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
   if (!config.encryptionKey) throw new MetaError('Tokens cannot be stored until SKYFLY_ENCRYPTION_KEY is set on the server.', 409);
   const act = clean(adAccountId);
   if (!/^\d{5,20}$/.test(act)) throw new MetaError('Enter the ad account ID (the number after "act_" in Ads Manager).');
-  if (!/^[A-Za-z0-9_-]{20,1000}$/.test(String(token ?? '').trim())) throw new MetaError('Paste the access token from your Meta Business Manager.');
-  token = String(token).trim();
+  // Pasted tokens often carry a "Bearer " prefix, quotes or line breaks from copying: those are removed.
+  token = String(token ?? '').replace(/^\s*(bearer|access_token=)\s*/i, '').replace(/[\s"']/g, '');
+  if (!/^[A-Za-z0-9_-]{20,1000}$/.test(token)) throw new MetaError('Paste the access token from your Meta Business Manager (it usually starts with EAA).');
   const account = await graph(config, token, `act_${act}`, { params: { fields: 'name,currency,account_status' } });
   const pages = await graph(config, token, `act_${act}/promote_pages`, { params: { fields: 'id,name', limit: '25' } }).then((r) => r.data ?? []).catch(() => []);
   const pixels = await graph(config, token, `act_${act}/adspixels`, { params: { fields: 'id,name', limit: '25' } }).then((r) => r.data ?? []).catch(() => []);
@@ -60,7 +61,7 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
 export async function listConnections(pool, businessId) {
   const { rows } = await pool.query(
     `SELECT id, business_id, ad_account_id, ad_account_name, currency, account_status, page_id, page_name, pixel_id, pixel_name, token_hint,
-            status, verified_at, last_error, selected, created_at, health, health_checked_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
+            status, verified_at, last_error, selected, created_at, health, health_checked_at, connected_via, token_expires_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
   return rows;
 }
 

@@ -85,3 +85,33 @@ Tab **WhatsApp Conversion Audit**:
 ## Monitoring
 
 Off by default; thresholds and interval in the Performance Analysis tab. Rule-based (no AI cost), alerts only.
+
+## Connecting ad accounts with Facebook Login
+
+Owners can connect in two ways: **Connect with Facebook** (the official Meta OAuth flow) or a **System User token** pasted in Advertising Settings.
+
+Facebook Login is switched on by Skyfly's own Meta app. One-time setup by the Skyfly team:
+
+1. At developers.facebook.com, create an app of type **Business** and add the **Facebook Login for Business** product. In **Valid OAuth Redirect URIs**, add exactly `https://getskyfly.com/meta/oauth/callback`. Optionally, create a login configuration with the permissions below and note its ID.
+2. On Render, open the **skyfly** service, then Environment, and set:
+   - `META_APP_ID`
+   - `META_APP_SECRET`
+   - optionally `META_LOGIN_CONFIG_ID`
+3. Permissions Skyfly requests:
+   - `ads_management`
+   - `ads_read`
+   - `business_management`
+   - `pages_show_list`
+   - `pages_read_engagement`
+   - `pages_manage_ads`
+4. Access levels:
+   - **Development mode:** only people with a role on the app can sign in, which is enough to test with your own accounts.
+   - **Other businesses' accounts:** Meta requires **Business Verification** and **App Review** with **Advanced Access** for these permissions. Business owners outside your business cannot use the button until Meta approves them.
+5. Leave "Require App Secret" off. Skyfly exchanges the code server-side with the secret and does not send an `appsecret_proof`.
+
+How the flow is protected:
+- The flow is started by the business owner only, never by a Super Admin visiting.
+- The state is single-use, valid for 10 minutes, stored hashed, and bound to that user and business.
+- The code is exchanged server-side for a long-lived token, which lasts about 60 days. Settings shows when it expires; reconnecting refreshes it.
+- The token stays encrypted.
+- Only accounts that Meta lists for that person can be connected, and only to that business.
