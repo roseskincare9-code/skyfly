@@ -54,3 +54,5 @@ for (const k of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
   const r = k.startsWith('OPENAI') ? await j('https://api.openai.com/v1/models', v) : await j('https://api.anthropic.com/v1/models', '', { headers: { 'x-api-key': v, 'anthropic-version': '2023-06-01' } });
   console.log(`${k} models list: HTTP ${r.status} ${r.status >= 400 ? JSON.stringify(r.body?.error?.message ?? r.body?.error ?? '').slice(0, 160) : `${(r.body?.data ?? []).length} models`}`);
 }
+// Public DNS for the records Resend normally asks for (names are standard; values are account-specific).
+for (const [t, n] of [['TXT', `resend._domainkey.${D}`], ['MX', `send.${D}`], ['TXT', `send.${D}`], ['TXT', `_dmarc.${D}`], ['MX', D], ['TXT', D]]) console.log(`DNS ${t} ${n}: ${dig(t, n).slice(0, 160)}`);
