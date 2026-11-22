@@ -30,3 +30,10 @@ for (const l of lines.filter((x) => /Applied migration|Migration .* failed|Skyfl
 const tm = lines.filter((x) => /Tenancy map/.test(x.message || ''));
 const end = tm.findIndex((x) => /Tenancy map \(read-only\): END/.test(x.message)); const begin = tm.findIndex((x, i) => i > end && /Tenancy map \(read-only\): BEGIN/.test(x.message));
 for (const l of tm.slice(Math.max(end, 0), begin + 1).reverse()) console.log(`TENANCY ${String(l.message).replace('Tenancy map (read-only): ', '').slice(0, 700)}`);
+// Customer and admin URLs on the deployed site (signed out): status, redirect, title and main heading.
+for (const p of ['/signup', '/login', '/', '/businesses/1', '/admin/login', '/admin', '/forgot-password']) {
+  const r = await fetch(`https://getskyfly.com${p}`, { redirect: 'manual' });
+  const html = r.status === 200 ? await r.text() : '';
+  const t = (re) => (html.match(re)?.[1] ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 90);
+  console.log(`URL https://getskyfly.com${p} -> ${r.status}${r.headers.get('location') ? ` -> ${r.headers.get('location')}` : ''} | title "${t(/<title>([\s\S]*?)<\/title>/)}" | h1 "${t(/<h1[^>]*>([\s\S]*?)<\/h1>/)}"${/opens soon/i.test(html) ? ' | REGISTRATION CLOSED notice' : ''}${/name="password"/.test(html) ? ' | has password form' : ''}`);
+}
