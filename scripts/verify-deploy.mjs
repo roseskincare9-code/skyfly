@@ -7,7 +7,9 @@ console.log(`SERVICE skyfly id ${svc.id} in workspace "${owner.name}"; URL ${svc
 const vars = (await api(`/services/${svc.id}/env-vars?limit=100`)).map((e) => e.envVar ?? e);
 console.log(`ENV ${vars.length} variables readable by this Render API key (names, value length only): ${vars.map((v) => `${v.key}(${String(v.value ?? '').length})`).sort().join(', ')}`);
 
-const REQUIRED = ['ALLOWED_ORIGINS', 'ALLOW_SIGNUP', 'DATABASE_SSL', 'DATABASE_URL', 'NODE_ENV', 'NODE_VERSION', 'PUBLIC_BASE_URL', 'SESSION_SECRET', 'SKYFLY_BACKUP_KEY', 'SKYFLY_E2E_PASSWORD_HASH', 'SKYFLY_ENCRYPTION_KEY', 'SKYFLY_META_TEST_EVENT_CODE', 'RESEND_API_KEY', 'CLOUDFLARE_API_TOKEN', 'PAYSTACK_SECRET_KEY', 'ANTHROPIC_API_KEY'];
+const REQUIRED = ['ALLOWED_ORIGINS', 'ALLOW_SIGNUP', 'DATABASE_SSL', 'DATABASE_URL', 'NODE_ENV', 'NODE_VERSION', 'PUBLIC_BASE_URL', 'SESSION_SECRET', 'SKYFLY_BACKUP_KEY', 'SKYFLY_E2E_PASSWORD_HASH', 'SKYFLY_ENCRYPTION_KEY', 'SKYFLY_META_TEST_EVENT_CODE', 'RESEND_API_KEY', 'CLOUDFLARE_API_TOKEN', 'PAYSTACK_SECRET_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+const ALT = ['TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'SKYFLY_NOTIFY_EMAIL', 'SKYFLY_NOTIFY_FROM', 'OPENAI_MODEL', 'ANTHROPIC_MODEL', 'META_APP_ID', 'META_APP_SECRET', 'SKYFLY_META_APP_ID', 'SKYFLY_META_APP_SECRET'];
+console.log(`ALTERNATIVES present: ${ALT.filter((k) => vars.some((v) => v.key === k)).join(', ') || 'none'}`);
 const have = new Set(vars.map((v) => v.key));
 console.log(`MISSING ${REQUIRED.filter((k) => !have.has(k)).join(', ') || 'none'} (of ${REQUIRED.length} expected)`);
 const deps = (await api(`/services/${svc.id}/deploys?limit=12`)).map((d) => d.deploy ?? d);
@@ -25,13 +27,13 @@ for (const g of (await api(`/env-groups?ownerId=${owner.id}&limit=50`).catch(() 
 }
 const lines = [];
 for (let page = 0, end = ''; page < 30; page += 1) { const r = await api(`/logs?ownerId=${owner.id}&resource=${svc.id}&limit=100&direction=backward${end}`); lines.push(...(r.logs || [])); if (!r.hasMore || !r.nextEndTime) break; end = `&endTime=${encodeURIComponent(r.nextEndTime)}`; }
-for (const l of lines.filter((x) => /Applied migration|Migration .* failed|Skyfly listening/.test(x.message || '')).slice(0, 8)) console.log(`APP ${l.timestamp.slice(0, 19)} ${String(l.message).slice(0, 260)}`);
+for (const l of lines.filter((x) => /Applied migration|Migration .* failed|Skyfly listening|Self-activation|Public registration|Meta app|OAuth|Cloudy|engine/i.test(x.message || '')).slice(0, 14)) console.log(`APP ${l.timestamp.slice(0, 19)} ${String(l.message).slice(0, 260)}`);
 // The latest tenancy map (read-only, emails masked by the app): businesses, members, Super Admin memberships.
 const tm = lines.filter((x) => /Tenancy map/.test(x.message || ''));
 const end = tm.findIndex((x) => /Tenancy map \(read-only\): END/.test(x.message)); const begin = tm.findIndex((x, i) => i > end && /Tenancy map \(read-only\): BEGIN/.test(x.message));
 for (const l of tm.slice(Math.max(end, 0), begin + 1).reverse()) console.log(`TENANCY ${String(l.message).replace('Tenancy map (read-only): ', '').slice(0, 700)}`);
 // Customer and admin URLs on the deployed site (signed out): status, redirect, title and main heading.
-for (const p of ['/signup', '/login', '/', '/businesses/1', '/admin/login', '/admin', '/forgot-password']) {
+for (const p of ['/signup', '/login', '/', '/businesses/1', '/admin/login', '/admin', '/forgot-password', '/reset-password/0000expired0000', '/invite/0000expired0000', '/verify-email']) {
   const r = await fetch(`https://getskyfly.com${p}`, { redirect: 'manual' });
   const html = r.status === 200 ? await r.text() : '';
   const t = (re) => (html.match(re)?.[1] ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 90);
