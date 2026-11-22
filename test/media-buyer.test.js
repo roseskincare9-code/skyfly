@@ -137,15 +137,18 @@ describe('dashboard, Cloudy and approvals', () => {
     assert.doesNotMatch((await ownerB.get(mb(B))).text, /Waste campaign spent NGN 20,000/);
   });
 
-  test('audit, recommendations and creative briefs (hook, script, scenes, CTA) are saved for this business', async () => {
-    for (const task of ['audit', 'briefs', 'report_weekly']) {
-      const r = await post(ownerA, `${mb(A)}/generate/${task}`);
-      assert.match(r.headers.location, new RegExp(`^${mb(A)}/items/\\d+$`));
-      const page = await ownerA.get(r.headers.location).expect(200);
-      if (task === 'briefs') { assert.match(page.text, /7 days, one serum/); assert.match(page.text, /Close-up/); assert.match(page.text, /Shop now/); }
+  test('creative briefs (hook, script, scenes, CTA) are saved for this business; audits and reports are done in Performance Analysis (no duplicate AI)', async () => {
+    const r = await post(ownerA, `${mb(A)}/generate/briefs`);
+    assert.match(r.headers.location, new RegExp(`^${mb(A)}/items/\\d+$`));
+    const page = await ownerA.get(r.headers.location).expect(200);
+    assert.match(page.text, /7 days, one serum/); assert.match(page.text, /Close-up/); assert.match(page.text, /Shop now/);
+    const n = (await pool.query('SELECT count(*)::int AS n FROM ad_items WHERE business_id = $1', [A])).rows[0].n;
+    for (const task of ['audit', 'report_weekly']) {
+      const x = await post(ownerA, `${mb(A)}/generate/${task}`);
+      assert.equal(x.status, 409); assert.match(x.text, /Performance Analysis tab/);
     }
     const { rows } = await pool.query('SELECT kind, data_basis FROM ad_items WHERE business_id = $1 ORDER BY id', [A]);
-    assert.deepEqual(rows.map((r) => r.kind), ['audit', 'brief', 'report']);
+    assert.equal(rows.length, n); assert.deepEqual(rows.map((x) => x.kind), ['brief']);
     assert.match(rows[0].data_basis, /Meta account 111111111/);
   });
 

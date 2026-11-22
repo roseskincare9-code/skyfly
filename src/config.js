@@ -137,6 +137,9 @@ export function loadConfig() {
     cloudy: process.env.ANTHROPIC_API_KEY ? {
       apiKey: process.env.ANTHROPIC_API_KEY,
       model: process.env.CLOUDY_MODEL || 'claude-sonnet-5-5',
+      // Claude as the Media Buyer's second analysis engine (same key; its own model setting).
+      analysisModel: process.env.CLAUDE_ANALYSIS_MODEL || process.env.CLOUDY_MODEL || 'claude-sonnet-5-5',
+      timeoutMs: Number(process.env.ANTHROPIC_TIMEOUT_MS) || 120000,
       apiBase: !isProduction && process.env.ANTHROPIC_API_BASE ? process.env.ANTHROPIC_API_BASE : 'https://api.anthropic.com',
     } : null,
     // ChatGPT, the Media Buyer's performance analyst (OpenAI Responses API). Server-side only. The model is

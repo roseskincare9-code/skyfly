@@ -7,22 +7,42 @@
    const HIDDEN = ['analysis_id', 'rec_index'];
    const show = (v) => Array.isArray(v) ? v.map((x, i) => `${i + 1}. ${x}`).join('\n') : String(v); %>
 <main class="narrow" data-ai-item="<%= item.kind %>">
-  <p><a href="<%= mbBase %>?tab=<%= { campaign_draft: 'approvals', brief: 'briefs', recommendation: 'recommendations' }[item.kind] || 'reports' %>">← AI Media Buyer</a></p>
+  <p><a href="<%= mbBase %>?tab=<%= { campaign_draft: 'approvals', action: 'approvals', brief: 'briefs', recommendation: 'approvals' }[item.kind] || 'reports' %>">← AI Media Buyer</a></p>
   <div class="page-head"><div><h1><%= item.title %></h1><p class="muted">Status: <strong data-status><%= item.status %></strong> · <%= formatDate(item.created_at) %> · Based on: <%= item.data_basis %><% if (item.ad_account_id) { %> · Ad account: <strong data-item-account>act_<%= item.ad_account_id %></strong><% } %></p></div></div>
+  <% if (item.kind === 'action') { const cur = (v) => v == null ? '—' : (Number(v) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 }); const r = item.meta_result || {}; %>
+  <% if (notice === 'executed') { %><div class="notice" role="status" data-executed>Applied in Meta and verified: Meta now reports <%= b.op === 'pause' ? `status ${r.after?.status}` : `a daily budget of ${cur(r.after?.daily_budget)}` %>.</div><% } %>
+  <% if (notice === 'failed' || (item.status === 'failed' && r.error)) { %><div class="error" role="alert" data-action-error><%= r.error %></div><% } %>
+  <div class="card" data-action-review><h2>Review this change</h2>
+    <dl class="kv">
+      <dt>Business</dt><dd><%= business.name %></dd>
+      <dt>Meta ad account</dt><dd>act_<%= item.ad_account_id %></dd>
+      <dt><%= b.level === 'adset' ? 'Ad set' : 'Campaign' %></dt><dd><strong><%= b.object_name %></strong> (<%= b.object_id %>)</dd>
+      <dt>Action requested</dt><dd><strong data-action-op><%= b.op === 'pause' ? 'Pause' : 'Change the daily budget' %></strong></dd>
+      <dt>Current configuration</dt><dd data-current>Status <%= b.current.status %> (delivery: <%= b.current.effective_status %>)<%= b.current.daily_budget ? ` · daily budget ${cur(b.current.daily_budget)}` : '' %> · read from Meta <%= formatDate(b.prepared_at) %></dd>
+      <dt>Proposed configuration</dt><dd data-proposed><%= b.op === 'pause' ? 'Status PAUSED' : `Daily budget ${cur(b.proposed.daily_budget)} (now ${cur(b.current.daily_budget)})` %></dd>
+      <dt>Expected consequences</dt><dd><%= b.consequences %></dd>
+      <dt>AI reasoning</dt><dd style="white-space:pre-wrap"><%= b.reasoning %><% if (b.source?.supporting_metrics?.length) { %><br><span class="muted"><%= b.source.supporting_metrics.join(' · ') %></span><% } %></dd>
+      <dt>Expected objective</dt><dd><%= b.expected || '—' %></dd>
+      <dt>Risks</dt><dd><%= b.risks || '—' %></dd>
+      <% if (r.before || r.after) { %><dt>Verification</dt><dd data-verification>Before: <%= JSON.stringify(r.before) %><br>After (read back from Meta): <%= JSON.stringify(r.after) %> · <%= r.verified ? 'verified' : 'not verified' %></dd><% } %>
+    </dl>
+    <p class="muted" style="font-size:13px">Approving applies only this one change, after Skyfly re-checks that Meta still shows the configuration above. If anything changed since, nothing is applied. Skyfly never activates, publishes, deletes or changes targeting.</p>
+  </div>
+<% } %>
   <% if (notice === 'approved') { %><div class="notice" role="status">Approved.<%= item.kind === 'recommendation' ? ' Skyfly records your decision but does not change Meta for recommendations: apply it in Ads Manager, then run a new analysis to verify the effect.' : '' %></div><% } %>
   <% if (notice === 'rejected') { %><div class="notice" role="status">Rejected: nothing was changed in Meta.</div><% } %>
   <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
-  <% if (item.meta_result?.id) { %><div class="notice" data-meta-result>Created in Meta as campaign <strong><%= item.meta_result.id %></strong>; Meta reports its status as <strong><%= item.meta_result.effective_status || item.meta_result.status %></strong>. It has no ad set or ad yet and cannot spend until you complete and switch it on in Ads Manager.</div><% } %>
+  <% if (item.kind !== 'action' && item.meta_result?.id) { %><div class="notice" data-meta-result>Created in Meta as campaign <strong><%= item.meta_result.id %></strong>; Meta reports its status as <strong><%= item.meta_result.effective_status || item.meta_result.status %></strong>. It has no ad set or ad yet and cannot spend until you complete and switch it on in Ads Manager.</div><% } %>
 
   <% if (b.text) { %><div class="card" style="white-space:pre-wrap" data-ai-text><%= b.text %></div><% } %>
-  <% (list || (b.text ? [] : [b])).forEach((x, n) => { %>
+  <% (item.kind === 'action' ? [] : (list || (b.text ? [] : [b]))).forEach((x, n) => { %>
     <div class="card"><% if (x.title) { %><h2><%= list ? `${n + 1}. ` : '' %><%= x.title %></h2><% } %>
       <dl class="kv"><% Object.entries(x).filter(([k, v]) => k !== 'title' && !HIDDEN.includes(k) && v !== '' && v != null && !(Array.isArray(v) && !v.length)).forEach(([k, v]) => { %><dt><%= LABELS[k] || k %></dt><dd style="white-space:pre-wrap"><%= show(v) %></dd><% }) %></dl></div>
   <% }) %>
 
   <% if (item.status === 'proposed') { %>
     <div class="card row" style="gap:8px">
-      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/approve"><%- include('partials/csrf') %><button class="btn" type="submit" data-approve><%= item.kind === 'campaign_draft' ? 'Approve: create in Meta as PAUSED' : item.kind === 'recommendation' ? 'Approve (records your decision; nothing changes in Meta)' : 'Approve' %></button></form>
+      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/approve"><%- include('partials/csrf') %><button class="btn" type="submit" data-approve><%= item.kind === 'action' ? 'Approve and apply this one change in Meta' : item.kind === 'campaign_draft' ? 'Approve: create in Meta as PAUSED' : item.kind === 'recommendation' ? 'Approve (records your decision; nothing changes in Meta)' : 'Approve' %></button></form>
       <form method="post" action="<%= mbBase %>/items/<%= item.id %>/reject"><%- include('partials/csrf') %><button class="btn secondary" type="submit" data-reject>Reject</button></form>
     </div>
   <% } %>
