@@ -1,0 +1,84 @@
+<%- include('partials/head', { title: `WhatsApp Conversion Audit #${a.id}` }) %>
+<%- include('partials/nav') %>
+<%
+  const d = a.data || {}; const m = d.meta || {}; const r = a.result || {}; const L = d.lead_log || {}; const F = d.funnel || { stages: [] };
+  const cur = m.account?.currency || business.currency;
+  const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+  const num = (v, dg = 0) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: dg });
+  const ageH = a.data_fetched_at ? (Date.now() - new Date(a.data_fetched_at).getTime()) / 3600000 : null;
+  const ST = { confirmed: 'Confirmed by the data', likely: 'Likely', observed: 'Observed', hypothesis: 'Hypothesis', not_measurable: 'Not measurable yet' };
+  const chips = (ms) => (ms || []).map((x) => `${x.name}: ${x.value}`).join(' · ');
+  const draft = (proposed || []).find((x) => x.kind === 'campaign_draft');
+%>
+<main data-wa-audit="<%= a.id %>">
+  <p><a href="<%= mbBase %>?tab=whatsapp">← WhatsApp Conversion Audit</a></p>
+  <div class="page-head"><div><h1>WhatsApp Conversion Audit #<%= a.id %></h1>
+    <p class="muted">Ad account <strong>act_<%= a.ad_account_id %></strong><%= m.account?.name ? ` (${m.account.name})` : '' %> · Meta windows: last 7, 14 and 30 days · investigated by <strong><%= a.engine === 'claude' ? 'Claude' : 'ChatGPT' %></strong> (<%= a.model %>)</p></div></div>
+  <div class="<%= ageH != null && ageH > 6 ? 'warn-box' : 'notice' %>" data-freshness>Data fetched from Meta: <strong><%= a.data_fetched_at ? formatDate(a.data_fetched_at) : 'unknown' %></strong><% if (ageH != null && ageH > 6) { %>, <%= Math.round(ageH) %> hours ago: run a new audit for current numbers.<% } %></div>
+  <% if (a.status !== 'ok') { %><div class="error" role="alert"><%= a.error %>. Nothing was changed in Meta.</div><% } %>
+
+  <% if (r.verdict) { %><div class="card" data-verdict><h2>Verdict</h2><dl class="kv">
+    <dt>Are the messaging campaigns working?</dt><dd><%= r.verdict.campaigns_working %></dd>
+    <dt>Conversation cost</dt><dd><%= r.verdict.conversation_cost %></dd>
+    <dt>Turning into customers?</dt><dd><%= r.verdict.converting_to_customers %></dd>
+    <dt>Where buyers are lost</dt><dd><%= r.verdict.biggest_leak %></dd>
+    <dt>Main problem</dt><dd><%= r.verdict.overall_problem %></dd></dl></div><% } %>
+
+  <div class="card" data-funnel><h2>Funnel (last 30 days)</h2>
+    <p class="muted" style="font-size:13px">Counted by Skyfly. Each stage says where its number comes from; stages without data are not guessed.</p>
+    <div class="table-wrap"><table><thead><tr><th>Stage</th><th>Count</th><th>From previous stage</th><th>Source</th></tr></thead><tbody>
+    <% F.stages.forEach((s) => { %><tr data-stage="<%= s.key %>"><td><%= s.label %></td><td><%= s.count == null ? '—' : num(s.count) %></td><td><%= s.rate_from_previous == null ? '—' : `${s.rate_from_previous}%` %></td><td class="muted"><%= s.source %></td></tr><% }) %>
+    </tbody></table></div>
+    <% if (F.biggest_measured_drop) { %><p data-biggest-drop>Biggest measured drop: <strong><%= F.biggest_measured_drop.from %> → <%= F.biggest_measured_drop.to %></strong>: <%= F.biggest_measured_drop.lost_share %>% lost (<%= num(F.biggest_measured_drop.lost) %>).</p><% } %>
+  </div>
+
+  <div class="card" data-windows><h2>Messaging campaigns: 7, 14 and 30 days</h2>
+    <div class="table-wrap"><table><thead><tr><th>Window</th><th>Spend</th><th>Impressions</th><th>Link clicks</th><th>Conversations</th><th>Cost / conversation</th><th>2+ msgs</th><th>3+ msgs</th><th>5+ msgs</th><th>Blocks</th><th>Purchases reported to Meta</th></tr></thead><tbody>
+    <% ['7d', '14d', '30d'].forEach((w) => { const x = m.windows?.[w] || {}; %><tr><td><%= w %></td><td><%= money(x.spend) %></td><td><%= num(x.impressions) %></td><td><%= num(x.link_clicks) %></td><td><%= num(x.conversations) %></td><td><%= money(x.cost_per_conversation) %></td><td><%= num(x.depth_2) %></td><td><%= num(x.depth_3) %></td><td><%= num(x.depth_5) %></td><td><%= num(x.blocks) %></td><td><%= num(x.purchases_reported_to_meta) %></td></tr><% }) %>
+    </tbody></table></div>
+    <% if (m.website_campaigns_30d?.campaigns) { const w = m.website_campaigns_30d; %><p class="muted">For comparison, website (non-messaging) campaigns, 30 days: <%= money(w.spend) %> for <%= num(w.purchases) %> tracked purchases<%= w.cost_per_purchase ? ` (${money(w.cost_per_purchase)} each)` : '' %>.</p><% } %>
+    <% if (Object.keys(m.placements_30d || {}).length) { %><p class="muted">Placements (30 days): <%= Object.entries(m.placements_30d).map(([k, v]) => `${k} ${money(v.spend)} / ${v.conversations} conversations`).join(' · ') %></p><% } %>
+  </div>
+
+  <div class="card" data-campaigns><h2>Messaging campaigns (30 days)</h2><% if (!(m.campaigns || []).length) { %><p class="muted">No messaging campaign delivered in the last 30 days.</p><% } else { %>
+    <div class="table-wrap"><table><thead><tr><th>Campaign</th><th>Status</th><th>Optimised for</th><th>Spend</th><th>Conversations</th><th>Cost / conv.</th><th>3+ msgs</th><th>Purchases (Meta)</th></tr></thead><tbody>
+    <% m.campaigns.forEach((c) => { const x = c.windows['30d'] || {}; %><tr><td><%= c.name %><br><span class="muted"><%= c.objective %> · <%= c.id %></span></td><td><%= c.status %></td><td><%= [...new Set(c.adsets.map((s) => `${s.optimization_goal} → ${s.destination}`))].join(', ') || '—' %></td><td><%= money(x.spend) %></td><td><%= num(x.conversations) %></td><td><%= money(x.cost_per_conversation) %></td><td><%= num(x.depth_3) %></td><td><%= num(x.purchases_reported_to_meta) %></td></tr><% }) %>
+    </tbody></table></div><% } %></div>
+
+  <div class="card" data-findings><h2>Skyfly's checks on this data</h2><ul>
+    <% (d.findings || []).forEach((f) => { %><li data-finding="<%= f.area %>"><span class="pill <%= f.status === 'confirmed' ? 'delivered' : f.status === 'not_measurable' ? 'cancelled' : 'pending' %>"><%= ST[f.status] || f.status %></span> <strong><%= f.area.replace(/_/g, ' ') %></strong>: <%= f.finding %></li><% }) %></ul></div>
+
+  <div class="card" data-lead-log><h2>WhatsApp sales process (lead log)</h2>
+    <% if (!L.available) { %><p data-no-lead-log>Not measured: no WhatsApp lead log was imported, so response time, replies, follow-ups and closing cannot be analysed. <a href="<%= mbBase %>?tab=whatsapp">Import it</a> and run the audit again.</p>
+    <% } else { %><p><%= L.leads %> leads · median first reply <%= L.response.median_minutes ?? '—' %> min (90% within <%= L.response.p90_minutes ?? '—' %> min) · <%= L.response.within_5_min_pct ?? '—' %>% answered within 5 min · <%= L.response.unanswered %> never answered · <%= L.follow_up.never_followed_up %> of <%= L.follow_up.not_ordered %> non-buyers never followed up.</p>
+      <% if (L.lost_reasons.length) { %><p class="muted">Lost reasons: <%= L.lost_reasons.map((x) => `${x.reason} (${x.leads})`).join(' · ') %></p><% } %>
+      <% if (L.agents_with_10_plus_leads.length) { %><p class="muted">Agents with 10+ leads: <%= L.agents_with_10_plus_leads.map((x) => `${x.agent}: ${x.leads} leads, median reply ${x.median_response_minutes} min, ${x.ordered_pct}% ordered`).join(' · ') %></p><% } %><% } %>
+  </div>
+
+  <% if (r.diagnosis) { %><div class="card" data-diagnosis><h2>Diagnosis</h2><ul>
+    <% r.diagnosis.forEach((x) => { %><li><span class="pill <%= x.status === 'confirmed' ? 'delivered' : x.status === 'not_measurable' ? 'cancelled' : 'pending' %>"><%= ST[x.status] %></span> <strong><%= x.area.replace(/_/g, ' ') %></strong>: <%= x.finding %><% if (x.evidence.length) { %><br><span class="muted"><%= chips(x.evidence) %></span><% } %><% if (!x.grounded) { %> <span class="pill cancelled" data-ungrounded>figures not matched to the data</span><% } %></li><% }) %></ul></div>
+
+  <div class="card" data-strategy><h2>What kind of WhatsApp campaign to run next</h2><ul>
+    <% r.strategy.forEach((x) => { %><li><% if (x.test_first) { %><span class="pill delivered">Test first</span> <% } %><strong><%= x.approach %></strong>: <%= x.why_supported %></li><% }) %></ul></div>
+
+  <% const p = r.test_plan; %><div class="card" data-test-plan><h2>Testing plan</h2>
+    <p class="muted">A recommendation, not a live change: nothing is created or changed in Meta until you approve a draft.</p>
+    <dl class="kv"><dt>Objective</dt><dd><%= p.objective %></dd><dt>Structure</dt><dd><%= p.structure %> (<%= p.campaigns %> campaign(s), <%= p.ad_sets %> ad set(s))</dd>
+      <dt>Budget</dt><dd><%= money(p.daily_budget) %> a day for <%= p.duration_days %> days (about <%= money(p.daily_budget * p.duration_days) %>)</dd><dt>Audience</dt><dd><%= p.audience %></dd>
+      <dt>Qualification questions</dt><dd><%= p.qualification_questions.join(' · ') %></dd><dt>Sales conversation</dt><dd style="white-space:pre-wrap"><%= p.sales_conversation %></dd>
+      <dt>Follow-up</dt><dd style="white-space:pre-wrap"><%= p.follow_up %></dd><dt>Measurement</dt><dd><%= p.measurement %></dd><dt>Success criteria</dt><dd><%= p.success_criteria %></dd>
+      <dt>Stop-loss</dt><dd><%= p.stop_loss %></dd><dt>Scaling</dt><dd><%= p.scaling_criteria %></dd></dl>
+    <h3>Creatives and copy to test</h3><% p.creatives.forEach((c, i) => { %><div class="card" style="margin:8px 0"><strong><%= i + 1 %>. <%= c.concept %></strong><dl class="kv"><dt>Hook</dt><dd><%= c.hook %></dd><dt>Primary text</dt><dd style="white-space:pre-wrap"><%= c.primary_text %></dd><dt>Headline</dt><dd><%= c.headline %></dd><dt>WhatsApp opening message</dt><dd><%= c.opening_message %></dd></dl></div><% }) %>
+    <% if (draft) { %><p><a href="<%= mbBase %>/items/<%= draft.id %>">Campaign draft in Approvals (<%= draft.status %>)</a></p><% } else { %>
+    <form method="post" action="<%= mbBase %>/analysis/<%= a.id %>/draft"><%- include('partials/csrf') %><button class="btn" type="submit" data-wa-draft>Prepare a campaign draft from this plan (created PAUSED only after approval)</button></form><% } %>
+  </div>
+
+  <% const S = r.sales_system; %><div class="card" data-sales-system><h2>WhatsApp sales system</h2><dl class="kv">
+    <% [['opening_response', 'Opening response'], ['product_recommendation_flow', 'Product recommendation'], ['qualification', 'Qualification'], ['price_presentation', 'Price presentation'], ['trust_building', 'Trust building'], ['order_confirmation', 'Order confirmation'], ['cod_confirmation', 'COD confirmation'], ['abandoned_conversation_recovery', 'Abandoned conversation recovery'], ['abandoned_order_recovery', 'Abandoned order recovery'], ['delivery_follow_up', 'Delivery follow-up'], ['repeat_purchase', 'Repeat purchase']].forEach(([k, l]) => { %><dt><%= l %></dt><dd style="white-space:pre-wrap"><%= S[k] %></dd><% }) %>
+    <dt>Objection handling</dt><dd><% S.objection_handling.forEach((o) => { %><strong><%= o.objection %></strong>: <%= o.response %><br><% }) %></dd>
+    <dt>Follow-up sequence</dt><dd><% S.follow_ups.forEach((f) => { %><strong><%= f.timing %></strong>: <%= f.message %><br><% }) %></dd></dl></div>
+
+  <div class="card" data-gaps><h2>Data gaps, tracking and integrations</h2><ul><% [...r.data_gaps, ...r.tracking_and_integrations].forEach((x) => { %><li><%= x %></li><% }) %></ul></div>
+  <% } %>
+</main>
+</body></html>

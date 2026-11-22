@@ -103,7 +103,7 @@ const metaServer = createServer(async (req, res) => {
 
 // ---------- stand-in OpenAI Responses API
 const openai = { mode: 'ok', requests: [], failuresLeft: 0 };
-const dataOf = (input) => JSON.parse(input.slice(input.indexOf('DATA (JSON):\n') + 13));
+const dataOf = (input) => JSON.parse(input.slice(input.indexOf('<campaign_data>\n') + 16, input.lastIndexOf('\n</campaign_data>')));
 function goodAnswer(d) {
   const c = Object.fromEntries(d.campaigns.map((x) => [x.name, x]));
   const w = c['Winner campaign']; const waste = c['Waste campaign'];
@@ -248,7 +248,7 @@ describe('metrics and signals computed by Skyfly (not by the AI)', () => {
 });
 
 describe('ChatGPT off', () => {
-  test('the Analysis tab works without the key: says ChatGPT is off, the button is disabled, Cloudy keeps performance tasks', async () => {
+  test('without the OpenAI key: ChatGPT is off and its button disabled; Claude still analyses on its own; Compare needs both', async () => {
     const agent = request.agent(app2);
     const c = await csrfToken(agent, '/login');
     await agent.post('/login').type('form').send({ _csrf: c, email: 'a@alpha.test', password: 'correct-horse-battery' }).expect(302);
@@ -256,10 +256,12 @@ describe('ChatGPT off', () => {
     {
       assert.match(tab.text, /data-analyst-off/);
       assert.match(tab.text, /data-analyze disabled/);
-      const over = await agent.get(mb(A)).expect(200);
-      assert.match(over.text, /data-generate="audit"/, 'Cloudy still offers the audit while ChatGPT is off');
+      assert.match(tab.text, /data-compare disabled/);
+      assert.doesNotMatch(tab.text, /data-analyze-claude disabled/);
       const r = await agent.post(`${mb(A)}/analysis`).type('form').send({ _csrf: await csrfToken(agent, `/businesses/${A}/subscription`) });
       assert.equal(r.status, 409); assert.match(r.text, /OPENAI_API_KEY is not set/);
+      const c = await agent.post(`${mb(A)}/analysis`).type('form').send({ _csrf: await csrfToken(agent, `/businesses/${A}/subscription`), engine: 'compare' });
+      assert.equal(c.status, 409); assert.match(c.text, /Comparing needs both engines/);
     }
   });
 });
@@ -282,6 +284,8 @@ describe('on-demand analysis', () => {
     assert.equal(q.body.model, 'gpt-test-analyst'); assert.equal(q.body.store, false);
     assert.equal(q.body.text.format.type, 'json_schema'); assert.equal(q.body.text.format.strict, true);
     assert.match(q.body.instructions, /Never invent metrics/);
+    assert.match(q.body.instructions, /untrusted content/);
+    assert.match(q.body.input, /^Analyse this ad account[\s\S]*<campaign_data>\n[\s\S]*\n<\/campaign_data>$/);
     const d = lastRequestData();
     assert.equal(d.account.id, '111111111');
     assert.deepEqual(d.campaigns.map((c) => c.name), ['Winner campaign', 'Waste campaign', 'New test']);
@@ -522,7 +526,7 @@ describe('roles: ChatGPT analyses performance, Cloudy creates', () => {
     const n = ai.requests.length;
     for (const task of ['audit', 'recommendations', 'report_daily', 'report_weekly']) {
       const r = await post(ownerA, `${mb(A)}/generate/${task}`);
-      assert.equal(r.status, 409); assert.match(r.text, /done by ChatGPT/);
+      assert.equal(r.status, 409); assert.match(r.text, /Performance Analysis tab/);
     }
     assert.equal(ai.requests.length, n, 'no duplicate AI spend on Cloudy');
     assert.equal((await post(ownerA, `${mb(A)}/generate/briefs`)).status, 302);
@@ -530,7 +534,7 @@ describe('roles: ChatGPT analyses performance, Cloudy creates', () => {
 
   test('Cloudy reads the latest ChatGPT analysis for the same account, so the two never contradict', async () => {
     const sys = ai.requests.at(-1).system;
-    assert.match(sys, /latest_performance_analysis_by_chatgpt/);
+    assert.match(sys, /latest_performance_analysis/);
     assert.match(sys, /Scale Winner campaign gradually/);
   });
 });

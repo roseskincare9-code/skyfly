@@ -74,7 +74,7 @@ if (process.env.RENDER_API_KEY) {
           // Public registration: email sender and bot check (set by the activation workflow), and keys saved here by hand.
           'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'CLOUDFLARE_API_TOKEN',
           // AI Media Buyer: ChatGPT performance analyst (OpenAI) and Cloudy (Anthropic).
-          'OPENAI_API_KEY', 'OPENAI_MODEL', 'ANTHROPIC_API_KEY'];
+          'OPENAI_API_KEY', 'OPENAI_MODEL', 'ANTHROPIC_API_KEY', 'CLAUDE_ANALYSIS_MODEL'];
         report(null, 'Render: optional settings on the service itself (names only)', opt.map((k) => `${k}: ${names.has(k) ? 'set' : 'not set'}`).join('; '));
         try {
           const sf = (await render(`/services/${svc.id}/secret-files?limit=50`)).map((f) => f.secretFile ?? f);

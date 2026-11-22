@@ -8,20 +8,24 @@ import { requireCsrf } from '../lib/csrf.js';
 import { audit } from '../lib/audit.js';
 import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, listCampaigns, ANALYSIS_PERIODS, MetaError } from '../services/metaAds.js';
 import { ask, generate, reviewCreative, cloudyReady, cloudyHandles, CloudyError, TASK_NAMES } from '../services/cloudy.js';
-import { analyze, analystReady, AnalystError, META_CHANGING } from '../services/analyst.js';
+import { analyze, analystReady, AnalystError, META_CHANGING, ENGINES, recommendationsOf } from '../services/analyst.js';
+import { prepareAction, executeAction, ActionError } from '../services/actions.js';
+import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
 
-export const TABS = ['overview', 'analysis', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
+export const TABS = ['overview', 'analysis', 'whatsapp', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
 const KINDS = ['image', 'video', 'logo', 'document', 'reference'];
 const MAX = { video: 40 * 1024 * 1024, other: 8 * 1024 * 1024 };
 const ALLOWED_MIME = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|quicktime|webm)|application\/pdf|text\/plain)$/;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX.video, files: 1, fields: 10 } });
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 5 } });
 const PROFILE_FIELDS = ['industry', 'website', 'offer', 'prices', 'locations', 'audience', 'customer_profile', 'goals', 'platforms', 'brand_description', 'brand_voice'];
 
 export function mediaBuyerRoutes({ pool, config }) {
   const router = Router();
   const base = (req) => `${res0(req)}/media-buyer`;
   const res0 = (req) => `/businesses/${req.business.id}`;
-  const known = (err) => err instanceof MetaError || err instanceof CloudyError || err instanceof AnalystError;
+  const known = (err) => err instanceof MetaError || err instanceof CloudyError || err instanceof AnalystError || err instanceof ActionError;
+  const engineOn = Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, e.ready(config)]));
 
   async function page(req, res, extra = {}, status = 200) {
     const tab = TABS.includes(req.query.tab) ? req.query.tab : (extra.tab ?? 'overview');
@@ -40,16 +44,23 @@ export function mediaBuyerRoutes({ pool, config }) {
     // Performance Analysis tab (ChatGPT): past analyses, monitoring alerts and settings, scope choices.
     const { rows: alerts } = await pool.query('SELECT * FROM ad_alerts WHERE business_id = $1 AND dismissed_at IS NULL ORDER BY id DESC LIMIT 30', [id]);
     const analysis = tab === 'analysis' ? {
-      runs: (await pool.query('SELECT id, ad_account_id, scope, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 ORDER BY id DESC LIMIT 15', [id])).rows,
+      runs: (await pool.query("SELECT id, ad_account_id, engine, scope, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 AND kind = 'performance' ORDER BY id DESC LIMIT 15", [id])).rows,
+      usage: (await pool.query(`SELECT e.key AS engine, count(*)::int AS calls, coalesce(sum((e.value->>'input_tokens')::bigint), 0)::bigint AS input_tokens, coalesce(sum((e.value->>'output_tokens')::bigint), 0)::bigint AS output_tokens
+        FROM ad_analyses a, jsonb_each(a.usage) e WHERE a.business_id = $1 AND a.created_at > now() - interval '30 days' AND jsonb_typeof(e.value) = 'object' GROUP BY 1 ORDER BY 1`, [id])).rows,
       monitor: (await pool.query('SELECT * FROM ad_monitor_settings WHERE business_id = $1', [id])).rows[0] ?? null,
       products: (await pool.query('SELECT id, name FROM products WHERE business_id = $1 ORDER BY id LIMIT 50', [id])).rows,
       campaigns: connection?.status === 'verified' ? await listCampaigns(pool, config, id, connection.ad_account_id) : [],
       periods: ANALYSIS_PERIODS,
     } : null;
+    const whatsapp = tab === 'whatsapp' ? {
+      runs: (await pool.query("SELECT id, ad_account_id, engine, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 AND kind = 'whatsapp' ORDER BY id DESC LIMIT 10", [id])).rows,
+      leads: await leadLogSummary(pool, id),
+    } : null;
+    const actionLog = tab === 'approvals' ? (await pool.query('SELECT * FROM ad_action_log WHERE business_id = $1 ORDER BY id DESC LIMIT 30', [id])).rows : [];
     res.set('Cache-Control', 'no-store');
     res.status(status).render('media-buyer', {
       active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
-      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, mbBase: base(req),
+      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, mbBase: base(req),
       notice: typeof req.query.done === 'string' ? req.query.done : null, error: null, answer: null, ...extra,
     });
   }
@@ -164,11 +175,11 @@ export function mediaBuyerRoutes({ pool, config }) {
     const custom = b.period === 'custom';
     try {
       const id = await analyze(pool, config, {
-        businessId: req.business.id, userId: req.session.userId, adAccountId: b.account || null,
+        businessId: req.business.id, userId: req.session.userId, adAccountId: b.account || null, engine: ['chatgpt', 'claude', 'compare'].includes(b.engine) ? b.engine : 'chatgpt',
         period: ANALYSIS_PERIODS.includes(b.period) ? b.period : 'last_7d', since: custom ? b.since : null, until: custom ? b.until : null,
         campaignId: b.campaign || null, productId: /^\d+$/.test(b.product ?? '') ? b.product : null,
       });
-      await audit(pool, req, { action: 'media_buyer.analysis_run', businessId: req.business.id, entityType: 'ad_analysis', entityId: id });
+      await audit(pool, req, { action: 'media_buyer.analysis_run', businessId: req.business.id, entityType: 'ad_analysis', entityId: id, details: { engine: b.engine || 'chatgpt' } });
       res.redirect(`${base(req)}/analysis/${id}`);
     } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'analysis', error: err.message }, err.status); }
   }));
@@ -181,27 +192,99 @@ export function mediaBuyerRoutes({ pool, config }) {
   router.get('/analysis/:analysisId', asyncHandler(async (req, res) => {
     const a = await loadAnalysis(req);
     if (!a) return res.status(404).render('error', { message: 'Not found.' });
-    const { rows: proposed } = await pool.query("SELECT id, body->>'rec_index' AS n, status FROM ad_items WHERE business_id = $1 AND body->>'analysis_id' = $2", [req.business.id, String(a.id)]);
+    const { rows: proposed } = await pool.query("SELECT id, kind, body->>'rec_index' AS n, status FROM ad_items WHERE business_id = $1 AND body->>'analysis_id' = $2", [req.business.id, String(a.id)]);
     res.set('Cache-Control', 'no-store');
+    if (a.kind === 'whatsapp') return res.render('media-buyer-whatsapp', { active: 'mediabuyer', a, mbBase: base(req), proposed, engineOn });
     res.render('media-buyer-analysis', { active: 'mediabuyer', a, mbBase: base(req), proposed, metaChanging: META_CHANGING, notice: typeof req.query.done === 'string' ? req.query.done : null });
   }));
 
   // A recommendation goes to Approvals (ANALYZE → RECOMMEND → REVIEW → APPROVAL). Approving it records the
   // decision; Skyfly does not change the campaign itself (the owner applies it in Ads Manager).
+  // The recommendation picked from an analysis (for a comparison, from the engine named in the form).
+  const pickRec = (a, req) => {
+    const n = Number(req.params.n);
+    const engine = a?.engine === 'compare' ? (req.body.engine === 'claude' ? 'claude' : 'chatgpt') : (a?.engine ?? 'chatgpt');
+    const r = a?.kind === 'performance' && Number.isInteger(n) ? recommendationsOf(a, engine)[n] : null;
+    return r ? { r, engine, key: a.engine === 'compare' ? `${engine}:${n}` : String(n) } : null;
+  };
+  // A recommendation goes to Approvals as a decision record (ANALYZE → RECOMMEND → REVIEW → APPROVAL).
   router.post('/analysis/:analysisId/recommendations/:n/propose', asyncHandler(async (req, res) => {
     const a = await loadAnalysis(req);
-    const n = Number(req.params.n);
-    const r = a?.status === 'ok' && Number.isInteger(n) ? a.result?.recommendations?.[n] : null;
-    if (!r) return res.status(404).render('error', { message: 'Not found.' });
-    const { rows: [dup] } = await pool.query("SELECT id FROM ad_items WHERE business_id = $1 AND body->>'analysis_id' = $2 AND body->>'rec_index' = $3", [req.business.id, String(a.id), String(n)]);
+    const p = pickRec(a, req);
+    if (!p) return res.status(404).render('error', { message: 'Not found.' });
+    const { r, engine, key } = p;
+    const { rows: [dup] } = await pool.query("SELECT id FROM ad_items WHERE business_id = $1 AND kind = 'recommendation' AND body->>'analysis_id' = $2 AND body->>'rec_index' = $3", [req.business.id, String(a.id), key]);
     if (dup) return res.redirect(`${base(req)}/items/${dup.id}`);
-    const body = { source: 'ChatGPT analysis', analysis_id: String(a.id), rec_index: String(n), action: r.recommended_action, why: r.why_it_matters, observed: r.observed,
+    const body = { source: `${ENGINES[engine].label} analysis`, analysis_id: String(a.id), rec_index: key, action: r.recommended_action, why: r.why_it_matters, observed: r.observed,
       supporting_metrics: r.supporting_metrics.map((m) => `${m.name}: ${m.value}`), expected_objective: r.expected_objective, confidence: r.confidence, risks: r.risks,
       needs_more_data: r.needs_more_data, needs_approval: true, applies_to: `${r.entity_level} ${r.entity_name} (${r.entity_id})` };
     const { rows: [item] } = await pool.query(
       "INSERT INTO ad_items (business_id, kind, title, body, status, data_basis, created_by, ad_account_id) VALUES ($1, 'recommendation', $2, $3, 'proposed', $4, $5, $6) RETURNING id",
-      [req.business.id, `${r.action.replace(/_/g, ' ')}: ${r.entity_name}`.slice(0, 200), JSON.stringify(body), `ChatGPT analysis #${a.id}, ${a.scope.since} to ${a.scope.until}`, req.session.userId, a.ad_account_id]);
-    await audit(pool, req, { action: 'media_buyer.recommendation_proposed', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { analysis: a.id } });
+      [req.business.id, `${r.action.replace(/_/g, ' ')}: ${r.entity_name}`.slice(0, 200), JSON.stringify(body), `${ENGINES[engine].label} analysis #${a.id}, ${a.scope.since} to ${a.scope.until}`, req.session.userId, a.ad_account_id]);
+    await audit(pool, req, { action: 'media_buyer.recommendation_proposed', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { analysis: a.id, engine } });
+    res.redirect(`${base(req)}/items/${item.id}`);
+  }));
+
+  // Prepare ONE Meta change from a recommendation (pause, or a daily budget): Skyfly reads the object's
+  // current state from Meta and shows current vs proposed for approval. Nothing is changed here.
+  router.post('/analysis/:analysisId/recommendations/:n/prepare', asyncHandler(async (req, res) => {
+    const a = await loadAnalysis(req);
+    const p = pickRec(a, req);
+    if (!p) return res.status(404).render('error', { message: 'Not found.' });
+    const { r, engine, key } = p;
+    const op = r.action === 'pause' ? 'pause' : ['reduce_budget', 'increase_budget'].includes(r.action) ? 'set_daily_budget' : null;
+    if (!op || !['campaign', 'adset'].includes(r.entity_level)) return res.status(400).render('error', { message: 'Only pausing or changing the daily budget of a campaign or ad set can be prepared as a Meta action.' });
+    const { rows: [dup] } = await pool.query("SELECT id FROM ad_items WHERE business_id = $1 AND kind = 'action' AND status = 'proposed' AND body->>'analysis_id' = $2 AND body->>'rec_index' = $3", [req.business.id, String(a.id), key]);
+    if (dup) return res.redirect(`${base(req)}/items/${dup.id}`);
+    try {
+      const id = await prepareAction(pool, config, {
+        businessId: req.business.id, userId: req.session.userId, adAccountId: a.ad_account_id, op, level: r.entity_level, objectId: r.entity_id, proposedBudget: req.body.budget,
+        reasoning: `${r.observed}\n${r.why_it_matters}\n${r.recommended_action}`, risks: r.risks, expected: r.expected_objective,
+        source: { engine, supporting_metrics: r.supporting_metrics.map((m) => `${m.name}: ${m.value}`) }, link: { analysis_id: a.id, rec_index: key },
+      });
+      await audit(pool, req, { action: 'media_buyer.action_prepared', businessId: req.business.id, entityType: 'ad_item', entityId: id, details: { op, object: r.entity_id } });
+      res.redirect(`${base(req)}/items/${id}`);
+    } catch (err) {
+      if (!known(err)) throw err;
+      return res.status(err.status ?? 400).render('error', { message: err.message });
+    }
+  }));
+
+  // ---------- WhatsApp Conversion Audit
+  router.post('/whatsapp', asyncHandler(async (req, res) => {
+    try {
+      const id = await runWhatsAppAudit(pool, config, { businessId: req.business.id, userId: req.session.userId, adAccountId: req.body.account || null, engine: req.body.engine === 'claude' ? 'claude' : 'chatgpt' });
+      await audit(pool, req, { action: 'media_buyer.whatsapp_audit_run', businessId: req.business.id, entityType: 'ad_analysis', entityId: id });
+      res.redirect(`${base(req)}/analysis/${id}`);
+    } catch (err) { if (!known(err)) throw err; return page(req, res, { tab: 'whatsapp', error: err.message }, err.status); }
+  }));
+  router.post('/whatsapp/leads', (req, res, next) => csvUpload.single('file')(req, res, (err) => {
+    if (err) { req.uploadError = err.code === 'LIMIT_FILE_SIZE' ? 'The file is too large (2 MB at most).' : 'The upload could not be read.'; req.body ||= {}; }
+    requireCsrf(req, res, next);
+  }), asyncHandler(async (req, res) => {
+    const error = req.uploadError ?? (!req.file ? 'Choose a CSV file.' : null);
+    if (error) return page(req, res, { tab: 'whatsapp', error }, 400);
+    try {
+      const r = await importLeads(pool, req.business.id, req.file.buffer.toString('utf8'));
+      await audit(pool, req, { action: 'media_buyer.whatsapp_leads_imported', businessId: req.business.id, details: { saved: r.saved, skipped: r.skipped.length } });
+      res.redirect(`${base(req)}?tab=whatsapp&done=leads&saved=${r.saved}&skipped=${r.skipped.length}`);
+    } catch (e) { if (!known(e)) throw e; return page(req, res, { tab: 'whatsapp', error: e.message }, e.status); }
+  }));
+  // The audit's test plan becomes a campaign draft (approval creates it PAUSED, as for every draft).
+  router.post('/analysis/:analysisId/draft', asyncHandler(async (req, res) => {
+    const a = await loadAnalysis(req);
+    const plan = a?.kind === 'whatsapp' && a.status === 'ok' ? a.result?.test_plan : null;
+    if (!plan) return res.status(404).render('error', { message: 'Not found.' });
+    const { rows: [dup] } = await pool.query("SELECT id FROM ad_items WHERE business_id = $1 AND kind = 'campaign_draft' AND body->>'analysis_id' = $2", [req.business.id, String(a.id)]);
+    if (dup) return res.redirect(`${base(req)}/items/${dup.id}`);
+    const c = plan.creatives[0] ?? {};
+    const body = { name: `WhatsApp test: ${plan.objective}`.slice(0, 120), objective: /engagement|message/i.test(plan.objective) ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_SALES', daily_budget: plan.daily_budget,
+      audience: plan.audience, placements: 'As in the test plan', creatives: plan.creatives.map((x) => `${x.concept}: ${x.hook}`), primary_text: c.primary_text, headline: c.headline, cta: 'WHATSAPP_MESSAGE',
+      reasoning: plan.structure, test_plan: `${plan.measurement}\nSuccess: ${plan.success_criteria}\nStop-loss: ${plan.stop_loss}\nScale: ${plan.scaling_criteria}`, analysis_id: String(a.id), rec_index: 'plan' };
+    const { rows: [item] } = await pool.query(
+      "INSERT INTO ad_items (business_id, kind, title, body, status, data_basis, created_by, ad_account_id) VALUES ($1, 'campaign_draft', $2, $3, 'proposed', $4, $5, $6) RETURNING id",
+      [req.business.id, `Campaign draft: ${body.name}`.slice(0, 200), JSON.stringify(body), `WhatsApp Conversion Audit #${a.id}`, req.session.userId, a.ad_account_id]);
+    await audit(pool, req, { action: 'media_buyer.generated', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { task: 'whatsapp_draft' } });
     res.redirect(`${base(req)}/items/${item.id}`);
   }));
 
@@ -246,6 +329,13 @@ export function mediaBuyerRoutes({ pool, config }) {
     const item = await loadItem(req);
     if (!item) return res.status(404).render('error', { message: 'Not found.' });
     if (item.status !== 'proposed') return res.redirect(`${base(req)}/items/${item.id}`);
+    if (item.kind === 'action') {
+      // Applies exactly the change shown on this item, re-checked against Meta, then verified and logged.
+      const done = await executeAction(pool, config, { businessId: req.business.id, userId: req.session.userId, itemId: item.id });
+      if (!done) return res.redirect(`${base(req)}/items/${item.id}`);
+      await audit(pool, req, { action: done.status === 'executed' ? 'media_buyer.action_executed' : 'media_buyer.action_failed', businessId: req.business.id, entityType: 'ad_item', entityId: item.id, details: { op: item.body.op, object: item.body.object_id, verified: Boolean(done.meta_result?.verified) } });
+      return res.redirect(`${base(req)}/items/${item.id}?done=${done.status === 'executed' ? 'executed' : 'failed'}`);
+    }
     if (item.kind === 'campaign_draft') {
       try {
         const meta = await createPausedCampaign(pool, config, req.business.id, item.body, item.ad_account_id);

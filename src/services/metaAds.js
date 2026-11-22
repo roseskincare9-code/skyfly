@@ -283,3 +283,23 @@ export async function listCampaigns(pool, config, businessId, adAccountId) {
     return (r.data ?? []).map((k) => ({ id: k.id, name: k.name, status: k.effective_status }));
   } catch { return []; }
 }
+
+// One of THIS business's ad accounts, for the action layer and the WhatsApp audit. Reads any object or edge;
+// the only writes allowed through here are a status of PAUSED and a daily_budget (see actions.js), and only
+// on objects that Meta reports as belonging to this ad account.
+export async function withAccount(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first.`, 409);
+  const token = tokenOf(config, c);
+  return {
+    connection: c, act: `act_${c.ad_account_id}`,
+    get: (path, params = {}) => graph(config, token, path, { params }),
+    update: (objectId, change) => {
+      const keys = Object.keys(change);
+      const allowed = keys.length === 1 && ((keys[0] === 'status' && change.status === 'PAUSED') || (keys[0] === 'daily_budget' && /^\d+$/.test(String(change.daily_budget))));
+      if (!allowed || !/^\d{1,30}$/.test(String(objectId))) throw new MetaError('Skyfly only pauses or sets a daily budget, after approval.', 400);
+      return graph(config, token, String(objectId), { method: 'POST', body: change });
+    },
+  };
+}
