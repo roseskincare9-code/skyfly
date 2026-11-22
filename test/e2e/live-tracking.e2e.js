@@ -14,7 +14,7 @@ const biz = p.url().match(/\/businesses\/(\d+)/)?.[1];
 console.log(`SIGNIN owner B -> ${p.url().replace(SKYFLY, '')} business #${biz}`);
 const nav = await p.$$eval('a[href*="/media-buyer"]', (as) => as.map((a) => a.textContent.trim()).filter(Boolean));
 console.log(`NAV link to Media Buyer: ${nav.length ? JSON.stringify([...new Set(nav)]) : 'NONE'}`);
-for (const tab of ['overview', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings']) {
+for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns', 'settings']) {
   const r = await p.goto(`${SKYFLY}/businesses/${biz}/media-buyer?tab=${tab}`);
   const info = await p.evaluate(() => {
     const t = (s) => [...document.querySelectorAll(s)];
@@ -30,7 +30,7 @@ for (const tab of ['overview', 'campaigns', 'creatives', 'recommendations', 'bri
   console.log(`TAB ${tab}: HTTP ${r.status()} h1="${info.h1}" error=${info.error}`);
   console.log(`  buttons: ${info.buttons.join(' | ')}`);
   console.log(`  forms: ${[...new Set(info.forms)].join(' ')}`);
-  if (tab === 'overview' || tab === 'settings' || tab === 'campaigns') console.log(`  text: ${info.text}`);
+  if (['overview', 'analysis', 'whatsapp', 'approvals'].includes(tab)) console.log(`  text: ${info.text}`);
   if (info.aiOff && tab === 'overview') console.log(`  AI notice: ${info.aiOff}`);
 }
 await browser.close();
