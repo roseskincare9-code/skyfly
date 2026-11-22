@@ -56,3 +56,13 @@ for (const k of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
 }
 // Public DNS for the records Resend normally asks for (names are standard; values are account-specific).
 for (const [t, n] of [['TXT', `resend._domainkey.${D}`], ['MX', `send.${D}`], ['TXT', `send.${D}`], ['TXT', `_dmarc.${D}`], ['MX', D], ['TXT', D]]) console.log(`DNS ${t} ${n}: ${dig(t, n).slice(0, 160)}`);
+// Live Larose catalogs (public endpoints), in the order Skyfly serves them.
+for (const slug of ['larosenigeria', 'larose-skincare']) {
+  const r = await fetch(`https://getskyfly.com/api/public/pages/${slug}/catalog`, { headers: { Origin: 'https://roseskincare9-code.github.io' } });
+  const t = await r.text(); let b = null; try { b = JSON.parse(t); } catch {}
+  const list = Array.isArray(b) ? b : (b?.products ?? b?.items ?? []);
+  console.log(`CATALOG ${slug}: HTTP ${r.status} keys=${b && !Array.isArray(b) ? Object.keys(b).join(',') : 'array'}`);
+  for (const p of list) console.log(`CATALOG ${slug}  ${p.code ?? p.product} | ${p.name} | ${p.price ?? p.price_minor ?? p.unitPrice}`);
+  if (b?.upsell) console.log(`CATALOG ${slug}  upsell: ${b.upsell.code} | ${b.upsell.name} | ${b.upsell.price ?? b.upsell.price_minor}`);
+  if (!list.length) console.log(`CATALOG ${slug} raw: ${t.slice(0, 400)}`);
+}
