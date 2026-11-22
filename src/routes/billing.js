@@ -1,5 +1,6 @@
 // Public pricing page, and the owner's return from Paystack's checkout. The return page never activates a
 // plan from the browser's word: it asks Paystack server-to-server (verifyReference) and only that counts.
+import { adminVerified } from '../lib/adminSession.js';
 import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { PLANS } from '../lib/plans.js';
@@ -32,7 +33,7 @@ export function billingRoutes({ pool, config }) {
     try { ({ outcome } = await verifyReference(pool, config, reference, 'Paystack verification (return page)')); }
     catch (err) { console.error('Paystack verify:', err.message); outcome = 'check_failed'; }
     // Only someone who belongs to that business is sent to its subscription page.
-    if (req.session.userId && (await workspaceAccess(pool, req.session.userId, pay.business_id))) {
+    if (req.session.userId && (await workspaceAccess(pool, req.session.userId, pay.business_id, { allowAdmin: adminVerified(req) }))) {
       return res.redirect(`/businesses/${pay.business_id}/subscription?payment=${encodeURIComponent(outcome)}`);
     }
     const msg = { activated: 'Payment confirmed by Paystack: the plan is active. Sign in to see it.', already_applied: 'This payment was already confirmed. Sign in to see your plan.' }[outcome]

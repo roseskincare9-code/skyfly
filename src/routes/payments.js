@@ -1,6 +1,7 @@
 // Payment Gateways (business owner only): connect the business's OWN Stripe and PayPal accounts through
 // the gateways' official authorisation pages, see their status, enable/disable, disconnect and reconnect;
 // set the USD delivery fee for online orders. Every action is limited to the signed-in owner's business.
+import { adminVerified } from '../lib/adminSession.js';
 import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
@@ -93,7 +94,7 @@ export function paymentCallbackRoutes({ pool, config }) {
     if (!req.session.userId || typeof state !== 'string') return null;
     const businessId = await useState(pool, { state, userId: req.session.userId, provider });
     if (!businessId) return null;
-    const access = await workspaceAccess(pool, req.session.userId, businessId);
+    const access = await workspaceAccess(pool, req.session.userId, businessId, { allowAdmin: adminVerified(req) });
     // Only the business's own owner (not a Super Admin visiting) connects its accounts.
     return access && !access.viaAdmin && access.role === 'owner' ? businessId : null;
   };

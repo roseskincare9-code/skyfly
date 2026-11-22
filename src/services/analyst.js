@@ -470,6 +470,16 @@ export async function monitorBusiness(pool, config, businessId, { now = new Date
   }
   return { alerts: made };
 }
+// Scheduled AI review: every 1, 3 or 7 days (owner's choice), a full analysis of the selected account by the
+// chosen engine, so recommendations keep coming without the owner asking. It only recommends: any change still
+// goes through Approvals.
+async function scheduledReview(pool, config, businessId) {
+  const { rows: [m] } = await pool.query(`SELECT ai_review_days, ai_engine FROM ad_monitor_settings WHERE business_id = $1 AND enabled AND ai_review_days IS NOT NULL
+    AND (last_ai_review_at IS NULL OR last_ai_review_at < now() - make_interval(days => ai_review_days))`, [businessId]);
+  if (!m || !ENGINES[m.ai_engine]?.ready(config)) return null;
+  await pool.query('UPDATE ad_monitor_settings SET last_ai_review_at = now() WHERE business_id = $1', [businessId]);
+  return analyze(pool, config, { businessId, userId: null, engine: m.ai_engine, period: m.ai_review_days === 1 ? 'yesterday' : 'last_7d' });
+}
 export async function runAdMonitoring(pool, config, { limit = 20 } = {}) {
   const { rows } = await pool.query(`SELECT business_id FROM ad_monitor_settings
     WHERE enabled AND (last_run_at IS NULL OR last_run_at < now() - make_interval(hours => interval_hours)) ORDER BY last_run_at NULLS FIRST LIMIT $1`, [limit]);
@@ -478,6 +488,7 @@ export async function runAdMonitoring(pool, config, { limit = 20 } = {}) {
     try {
       const r = await monitorBusiness(pool, config, id);
       alerts += r.alerts;
+      await scheduledReview(pool, config, id).catch((err) => pool.query('UPDATE ad_monitor_settings SET last_error = $2 WHERE business_id = $1', [id, `AI review: ${String(err.message).slice(0, 250)}`]));
       await pool.query('UPDATE ad_monitor_settings SET last_run_at = now(), last_error = $2 WHERE business_id = $1', [id, r.skipped ?? null]);
     } catch (err) {
       await pool.query('UPDATE ad_monitor_settings SET last_run_at = now(), last_error = $2 WHERE business_id = $1', [id, String(err.message).slice(0, 300)]);
