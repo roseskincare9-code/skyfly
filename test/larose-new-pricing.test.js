@@ -11,7 +11,7 @@ import { clearOriginCache } from '../src/lib/origins.js';
 
 const MIGRATION = readFileSync(new URL('../migrations/062_larose_new_pricing.sql', import.meta.url), 'utf8');
 const PAGE = readFileSync(new URL('../src/import/larose-skincare.html', import.meta.url), 'utf8');
-const NEW = { 'soap-500g': 20500, 'soap-500g-oil': 30500, 'soap-1l': 26500, 'soap-1l-oil': 36500, 'soap-2l': 44500, 'soap-2l-oil': 54500, 'facial-set': 17000 };
+const NEW = { 'soap-500g': 20500, 'soap-500g-oil': 30500, 'soap-1l': 26500, 'soap-1l-oil': 36500, 'soap-2l': 44500, 'soap-2l-oil': 54500 };
 const { pool, app } = setup({});
 let larose; let other; let oldOrder;
 const order = (items, key) => request(app).post('/api/public/orders').set('Origin', ORIGIN).send({
@@ -33,7 +33,7 @@ before(async () => {
 });
 after(() => pool.end());
 
-test('adds the seven products at the exact prices, on both Larose pages, once', async () => {
+test('adds the six packages at the exact prices, on both Larose pages, once', async () => {
   const { rows } = await pool.query(
     `SELECT p.code, p.price_minor, p.active, array_agg(lp.slug ORDER BY lp.slug) AS pages FROM products p
        LEFT JOIN landing_page_products lpp ON lpp.product_id = p.id LEFT JOIN landing_pages lp ON lp.id = lpp.landing_page_id
@@ -41,15 +41,21 @@ test('adds the seven products at the exact prices, on both Larose pages, once', 
   assert.deepEqual(Object.fromEntries(rows.map((r) => [r.code, Number(r.price_minor) / 100])), NEW);
   assert.ok(rows.every((r) => r.active && r.pages.includes('larosenigeria')));
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM products WHERE business_id = $1', [other])).rows[0].n, 0);
+  const { rows: [up] } = await pool.query(
+    "SELECT p.code, p.price_minor FROM landing_pages lp JOIN products p ON p.id = lp.upsell_product_id WHERE lp.slug = 'larosenigeria'");
+  assert.equal(up.code, 'facial-set'); assert.equal(Number(up.price_minor), 1700000);
 });
 
-test('the 500g at ₦20,500 and the Facial Set on its own are priced by Skyfly; delivery is not charged automatically', async () => {
+test('the 500g at ₦20,500, with or without the Facial Set add-on, is priced by Skyfly; delivery is not charged automatically', async () => {
   const a = await order([{ product: 'soap-500g', quantity: 1, unitPrice: 20500 }], 'larose-newprice-500g-0001').expect(201);
   assert.equal(a.body.total, 20500);
   const { rows: [o] } = await pool.query('SELECT total_minor, delivery_fee_minor FROM orders WHERE reference = $1', [a.body.reference]);
   assert.equal(Number(o.total_minor), 2050000); assert.equal(Number(o.delivery_fee_minor), 0);
-  const f = await order([{ product: 'facial-set', quantity: 1, unitPrice: 17000 }], 'larose-newprice-face-0001').expect(201);
-  assert.equal(f.body.total, 17000);
+  const f = await order([{ product: 'soap-2l-oil', quantity: 1, unitPrice: 54500 }, { product: 'facial-set', quantity: 1, upsell: true, unitPrice: 17000 }], 'larose-newprice-face-0001').expect(201);
+  assert.equal(f.body.total, 71500);
+  assert.deepEqual(f.body.items.map((i) => [i.name, i.upsell]), [['2 Litre Halfcast Super Fort Herbal Soap + Fruit Essence Skin Glowing Oil', false], ['Facial Set', true]]);
+  // The Facial Set is only an add-on: never a package on its own.
+  await order([{ product: 'facial-set', quantity: 1, unitPrice: 17000 }], 'larose-newprice-face-0002').expect(400);
   assert.equal((await order([{ product: 'soap-500g', quantity: 1, unitPrice: 26500 }], 'larose-newprice-bad-0001').expect(409)).body.error, 'PRICE_CHANGED');
 });
 
@@ -62,11 +68,11 @@ test('the page that is live now keeps working, and past orders keep their price'
 test("the Media Buyer's prices and offer are updated for Larose only", async () => {
   const { rows } = await pool.query('SELECT business_id, prices, offer FROM ad_profiles ORDER BY business_id');
   const l = rows.find((r) => Number(r.business_id) === Number(larose)); const x = rows.find((r) => Number(r.business_id) === Number(other));
-  assert.match(l.prices, /500g African Soap ₦20,500/); assert.match(l.offer, /₦3,000/);
+  assert.match(l.prices, /500g Halfcast Super Fort Herbal Soap ₦20,500/); assert.match(l.offer, /₦3,000/);
   assert.equal(x.prices, 'their prices'); assert.equal(x.offer, 'their offer');
 });
 
-test('the Skyfly-hosted page sells exactly these products at these prices, 500g first and selected', () => {
+test('the Skyfly-hosted page sells exactly these six packages at these prices, 500g first and selected', () => {
   const opts = [...PAGE.matchAll(/<option value="[^"]+" data-product="([^"]+)" data-price="(\d+)"( selected)?>/g)];
   assert.deepEqual(Object.fromEntries(opts.map((m) => [m[1], Number(m[2])])), NEW);
   assert.equal(opts[0][1], 'soap-500g'); assert.equal(opts[0][3], ' selected');
