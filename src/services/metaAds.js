@@ -22,7 +22,8 @@ async function graph(config, token, path, { params = {}, method = 'GET', body = 
   if (!res.ok || j.error) {
     const e = j.error ?? {};
     // Never echo the token: Meta's messages do not contain it, and the URL is not included.
-    throw new MetaError(`Meta: ${String(e.message ?? `HTTP ${res.status}`).slice(0, 220)}${e.code ? ` (code ${e.code})` : ''}`, res.status === 401 || e.code === 190 ? 401 : 502);
+    const detail = e.error_user_title || e.error_user_msg ? ` ${[e.error_user_title, e.error_user_msg].filter(Boolean).join(': ')}` : '';
+    throw new MetaError(`Meta: ${String(e.message ?? `HTTP ${res.status}`).slice(0, 220)}${detail.slice(0, 300)}${e.code ? ` (code ${e.code})` : ''}`, res.status === 401 || e.code === 190 ? 401 : res.status >= 500 ? 502 : res.status === 400 || res.status === 403 ? 400 : 502);
   }
   return j;
 }
@@ -59,7 +60,7 @@ export async function connectAccount(pool, config, { businessId, userId, token, 
 export async function listConnections(pool, businessId) {
   const { rows } = await pool.query(
     `SELECT id, business_id, ad_account_id, ad_account_name, currency, account_status, page_id, page_name, pixel_id, pixel_name, token_hint,
-            status, verified_at, last_error, selected, created_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
+            status, verified_at, last_error, selected, created_at, health, health_checked_at FROM ad_connections WHERE business_id = $1 ORDER BY selected DESC, created_at`, [businessId]);
   return rows;
 }
 
@@ -168,4 +169,208 @@ export async function createPausedCampaign(pool, config, businessId, draft, adAc
   });
   const check = await graph(config, token, made.id, { params: { fields: 'id,name,status,effective_status,objective' } });
   return { id: check.id, name: check.name, status: check.status, effective_status: check.effective_status, objective: check.objective, ad_account_id: c.ad_account_id };
+}
+
+// ---------- Data for the ChatGPT performance analysis (READ-ONLY: only GET requests to Meta).
+// Skyfly computes every metric itself from Meta's raw numbers, so the AI explains figures, never invents them.
+const round = (v, d = 2) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
+const LEAD = ['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead'];
+export function metricsOf(row = {}) {
+  const spend = Number(row.spend ?? 0);
+  const impressions = Number(row.impressions ?? 0);
+  const linkClicks = Number(row.inline_link_clicks ?? pick(row.actions, ['link_click']) ?? 0);
+  const purchases = pick(row.actions, PURCHASE);
+  const value = pick(row.action_values, PURCHASE);
+  const leads = pick(row.actions, LEAD);
+  const lpv = pick(row.actions, ['landing_page_view', 'omni_landing_page_view']);
+  return {
+    spend: round(spend), impressions, reach: Number(row.reach ?? 0), frequency: round(Number(row.frequency ?? 0)),
+    clicks: Number(row.clicks ?? 0), link_clicks: linkClicks,
+    ctr: round(Number(row.ctr ?? 0)), link_ctr: impressions ? round((linkClicks / impressions) * 100) : null,
+    cpc: round(Number(row.cpc ?? 0)), cpm: round(Number(row.cpm ?? 0)),
+    landing_page_views: lpv, add_to_cart: pick(row.actions, ['add_to_cart', 'offsite_conversion.fb_pixel_add_to_cart', 'omni_add_to_cart']),
+    initiate_checkout: pick(row.actions, ['initiate_checkout', 'offsite_conversion.fb_pixel_initiate_checkout', 'omni_initiated_checkout']),
+    purchases, purchase_value: round(value), leads,
+    cpa: purchases ? round(spend / purchases) : null, cost_per_lead: leads ? round(spend / leads) : null,
+    roas: spend && value ? round(value / spend) : null,
+    conversion_rate: linkClicks ? round((purchases / linkClicks) * 100) : null,
+    landing_page_conversion_rate: lpv ? round((purchases / lpv) * 100) : null,
+  };
+}
+const ymd = (d, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+const addDays = (s, n) => { const d = new Date(`${s}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const DAYS = { today: 1, yesterday: 1, last_7d: 7, last_14d: 14, last_30d: 30 };
+export const ANALYSIS_PERIODS = Object.keys(DAYS);
+// The requested window and the equal window just before it, as dates in the ad account's time zone.
+export function windows({ period = 'last_7d', since = null, until = null }, tz, now = new Date()) {
+  const today = ymd(now, tz);
+  let s; let u;
+  if (since && until) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since) || !/^\d{4}-\d{2}-\d{2}$/.test(until) || since > until) throw new MetaError('Choose a valid date range (from ≤ to).');
+    if (until > today) throw new MetaError('The date range cannot end in the future.');
+    if ((new Date(until) - new Date(since)) / 86400000 > 89) throw new MetaError('Choose a date range of at most 90 days.');
+    [s, u] = [since, until];
+  } else {
+    const n = DAYS[period] ?? 7;
+    if (period === 'today') [s, u] = [today, today];
+    else { u = addDays(today, -1); s = addDays(u, -(n - 1)); } // Meta's last_Nd presets end yesterday
+  }
+  const len = Math.round((new Date(u) - new Date(s)) / 86400000) + 1;
+  return { current: { since: s, until: u, days: len }, previous: { since: addDays(s, -len), until: addDays(s, -1), days: len }, today };
+}
+function targetingSummary(t) {
+  if (!t) return null;
+  const geo = t.geo_locations ?? {};
+  const names = (l) => (l ?? []).map((x) => x.name ?? x.key ?? x).slice(0, 10);
+  return {
+    age: t.age_min || t.age_max ? `${t.age_min ?? 18}-${t.age_max ?? 65}` : null,
+    genders: t.genders?.length ? t.genders.map((g) => (g === 1 ? 'men' : g === 2 ? 'women' : g)) : 'all',
+    countries: geo.countries ?? [], regions: names(geo.regions), cities: names(geo.cities),
+    interests: (t.flexible_spec ?? []).flatMap((f) => names(f.interests)).slice(0, 10),
+    custom_audiences: (t.custom_audiences ?? []).length, excluded_custom_audiences: (t.excluded_custom_audiences ?? []).length,
+    advantage_audience: t.targeting_automation?.advantage_audience === 1 ? true : undefined,
+  };
+}
+// Everything the analysis needs from ONE of this business's ad accounts, for one window (+ the one before).
+export async function analysisData(pool, config, businessId, adAccountId, { period = 'last_7d', since = null, until = null, campaignId = null } = {}) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first.`, 409);
+  const token = tokenOf(config, c);
+  const act = `act_${c.ad_account_id}`;
+  const acct = await graph(config, token, act, { params: { fields: 'name,currency,timezone_name,account_status' } });
+  const w = windows({ period, since, until }, acct.timezone_name);
+  const camp = campaignId && /^\d{1,30}$/.test(String(campaignId)) ? String(campaignId) : null;
+  const filtering = camp ? [{ field: 'campaign.id', operator: 'IN', value: [camp] }] : undefined;
+  const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,cpc,cpm,actions,action_values';
+  const ins = (level, win) => graph(config, token, `${act}/insights`, { params: { ...(level ? { level } : {}), time_range: { since: win.since, until: win.until }, fields: level ? fields : fields.replace(/^campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,/, ''), limit: '200', ...(filtering ? { filtering } : {}) } });
+  const list = (edge, f) => graph(config, token, `${act}/${edge}`, { params: { fields: f, limit: '200', ...(filtering ? { filtering } : {}) } });
+  const [campaigns, adsets, ads, cNow, cPrev, sNow, aNow, tNow, tPrev] = await Promise.all([
+    list('campaigns', 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,bid_strategy,created_time'),
+    list('adsets', 'id,name,campaign_id,effective_status,optimization_goal,daily_budget,lifetime_budget,targeting'),
+    list('ads', 'id,name,adset_id,campaign_id,effective_status,creative{title,body,object_type,call_to_action_type}'),
+    ins('campaign', w.current), ins('campaign', w.previous), ins('adset', w.current), ins('ad', w.current), ins(null, w.current), ins(null, w.previous),
+  ]);
+  const pixel = c.pixel_id ? await graph(config, token, c.pixel_id, { params: { fields: 'last_fired_time,is_unavailable' } }).catch(() => null) : null;
+  const budget = (v) => (v ? Number(v) / 100 : null);
+  const by = (res, key) => Object.fromEntries((res.data ?? []).map((r) => [r[key], metricsOf(r)]));
+  const [cm, cp, sm, am] = [by(cNow, 'campaign_id'), by(cPrev, 'campaign_id'), by(sNow, 'adset_id'), by(aNow, 'ad_id')];
+  const truncated = [campaigns, adsets, ads, cNow, sNow, aNow].some((r) => r.paging?.next);
+  return {
+    fetched_at: new Date().toISOString(),
+    account: { id: c.ad_account_id, name: acct.name ?? c.ad_account_name, currency: acct.currency ?? c.currency, timezone: acct.timezone_name ?? null, status: acct.account_status ?? null },
+    window: w.current, previous_window: w.previous, period: since && until ? 'custom' : period, partial_day: w.current.until === w.today,
+    campaign_filter: camp,
+    totals: metricsOf(tNow.data?.[0]), previous_totals: metricsOf(tPrev.data?.[0]),
+    campaigns: (campaigns.data ?? []).map((k) => ({ id: k.id, name: k.name, status: k.effective_status ?? k.status, objective: k.objective ?? null,
+      daily_budget: budget(k.daily_budget), lifetime_budget: budget(k.lifetime_budget), bid_strategy: k.bid_strategy ?? null,
+      metrics: cm[k.id] ?? null, previous: cp[k.id] ?? null })),
+    adsets: (adsets.data ?? []).map((s) => ({ id: s.id, name: s.name, campaign_id: s.campaign_id, status: s.effective_status ?? null, optimization_goal: s.optimization_goal ?? null,
+      daily_budget: budget(s.daily_budget), lifetime_budget: budget(s.lifetime_budget), targeting: targetingSummary(s.targeting), metrics: sm[s.id] ?? null })),
+    ads: (ads.data ?? []).map((a) => ({ id: a.id, name: a.name, adset_id: a.adset_id, campaign_id: a.campaign_id, status: a.effective_status ?? null,
+      creative: a.creative ? { title: a.creative.title ?? null, body: a.creative.body ? String(a.creative.body).slice(0, 400) : null, format: a.creative.object_type ?? null, cta: a.creative.call_to_action_type ?? null } : null,
+      metrics: am[a.id] ?? null })),
+    pixel: c.pixel_id ? { id: c.pixel_id, last_fired_time: pixel?.last_fired_time ?? null, unavailable: pixel?.is_unavailable ?? null } : null,
+    truncated,
+  };
+}
+
+// Campaign names for the analysis scope picker (one read; empty if Meta is unavailable).
+export async function listCampaigns(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c || c.status !== 'verified') return [];
+  try {
+    const r = await graph(config, tokenOf(config, c), `act_${c.ad_account_id}/campaigns`, { params: { fields: 'id,name,effective_status', limit: '200' } });
+    return (r.data ?? []).map((k) => ({ id: k.id, name: k.name, status: k.effective_status }));
+  } catch { return []; }
+}
+
+// One of THIS business's ad accounts, for the action layer and the WhatsApp audit. Reads any object or edge;
+// the only writes allowed through here are a status of PAUSED and a daily_budget (see actions.js), and only
+// on objects that Meta reports as belonging to this ad account.
+export async function withAccount(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first.`, 409);
+  const token = tokenOf(config, c);
+  return {
+    connection: c, act: `act_${c.ad_account_id}`,
+    get: (path, params = {}) => graph(config, token, path, { params }),
+    update: (objectId, change) => {
+      const keys = Object.keys(change);
+      const allowed = keys.length === 1 && ((keys[0] === 'status' && change.status === 'PAUSED') || (keys[0] === 'daily_budget' && /^\d+$/.test(String(change.daily_budget))));
+      if (!allowed || !/^\d{1,30}$/.test(String(objectId))) throw new MetaError('Skyfly only pauses or sets a daily budget, after approval.', 400);
+      return graph(config, token, String(objectId), { method: 'POST', body: change });
+    },
+  };
+}
+
+// ---------- Connection health: what this token can actually do in this account (read-only).
+const ACCOUNT_STATUS = { 1: 'active', 2: 'disabled', 3: 'unsettled (payment due)', 7: 'pending risk review', 8: 'pending settlement', 9: 'in grace period', 100: 'pending closure', 101: 'closed', 201: 'any active', 202: 'any closed' };
+export const NEEDED_PERMISSIONS = { ads_read: 'read campaigns and results', ads_management: 'create drafts, launch, pause and change budgets', pages_show_list: 'see your Facebook Pages', pages_read_engagement: 'use your Page in ads', business_management: 'access ad accounts owned by a Business Manager' };
+export async function connectionHealth(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  let token;
+  try { token = tokenOf(config, c); } catch (err) { return { ok: false, error: err.message }; }
+  const out = { checked_at: new Date().toISOString(), ok: true };
+  try {
+    const perms = await graph(config, token, 'me/permissions', { params: { limit: '100' } }).catch(() => null);
+    out.permissions = perms ? Object.fromEntries((perms.data ?? []).map((p) => [p.permission, p.status])) : null; // null: not reported for this kind of token
+    const acct = await graph(config, token, `act_${c.ad_account_id}`, { params: { fields: 'name,account_status,disable_reason,currency,timezone_name,amount_spent,spend_cap' } });
+    out.account = { name: acct.name, status: ACCOUNT_STATUS[acct.account_status] ?? String(acct.account_status), status_code: acct.account_status, disable_reason: acct.disable_reason ?? 0, currency: acct.currency, timezone: acct.timezone_name, spend_cap: acct.spend_cap ? Number(acct.spend_cap) / 100 : null };
+    const pages = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,name,instagram_business_account{id,username}', limit: '25' } }).catch((e) => ({ error: e.message }));
+    out.pages = pages.error ? { error: pages.error } : (pages.data ?? []).map((p) => ({ id: p.id, name: p.name, instagram: p.instagram_business_account ? { id: p.instagram_business_account.id, username: p.instagram_business_account.username } : null }));
+    const px = await graph(config, token, `act_${c.ad_account_id}/adspixels`, { params: { fields: 'id,name,last_fired_time', limit: '25' } }).catch((e) => ({ error: e.message }));
+    out.pixels = px.error ? { error: px.error } : (px.data ?? []).map((p) => ({ id: p.id, name: p.name, last_fired_time: p.last_fired_time ?? null }));
+    // What Skyfly can do with this connection, worked out from the above.
+    const granted = (p) => out.permissions == null ? null : out.permissions[p] === 'granted';
+    out.capabilities = {
+      read_results: true,
+      build_drafts: granted('ads_management') !== false && out.account.status_code === 1 && Array.isArray(out.pages) && out.pages.length > 0,
+      launch: granted('ads_management') !== false && out.account.status_code === 1,
+      conversion_tracking: Array.isArray(out.pixels) && out.pixels.length > 0,
+      instagram: Array.isArray(out.pages) && out.pages.some((p) => p.instagram),
+    };
+    out.problems = [
+      ...(out.account.status_code !== 1 ? [`The ad account is ${out.account.status}: Meta will not deliver ads until this is resolved in Ads Manager.`] : []),
+      ...(granted('ads_management') === false ? ['The token lacks ads_management: Skyfly can read results but cannot build drafts, launch or change budgets.'] : []),
+      ...(Array.isArray(out.pages) && !out.pages.length ? ['No Facebook Page is available to this ad account: ads cannot be created until a Page is assigned to it.'] : []),
+      ...(Array.isArray(out.pixels) && !out.pixels.length ? ['No pixel (dataset) on this ad account: sales campaigns cannot optimise for purchases.'] : []),
+    ];
+  } catch (err) {
+    out.ok = false; out.error = err.message;
+    if (err.status === 401) await pool.query("UPDATE ad_connections SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1", [c.id, err.message]);
+  }
+  await pool.query('UPDATE ad_connections SET health = $2, health_checked_at = now() WHERE id = $1', [c.id, JSON.stringify(out)]);
+  return out;
+}
+
+// ---------- Campaign builds. Creates objects ONLY as PAUSED (campaigns, ad sets, ads), plus images and
+// creatives (which cannot spend). Activation is a separate call used only by an authorised launch.
+const BUILD_EDGES = new Set(['campaigns', 'adsets', 'adimages', 'adcreatives', 'ads']);
+export async function buildAccess(pool, config, businessId, adAccountId) {
+  const c = await connectionFor(pool, businessId, adAccountId);
+  if (!c) throw new MetaError('That ad account is not connected to this business.', 404);
+  if (c.status !== 'verified') throw new MetaError(`Ad account act_${c.ad_account_id} needs to be reconnected first.`, 409);
+  const token = tokenOf(config, c);
+  const act = `act_${c.ad_account_id}`;
+  return {
+    connection: c, act,
+    get: (path, params = {}) => graph(config, token, path, { params }),
+    create: (edge, body) => {
+      if (!BUILD_EDGES.has(edge)) throw new MetaError('Unsupported build step.', 400);
+      if (['campaigns', 'adsets', 'ads'].includes(edge) && body.status !== 'PAUSED') throw new MetaError('Skyfly creates campaigns, ad sets and ads only as PAUSED.', 400);
+      return graph(config, token, `${act}/${edge}`, { method: 'POST', body });
+    },
+    // Used only by launchBuild() after the owner's explicit authorisation.
+    setStatus: (objectId, status) => {
+      if (!['ACTIVE', 'PAUSED'].includes(status) || !/^\d{1,30}$/.test(String(objectId))) throw new MetaError('Invalid status change.', 400);
+      return graph(config, token, String(objectId), { method: 'POST', body: { status } });
+    },
+    geo: async (q, country) => {
+      const r = await graph(config, token, 'search', { params: { type: 'adgeolocation', q, location_types: ['city'], country_code: country, limit: '5' } });
+      return (r.data ?? []).find((x) => x.type === 'city' && (!country || x.country_code === country)) ?? null;
+    },
+  };
 }

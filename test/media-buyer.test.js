@@ -59,7 +59,7 @@ const aiServer = createServer(async (req, res) => {
 await Promise.all([new Promise((r) => metaServer.listen(0, r)), new Promise((r) => aiServer.listen(0, r))]);
 
 const encryptionKey = randomBytes(32);
-const { pool, app: expressApp } = setup({
+const { pool, app: expressApp, config: cfg } = setup({
   metaGraphBase: `http://127.0.0.1:${metaServer.address().port}/v26.0`, encryptionKey,
   cloudy: { apiKey: 'sk-ant-test', model: 'claude-sonnet-5-5', apiBase: `http://127.0.0.1:${aiServer.address().port}` },
 });
@@ -69,6 +69,10 @@ let ownerA; let ownerB; let staffA; let A; let B;
 const TOK_A = `tokA${'a'.repeat(40)}`; const TOK_B = `tokB${'b'.repeat(40)}`;
 const post = async (agent, path, form = {}) => { const _csrf = await csrfToken(agent, `/businesses/${path.match(/\/businesses\/(\d+)/)[1]}/subscription`); return agent.post(path).type('form').send({ _csrf, ...form }); };
 const mb = (biz) => `/businesses/${biz}/media-buyer`;
+// Legacy Cloudy drafts (a PAUSED campaign shell). The "Draft a campaign" button now makes a full plan (see
+// media-buyer-builder.test.js) whenever an analysis engine is on, so these are created through the service.
+const { generate: cloudyGenerate } = await import('../src/services/cloudy.js');
+const legacyDraft = async (biz) => ({ headers: { location: `${mb(biz)}/items/${await cloudyGenerate(pool, cfg, { businessId: biz, task: 'campaign_draft' })}` } });
 
 before(async () => {
   await resetDatabase(pool);
@@ -137,20 +141,23 @@ describe('dashboard, Cloudy and approvals', () => {
     assert.doesNotMatch((await ownerB.get(mb(B))).text, /Waste campaign spent NGN 20,000/);
   });
 
-  test('audit, recommendations and creative briefs (hook, script, scenes, CTA) are saved for this business', async () => {
-    for (const task of ['audit', 'briefs', 'report_weekly']) {
-      const r = await post(ownerA, `${mb(A)}/generate/${task}`);
-      assert.match(r.headers.location, new RegExp(`^${mb(A)}/items/\\d+$`));
-      const page = await ownerA.get(r.headers.location).expect(200);
-      if (task === 'briefs') { assert.match(page.text, /7 days, one serum/); assert.match(page.text, /Close-up/); assert.match(page.text, /Shop now/); }
+  test('creative briefs (hook, script, scenes, CTA) are saved for this business; audits and reports are done in Performance Analysis (no duplicate AI)', async () => {
+    const r = await post(ownerA, `${mb(A)}/generate/briefs`);
+    assert.match(r.headers.location, new RegExp(`^${mb(A)}/items/\\d+$`));
+    const page = await ownerA.get(r.headers.location).expect(200);
+    assert.match(page.text, /7 days, one serum/); assert.match(page.text, /Close-up/); assert.match(page.text, /Shop now/);
+    const n = (await pool.query('SELECT count(*)::int AS n FROM ad_items WHERE business_id = $1', [A])).rows[0].n;
+    for (const task of ['audit', 'report_weekly']) {
+      const x = await post(ownerA, `${mb(A)}/generate/${task}`);
+      assert.equal(x.status, 409); assert.match(x.text, /Performance Analysis tab/);
     }
     const { rows } = await pool.query('SELECT kind, data_basis FROM ad_items WHERE business_id = $1 ORDER BY id', [A]);
-    assert.deepEqual(rows.map((r) => r.kind), ['audit', 'brief', 'report']);
+    assert.equal(rows.length, n); assert.deepEqual(rows.map((x) => x.kind), ['brief']);
     assert.match(rows[0].data_basis, /Meta account 111111111/);
   });
 
   test('draft-first: a campaign draft waits for approval; approving creates a PAUSED shell in the business\'s own account only', async () => {
-    const r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    const r = await legacyDraft(A);
     const itemUrl = r.headers.location;
     assert.equal(meta.created.length, 0, 'nothing created before approval');
     const approvals = await ownerA.get(`${mb(A)}?tab=approvals`).expect(200);
@@ -175,7 +182,7 @@ describe('dashboard, Cloudy and approvals', () => {
   });
 
   test('rejecting a draft changes nothing in Meta', async () => {
-    const r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    const r = await legacyDraft(A);
     await post(ownerA, `${r.headers.location}/reject`);
     assert.equal(meta.created.length, 1);
     assert.equal((await pool.query("SELECT status FROM ad_items WHERE business_id = $1 ORDER BY id DESC LIMIT 1", [A])).rows[0].status, 'rejected');
@@ -202,7 +209,7 @@ describe('several ad accounts per business', () => {
     await ownerA.get(mb(A)).expect(200);
     assert.ok(meta.calls.length && meta.calls.every((c) => !c.path.startsWith('/act_') || c.path.startsWith('/act_333333333')), 'only the selected account is read');
     ai.requests.length = 0;
-    r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    r = await legacyDraft(A);
     const data = JSON.parse(ai.requests[0].body.system.split('BUSINESS DATA (JSON, this business only):\n')[1]);
     assert.equal(data.selected_ad_account.id, '333333333');
     assert.equal(data.meta_ads.last_7_days.account.id, '333333333');
@@ -220,7 +227,7 @@ describe('several ad accounts per business', () => {
 
   test('a draft for an account that was disconnected is refused, nothing is created; only the owner can disconnect', async () => {
     await post(ownerA, `${mb(A)}/accounts/333333333/select`);
-    const r = await post(ownerA, `${mb(A)}/generate/campaign_draft`);
+    const r = await legacyDraft(A);
     const itemId = r.headers.location.split('/').pop();
     // A manager may use the media buyer but not disconnect accounts.
     const { rows: [m] } = await pool.query("INSERT INTO users (email, password_hash, name, email_verified_at) VALUES ('manager@alpha.test', $1, 'Manager', now()) RETURNING id", [await hashPassword('correct-horse-battery')]);

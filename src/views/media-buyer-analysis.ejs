@@ -1,0 +1,66 @@
+<%- include('partials/head', { title: `Performance analysis #${a.id}` }) %>
+<%- include('partials/nav') %>
+<%
+  const res = a.result || {}; const d = a.data || {}; const t = d.totals || {}; const p = d.previous_totals || {};
+  const cmp = res.mode === 'compare';
+  const cur = d.account?.currency || business.currency;
+  const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+  const num = (v, dg = 2) => v == null ? '—' : Number(v).toLocaleString('en-NG', { maximumFractionDigits: dg });
+  const ageH = a.data_fetched_at ? (Date.now() - new Date(a.data_fetched_at).getTime()) / 3600000 : null;
+  // Items already created from this analysis, by kind and key ("n", or "engine:n" for a comparison).
+  const done = {}; (proposed || []).forEach((x) => { (done[x.kind] ??= {})[x.n] = x; });
+  const ENG = { chatgpt: 'ChatGPT', claude: 'Claude', compare: 'ChatGPT + Claude (comparison)' };
+  const chips = (ms) => (ms || []).map((m) => `${m.name}: ${m.value}`).join(' · ');
+%>
+<main data-analysis="<%= a.id %>" data-engine="<%= a.engine %>">
+  <p><a href="<%= mbBase %>?tab=analysis">← Performance Analysis</a></p>
+  <div class="page-head"><div><h1>Performance analysis #<%= a.id %></h1>
+    <p class="muted">Ad account <strong data-analysis-account>act_<%= a.ad_account_id %></strong><%= d.account?.name ? ` (${d.account.name})` : '' %> · <%= a.scope.since %> → <%= a.scope.until %><%= a.scope.campaign_id ? ` · campaign ${a.scope.campaign_id}` : ' · all campaigns' %><%= d.business?.focus_product ? ` · product focus: ${d.business.focus_product.name}` : '' %> · analysed by <strong><%= ENG[a.engine] %></strong> (<%= a.model %>)</p></div></div>
+  <div class="<%= ageH != null && ageH > 6 ? 'warn-box' : 'notice' %>" data-freshness>Data fetched from Meta: <strong><%= a.data_fetched_at ? formatDate(a.data_fetched_at) : 'unknown' %></strong><% if (ageH != null && ageH > 6) { %>, <%= Math.round(ageH) %> hours ago. These are not current numbers: run a new analysis for fresh data.<% } %><% if (d.partial_day) { %> Today's figures are incomplete (the day is not over).<% } %><% if (d.truncated) { %> Very large account: only the highest-spend ads and ad sets were analysed.<% } %></div>
+  <% if (a.status !== 'ok') { %><div class="error" role="alert" data-analysis-error>This analysis failed: <%= a.error %>. Nothing was changed in Meta.</div><% } %>
+  <form method="post" action="<%= mbBase %>/analysis" style="margin:8px 0"><%- include('partials/csrf') %>
+    <input type="hidden" name="engine" value="<%= a.engine %>"><input type="hidden" name="account" value="<%= a.ad_account_id %>"><input type="hidden" name="period" value="custom"><input type="hidden" name="since" value="<%= a.scope.since %>"><input type="hidden" name="until" value="<%= a.scope.until %>">
+    <input type="hidden" name="campaign" value="<%= a.scope.campaign_id || '' %>"><input type="hidden" name="product" value="<%= a.scope.product_id || '' %>">
+    <button class="btn secondary" type="submit" data-refresh>Refresh: analyse again with fresh Meta data</button></form>
+
+  <div class="card" data-summary><h2>Overall account performance</h2>
+    <p class="muted" style="font-size:13px">Actual data from Meta and metrics calculated by Skyfly (not by the AI) for <%= d.window?.since %> → <%= d.window?.until %>; previous period <%= d.previous_window?.since %> → <%= d.previous_window?.until %>.</p>
+    <div class="grid">
+      <div class="stat"><div class="n"><%= money(t.spend) %></div><div class="l">Spend (previous period <%= money(p.spend) %>)</div></div>
+      <div class="stat"><div class="n"><%= num(t.impressions, 0) %></div><div class="l">Impressions · reach <%= num(t.reach, 0) %> · frequency <%= num(t.frequency) %></div></div>
+      <div class="stat"><div class="n"><%= num(t.purchases, 0) %></div><div class="l">Purchases (previous <%= num(p.purchases, 0) %>)</div></div>
+      <div class="stat"><div class="n"><%= money(t.cpa) %></div><div class="l">Cost per purchase (previous <%= money(p.cpa) %>)</div></div>
+      <div class="stat"><div class="n"><%= t.roas == null ? 'n/a' : num(t.roas) + '×' %></div><div class="l">ROAS<%= t.roas == null ? ' (no purchase value tracked)' : '' %></div></div>
+      <div class="stat"><div class="n"><%= num(t.link_ctr) %>%</div><div class="l">Link CTR · CPC <%= money(t.cpc) %> · CPM <%= money(t.cpm) %></div></div>
+      <div class="stat"><div class="n"><%= t.conversion_rate == null ? '—' : num(t.conversion_rate) + '%' %></div><div class="l">Conversion rate (purchases / link clicks)<%= t.landing_page_conversion_rate == null ? '' : ` · landing page ${num(t.landing_page_conversion_rate)}%` %></div></div>
+    </div>
+  </div>
+
+  <% if (a.status === 'ok' && !cmp) { %>
+    <%- include('partials/analysis-result', { r: res, engine: a.engine, a, done, mbBase, keyOf: (n) => String(n) }) %>
+  <% } %>
+
+  <% if (a.status === 'ok' && cmp) { const C = res.consolidated; %>
+    <div class="card" data-consolidated><h2>Consolidated Skyfly recommendations</h2>
+      <p class="muted">Both engines received the same data. Skyfly lines up their recommendations: where they agree, where they point in opposite directions, and what only one of them suggests. Neither engine is assumed correct.<% if (!C.engines.chatgpt || !C.engines.claude) { %> <strong>Only one engine answered this time, so there is nothing to compare.</strong><% } %></p>
+      <h3>Both agree (<%= C.agreements.length %>)</h3>
+      <% if (!C.agreements.length) { %><p class="muted">No recommendation in common.</p><% } else { %><ul data-agreements><% C.agreements.forEach((g) => { %><li><strong><%= g.entity_name %></strong> (<%= g.entity_level %> <%= g.entity_id %>): <%= g.family %> · ChatGPT <%= g.actions.chatgpt.replace(/_/g, ' ') %>, Claude <%= g.actions.claude.replace(/_/g, ' ') %> · priority <%= g.priority %> · confidence <%= g.confidence %><%= g.needs_more_data ? ' · more data needed' : '' %><%= g.grounded ? '' : ' · some figures not matched to the data' %>
+        <br><span class="muted">Evidence: ChatGPT <%= chips(g.evidence.chatgpt) || '—' %> | Claude <%= chips(g.evidence.claude) || '—' %></span><% if (g.risks.length) { %><br><span class="muted">Risks: <%= g.risks.join(' / ') %></span><% } %></li><% }) %></ul><% } %>
+      <h3>They disagree (<%= C.disagreements.length %>)</h3>
+      <% if (!C.disagreements.length) { %><p class="muted">No opposing recommendations.</p><% } else { %><ul data-disagreements><% C.disagreements.forEach((g) => { %><li><strong><%= g.entity_name %></strong> (<%= g.entity_level %> <%= g.entity_id %>)
+        <br>ChatGPT: <strong><%= g.chatgpt.action.replace(/_/g, ' ') %></strong>: <%= g.chatgpt.recommended_action %> <span class="muted">(<%= chips(g.chatgpt.metrics) %>; confidence <%= g.chatgpt.confidence %>)</span>
+        <br>Claude: <strong><%= g.claude.action.replace(/_/g, ' ') %></strong>: <%= g.claude.recommended_action %> <span class="muted">(<%= chips(g.claude.metrics) %>; confidence <%= g.claude.confidence %>)</span>
+        <br><span class="muted"><%= g.note %></span></li><% }) %></ul><% } %>
+      <h3>Suggested by only one engine (<%= C.single.length %>)</h3>
+      <% if (!C.single.length) { %><p class="muted">None.</p><% } else { %><ul data-single><% C.single.forEach((g) => { %><li><span class="pill pending"><%= g.engine === 'claude' ? 'Claude' : 'ChatGPT' %></span> <strong><%= g.entity_name %></strong>: <%= g.action.replace(/_/g, ' ') %> · priority <%= g.priority %> · confidence <%= g.confidence %><%= g.needs_more_data ? ' · more data needed' : '' %></li><% }) %></ul><% } %>
+    </div>
+    <% ['chatgpt', 'claude'].forEach((e) => { const side = res[e]; %>
+      <div class="card" data-engine-block="<%= e %>"><h2><%= e === 'claude' ? 'Claude' : 'ChatGPT' %>'s analysis <span class="muted" style="font-size:13px">(<%= side.model %>)</span></h2>
+        <% if (side.status !== 'ok') { %><div class="error" data-engine-error><%= side.error %></div><% } %></div>
+      <% if (side.status === 'ok') { %><%- include('partials/analysis-result', { r: side.result, engine: e, a, done, mbBase, keyOf: (n) => `${e}:${n}` }) %><% } %>
+    <% }) %>
+  <% } %>
+
+  <% if (d.signals?.length) { %><div class="card" data-signals><h2>Skyfly's rule-based checks on this data</h2><ul><% d.signals.forEach((s) => { %><li><span class="pill <%= s.severity === 'opportunity' ? 'delivered' : s.severity === 'high' ? 'cancelled' : 'pending' %>"><%= s.severity %></span> <%= s.message %> <span class="muted"><%= s.suggestion %></span></li><% }) %></ul></div><% } %>
+</main>
+</body></html>

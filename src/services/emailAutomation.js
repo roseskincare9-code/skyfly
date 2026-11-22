@@ -8,6 +8,7 @@
 //     "sent" only when the provider confirms it.
 // Emails stuck in "sending" (the server stopped mid-send) are marked failed with
 // "outcome unknown" and are never retried automatically, so nobody gets two copies.
+import { runAdMonitoring } from './analyst.js';
 import { singleRunner, JOB_LOCKS } from '../lib/singleRunner.js';
 import { decrypt } from '../lib/secrets.js';
 import { formatMoney } from '../lib/money.js';
@@ -293,6 +294,8 @@ export async function runEmailJobs(pool, config) {
   await reconcileBilling(pool, config).catch((err) => console.error('Plan payment reconciliation:', err.message));
   await remindSubscriptions(pool, config).catch((err) => console.error('Subscription reminders:', err.message));
   // Online payments still pending after 10 minutes: asked again at Stripe / PayPal (server to server).
+  // AI Media Buyer monitoring (rule-based alerts; reads Meta, never changes it). Never stops the other jobs.
+  await runAdMonitoring(pool, config).catch((err) => console.error('Ad monitoring:', err.message));
   await reconcilePayments(pool, config, { onPaid: (orderId) => recordPurchase(pool, config, orderId) }).catch((err) => console.error('Payment reconciliation:', err.message));
   return { planned, cancelled, sent, notified, abandoned: checkouts.abandoned, domainReminders: domains.reminders?.length ?? 0, infraReminders: Array.isArray(infraReminders) ? infraReminders.length : 0, ...(domains.error ? { domainError: domains.error } : {}) };
 }
