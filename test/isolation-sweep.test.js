@@ -123,6 +123,7 @@ async function seed(ids, business, tag) {
   ids.n = 0;
   ids.alertId = await q("INSERT INTO ad_alerts (business_id, ad_account_id, kind, severity, message, dedupe_key) VALUES ($1, $2, 'tracking', 'high', $3, 'k') RETURNING id", [business, ids.accountId, `${tag}SecretAlert`]);
   await pool.query('INSERT INTO ad_monitor_settings (business_id, enabled, cpa_threshold_minor) VALUES ($1, true, 123400)', [business]);
+  ids.buildId = await q("INSERT INTO ad_builds (business_id, ad_item_id, ad_account_id, tag, status, steps) VALUES ($1, $2, $3, $4, 'built', '[]') RETURNING id", [business, ids.itemId, ids.accountId, `${tag}SecretBuild`]);
   await pool.query("INSERT INTO ad_profiles (business_id, industry) VALUES ($1, $2)", [business, `${tag}SecretIndustry`]);
   await pool.query("INSERT INTO ad_messages (business_id, role, content) VALUES ($1, 'assistant', $2)", [business, `${tag}SecretChat`]);
   await pool.query("INSERT INTO ad_connections (business_id, ad_account_id, ad_account_name, token_enc, status) VALUES ($1, $2, $3, 'enc', 'verified')", [business, tag === 'Alpha' ? '111222333' : '444555666', `${tag}SecretAdAccount`]);

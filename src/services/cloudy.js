@@ -71,7 +71,7 @@ export async function ask(pool, config, { businessId, userId, question }) {
   const q = String(question ?? '').trim().slice(0, 2000);
   if (!q) throw new CloudyError('Type a question for Cloudy.');
   const ctx = await context(pool, config, businessId);
-  const { rows: history } = await pool.query('SELECT role, content FROM ad_messages WHERE business_id = $1 ORDER BY id DESC LIMIT 10', [businessId]);
+  const { rows: history } = await pool.query("SELECT role, content FROM ad_messages WHERE business_id = $1 AND topic = 'ask' ORDER BY id DESC LIMIT 10", [businessId]);
   const messages = [...history.reverse().map((m) => ({ role: m.role, content: m.content })), { role: 'user', content: q }];
   const answer = await callClaude(config, { system: systemFor(ctx), messages });
   await pool.query("INSERT INTO ad_messages (business_id, user_id, role, content) VALUES ($1, $2, 'user', $3), ($1, NULL, 'assistant', $4)", [businessId, userId, q, answer]);

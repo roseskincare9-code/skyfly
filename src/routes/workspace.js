@@ -33,7 +33,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   const scoped = Router({ mergeParams: true });
   scoped.use(asyncHandler(async (req, res, next) => {
     if (!/^\d+$/.test(req.params.businessId)) return res.status(404).render('error', { message: 'Business not found.' });
-    const access = await workspaceAccess(pool, req.session.userId, req.params.businessId);
+    const access = await workspaceAccess(pool, req.session.userId, req.params.businessId, { allowAdmin: true });
     if (!access) return res.status(404).render('error', { message: 'Business not found.' });
     // A Super Admin who is not a member of this business opens it only with a Super Admin sign-in.
     if (access.viaAdmin && !adminVerified(req)) {
@@ -212,7 +212,7 @@ export function workspaceRoutes({ pool, config, onPaid = null, onOrderSaved = ()
   // Only for businesses this account can open; anything else is "not found".
   router.get(['/b/:slug', '/b/:slug/*'], asyncHandler(async (req, res) => {
     const { rows: [b] } = await pool.query('SELECT id FROM businesses WHERE slug = $1', [String(req.params.slug)]);
-    if (!b || !(await workspaceAccess(pool, req.session.userId, b.id))) return res.status(404).render('error', { message: 'Business not found.' });
+    if (!b || !(await workspaceAccess(pool, req.session.userId, b.id, { allowAdmin: adminVerified(req) }))) return res.status(404).render('error', { message: 'Business not found.' });
     const rest = req.params[0] ? `/${req.params[0]}` : '';
     const q = req.originalUrl.indexOf('?');
     res.redirect(302, `/businesses/${b.id}${rest}${q >= 0 ? req.originalUrl.slice(q) : ''}`);

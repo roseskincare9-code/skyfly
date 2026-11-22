@@ -1,0 +1,93 @@
+<%
+  // A campaign plan: review, edit, build in Meta (PAUSED), then launch with explicit authorisation.
+  // Locals: item, build, images, conn, mbBase, error, notice, business.
+  const P = item.body.plan; const C = item.body.check || { errors: [], warnings: [] };
+  const cur = conn?.currency || business.currency;
+  const money = (v) => v == null ? '—' : `${cur} ${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+  const total = P.ad_sets.reduce((s, x) => s + x.daily_budget, 0);
+  const img = Object.fromEntries((images || []).map((i) => [String(i.id), i]));
+  const health = conn?.health || null; const pixel = Array.isArray(health?.pixels) ? health.pixels[0] : null; const page = Array.isArray(health?.pages) ? health.pages[0] : null;
+  const editable = item.status === 'proposed' && !build;
+  const STEP = { pending: 'pending', done: 'delivered', failed: 'cancelled', unknown: 'pending' };
+%>
+<% if (notice === 'built') { %><div class="notice" role="status" data-built>Built in Meta and verified: every campaign, ad set and ad was read back as <strong>PAUSED</strong>. Nothing is spending.</div><% } %>
+<% if (notice === 'build_failed') { %><div class="error" role="alert">The build stopped: <%= build?.error %>. Completed steps are kept; Retry resumes without creating duplicates.</div><% } %>
+<% if (notice === 'launched') { const c = (build?.launch_result?.after || []).find((x) => x.key === 'campaign'); %><div class="notice" role="status" data-launched>Launch sent to Meta. Meta now reports the campaign as <strong><%= c?.effective_status || c?.status %></strong><%= c?.effective_status === 'ACTIVE' ? '' : ' (not delivering yet: Meta usually reviews new ads first)' %>.</div><% } %>
+<% if (notice === 'launch_failed') { %><div class="error" role="alert">Meta did not accept the whole launch: <%= build?.error %>. Check the statuses below.</div><% } %>
+
+<div class="card" data-plan-summary><h2>Campaign plan</h2>
+  <dl class="kv">
+    <dt>Ad account</dt><dd><strong>act_<%= item.ad_account_id %></strong><%= conn?.ad_account_name ? ` (${conn.ad_account_name})` : '' %></dd>
+    <dt>Campaign</dt><dd><%= P.name %> · objective <strong><%= P.objective.replace('OUTCOME_', '') %></strong> · conversion event <strong><%= P.conversion_event %></strong><%= pixel ? ` · pixel ${pixel.id}` : '' %></dd>
+    <dt>Destination</dt><dd><%= P.destination_url %></dd>
+    <dt>Daily budget (total)</dt><dd><strong data-plan-daily><%= money(total) %></strong> · test of <%= P.duration_days %> days ≈ <%= money(total * P.duration_days) %> planned</dd>
+    <dt>Facebook Page</dt><dd><%= page ? `${page.name}${page.instagram ? ` · Instagram @${page.instagram.username}` : ''}` : 'none found' %></dd>
+    <dt>Why this plan</dt><dd style="white-space:pre-wrap"><%= P.rationale %>
+<%= P.why_this_structure %></dd>
+    <dt>Testing</dt><dd><%= P.testing_strategy %></dd><dt>Optimisation</dt><dd><%= P.optimization_strategy %></dd>
+    <dt>Prepared by</dt><dd><%= item.body.engine === 'claude' ? 'Claude' : 'ChatGPT' %> (<%= item.body.model %>)</dd>
+  </dl>
+  <% if (C.errors.length) { %><div class="error" data-plan-errors><strong>To fix before building:</strong><ul><% C.errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div><% } %>
+  <% if (C.warnings.length) { %><div class="warn-box" data-plan-warnings><ul style="margin:0"><% C.warnings.forEach((e) => { %><li><%= e %></li><% }) %></ul></div><% } %>
+</div>
+
+<form method="post" action="<%= mbBase %>/items/<%= item.id %>/plan" data-plan-edit><%- include('csrf') %>
+<% P.ad_sets.forEach((s, i) => { %>
+  <div class="card" data-adset="<%= i %>"><h2>Ad set <%= i + 1 %>: <%= s.name %></h2>
+    <p class="muted"><%= s.audience_hypothesis %></p>
+    <dl class="kv"><dt>Where</dt><dd><%= s.country %><%= s.cities.length ? ` · ${s.cities.join(', ')}` : ' (whole country)' %></dd>
+      <dt>Who</dt><dd><%= s.advantage_audience ? `Advantage+ audience (Meta widens it; suggested from age ${s.age_min})` : `Ages ${s.age_min}-${s.age_max}, ${s.gender}` %> · placements automatic</dd>
+      <dt>Daily budget</dt><dd><% if (editable) { %><input name="budget_<%= i %>" inputmode="decimal" value="<%= s.daily_budget %>" style="max-width:140px"> <%= cur %><% } else { %><%= money(s.daily_budget) %><% } %></dd></dl>
+    <% s.ads.forEach((a, j) => { const im = img[String(a.creative_id)]; %><div class="card" style="margin:8px 0" data-ad="<%= i %>-<%= j %>">
+      <strong><%= a.name %></strong> <span class="muted">· <%= a.angle %></span>
+      <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:6px">
+        <div style="min-width:120px"><% if (im) { %><img src="<%= mbBase %>/creatives/<%= im.id %>/file" alt="<%= im.name %>" style="max-width:140px;border-radius:8px"><br><span class="muted" style="font-size:12px"><%= im.name %></span><% } else { %><span class="pill cancelled">no image chosen</span><br><span class="muted" style="font-size:12px"><%= a.creative_brief %></span><% } %>
+          <% if (editable) { %><br><select name="creative_id_<%= i %>_<%= j %>"><option value="">— choose an image —</option><% (images || []).forEach((x) => { %><option value="<%= x.id %>" <%= String(x.id) === String(a.creative_id) ? 'selected' : '' %>><%= x.name %></option><% }) %></select><% } %></div>
+        <div style="flex:1;min-width:220px">
+          <% if (editable) { %>
+            <label>Primary text<textarea name="primary_text_<%= i %>_<%= j %>" rows="4"><%= a.primary_text %></textarea></label>
+            <label>Headline<input name="headline_<%= i %>_<%= j %>" value="<%= a.headline %>"></label>
+            <label>Description<input name="description_<%= i %>_<%= j %>" value="<%= a.description %>"></label>
+          <% } else { %><p style="white-space:pre-wrap;margin:0"><%= a.primary_text %></p><p><strong><%= a.headline %></strong> · <%= a.description %></p><% } %>
+          <p class="muted" style="font-size:13px;margin:4px 0 0">Button: <%= a.call_to_action.replace(/_/g, ' ').toLowerCase() %> → <%= P.destination_url %></p>
+        </div></div></div><% }) %>
+  </div>
+<% }) %>
+<% if (editable) { %><div class="card"><label>Destination URL<input name="destination_url" value="<%= P.destination_url %>"></label><button class="btn secondary" type="submit" style="margin-top:8px" data-save-plan>Save changes and re-check</button></div><% } %>
+</form>
+
+<% if (editable) { %>
+  <div class="card" data-build-panel><h2>Build in Meta</h2>
+    <p>Creates this campaign, its ad sets, images, creatives and ads in <strong>act_<%= item.ad_account_id %></strong>, <strong>all PAUSED</strong>. Nothing spends. You review it in Ads Manager or here, then launch separately.</p>
+    <div class="row" style="gap:8px">
+      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/approve"><%- include('csrf') %><button class="btn" type="submit" data-approve <%= C.errors.length ? 'disabled title="Fix the plan first"' : '' %>>Approve: build in Meta as PAUSED drafts</button></form>
+      <form method="post" action="<%= mbBase %>/items/<%= item.id %>/reject"><%- include('csrf') %><button class="btn secondary" type="submit" data-reject>Reject</button></form>
+    </div></div>
+<% } %>
+
+<% if (build) { const L = build.launch_result || {}; %>
+  <div class="card" data-build="<%= build.status %>"><h2>Build in Meta: <span class="pill <%= ({ built: 'delivered', launched: 'delivered', failed: 'cancelled', launch_failed: 'cancelled' })[build.status] || 'pending' %>"><%= build.status %></span></h2>
+    <% if (build.error) { %><div class="error"><%= build.error %></div><% } %>
+    <div class="table-wrap"><table><thead><tr><th>Step</th><th>Status</th><th>Meta ID</th><th>Detail</th></tr></thead><tbody>
+    <% build.steps.forEach((s) => { %><tr data-step="<%= s.key %>"><td><%= s.label %></td><td><span class="pill <%= STEP[s.status] %>"><%= s.status %></span><%= s.reconciled ? ' (found after a lost reply)' : '' %></td><td><%= s.meta_id || '—' %></td><td class="muted"><%= s.error || '' %></td></tr><% }) %>
+    </tbody></table></div>
+    <% if (L.verify) { %><p class="muted" style="font-size:13px" data-verified>Read back from Meta: <%= L.verify.map((v) => `${v.key} ${v.status}`).join(' · ') %></p><% } %>
+    <% if (L.after) { %><p class="muted" style="font-size:13px" data-launch-status>Meta after launch: <%= L.after.map((v) => `${v.key} ${v.status}/${v.effective_status}`).join(' · ') %></p><% } %>
+    <% if (['failed', 'building'].includes(build.status)) { %><form method="post" action="<%= mbBase %>/builds/<%= build.id %>/retry"><%- include('csrf') %><button class="btn secondary" type="submit" data-retry>Retry (resumes; nothing is created twice)</button></form><% } %>
+  </div>
+  <% if (build.status === 'built') { %>
+    <div class="card" data-launch-panel><h2>Launch: authorise spending</h2>
+      <dl class="kv"><dt>Account</dt><dd>act_<%= item.ad_account_id %><%= conn?.ad_account_name ? ` (${conn.ad_account_name})` : '' %></dd>
+        <dt>Objective / event</dt><dd><%= P.objective.replace('OUTCOME_', '') %> / <%= P.conversion_event %></dd>
+        <dt>Structure</dt><dd>1 campaign · <%= P.ad_sets.length %> ad set(s) · <%= P.ad_sets.reduce((n, s) => n + s.ads.length, 0) %> ad(s)</dd>
+        <dt>Daily budget</dt><dd><strong><%= money(Number(build.daily_budget_minor) / 100) %></strong> a day until you pause it</dd>
+        <dt>Planned test spend</dt><dd><%= money((Number(build.daily_budget_minor) / 100) * P.duration_days) %> over <%= P.duration_days %> days</dd>
+        <dt>Destination</dt><dd><%= P.destination_url %></dd></dl>
+      <form method="post" action="<%= mbBase %>/builds/<%= build.id %>/launch"><%- include('csrf') %>
+        <label>Type the daily budget you authorise (<%= cur %>)<input name="authorised_daily" inputmode="decimal" required placeholder="<%= Number(build.daily_budget_minor) / 100 %>"></label>
+        <label>Type LAUNCH to confirm<input name="confirm" required autocomplete="off"></label>
+        <button class="btn" type="submit" style="margin-top:8px" data-launch>Launch in Meta</button>
+        <p class="muted" style="font-size:13px">Meta charges your ad account's payment method. This amount becomes your approved daily limit for Skyfly-launched campaigns; increases above it need your authorisation again.</p>
+      </form></div>
+  <% } %>
+<% } %>

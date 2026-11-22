@@ -247,7 +247,7 @@ export function landingPageRoutes({ pool, config }) {
     let owner = { id: req.business.id, role: req.role };
     const wanted = String(req.body.business_id ?? '');
     if (/^\d+$/.test(wanted) && Number(wanted) !== Number(req.business.id)) {
-      const access = await workspaceAccess(pool, req.session.userId, wanted);
+      const access = await workspaceAccess(pool, req.session.userId, wanted, { allowAdmin: adminVerified(req) });
       if (!access || (access.viaAdmin && !adminVerified(req)) || !can(access.role, 'catalog')) return res.status(404).render('error', { message: 'Business not found.' });
       owner = { id: access.business.id, role: access.role };
     }
