@@ -72,15 +72,15 @@ for (const slug of ['larosenigeria', 'larose-skincare']) {
 // Media Buyer connection attempts in the request/app logs (paths, status codes and app error lines only).
 { const owners = (await api('/owners?limit=20')).map((x) => x.owner ?? x); const owner = owners.find((o) => o.name === 'skyfly');
   const lines = [];
-  for (const type of ['request', 'app']) for (let page = 0, end = ''; page < 40; page += 1) {
-    const r = await api(`/logs?ownerId=${owner.id}&resource=${SVC}&type=${type}&limit=100&direction=backward${end}&text=${encodeURIComponent('media-buyer')}`).catch((e) => ({ logs: [], err: e.message }));
+  for (const type of ['request']) for (let page = 0, end = ''; page < 60; page += 1) {
+    const r = await api(`/logs?ownerId=${owner.id}&resource=${SVC}&type=${type}&method=POST&limit=100&direction=backward${end}&startTime=${encodeURIComponent(new Date(Date.now() - 14 * 864e5).toISOString())}`).catch((e) => ({ logs: [], err: e.message }));
     if (r.err) { console.log(`LOGS ${type}: ${r.err}`); break; }
     lines.push(...(r.logs || []).map((l) => ({ ...l, type }))); if (!r.hasMore || !r.nextEndTime) break; end = `&endTime=${encodeURIComponent(r.nextEndTime)}`;
   }
-  const pick = lines.filter((l) => /connect|accounts\/|onboarding|plan|profile|\/run|health/i.test(l.message || ''));
+  const pick = lines.filter((l) => /media-buyer/i.test(JSON.stringify(l))); console.log(`MBLOG oldest line ${lines.at(-1)?.timestamp}, sample ${JSON.stringify(lines[0] ?? {}).slice(0, 300)}`);
   console.log(`MBLOG ${pick.length} matching lines (of ${lines.length})`);
   for (const l of pick.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-60)) {
     const lab = Object.fromEntries((l.labels || []).map((x) => [x.name, x.value]));
-    console.log(`MBLOG ${l.timestamp.slice(0, 19)} ${l.type} ${lab.method ?? ''} ${lab.statusCode ?? ''} ${String(l.message).replace(/token=[^&\s]+/g, 'token=…').slice(0, 220)}`);
+    console.log(`MBLOG ${l.timestamp.slice(0, 19)} ${l.type} ${lab.method ?? ''} ${lab.statusCode ?? ''} ${JSON.stringify(Object.fromEntries((l.labels||[]).map((x)=>[x.name,x.value]))).slice(0,200)} ${String(l.message).replace(/token=[^&\s]+/g, 'token=…').slice(0, 220)}`);
   }
 }
