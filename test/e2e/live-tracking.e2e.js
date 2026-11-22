@@ -25,12 +25,14 @@ for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns',
       forms: t('main form').map((f) => (f.getAttribute('action') || '').replace(/\/businesses\/\d+\/media-buyer/, '')),
       error: document.querySelector('.error')?.textContent.trim().slice(0, 140) ?? null,
       text: document.querySelector('main')?.innerText.replace(/\s+/g, ' ').slice(0, 260),
+      extra: ['[data-auto-status]', '[data-fb-login]', '[data-last-connect-failure]', '[data-fb-picker]'].map((s) => document.querySelector(s)?.innerText.replace(/\s+/g, ' ').trim().slice(0, 300)).filter(Boolean),
     };
   });
   console.log(`TAB ${tab}: HTTP ${r.status()} h1="${info.h1}" error=${info.error}`);
   console.log(`  buttons: ${info.buttons.join(' | ')}`);
   console.log(`  forms: ${[...new Set(info.forms)].join(' ')}`);
   if (['overview', 'analysis', 'whatsapp', 'approvals'].includes(tab)) console.log(`  text: ${info.text}`);
+  for (const x of info.extra) console.log(`  NEW: ${x}`);
   if (info.aiOff && tab === 'overview') console.log(`  AI notice: ${info.aiOff}`);
 }
 await browser.close();
