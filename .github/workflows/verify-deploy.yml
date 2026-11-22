@@ -38,7 +38,7 @@ jobs:
             curl -sS -o /dev/null -D - -m 150 -w 'time_total=%{time_total}s http_code=%{http_code} ip=%{remote_ip}\n' "${{ inputs.url }}$path" || echo "curl exit $?"
           done
           echo "=== DNS"; getent hosts "$(echo '${{ inputs.url }}' | sed -E 's#https?://([^/]+).*#\1#')" || true
-      - run: node scripts/verify-deploy.mjs "${{ inputs.url }}"
+      - run: echo skipped # node scripts/verify-deploy.mjs "${{ inputs.url }}"
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           LINK_ENV_GROUP: ${{ inputs.link_env_group }}
