@@ -20,14 +20,16 @@ export const SUBSCRIPTION_LABELS = { internal: 'Internal (never expires)', trial
 // SQL for "today in the business's own time zone", so nobody is locked out early.
 const LOCAL_TODAY = '(now() AT TIME ZONE b.timezone)::date';
 
-// Loads a business for a user, if the user may open it. Returns null otherwise.
-export async function workspaceAccess(pool, userId, businessId) {
+// Loads a business for a user, if the user may open it. Returns null otherwise. A member always may; a
+// platform admin who is NOT a member only when the caller allows it (allowAdmin: a verified Super Admin
+// sign-in, or the workspace router, which then requires that sign-in itself).
+export async function workspaceAccess(pool, userId, businessId, { allowAdmin = false } = {}) {
   const { rows: [row] } = await pool.query(
     `SELECT b.*, m.role AS member_role, u.is_platform_admin, ${LOCAL_TODAY}::text AS local_today
        FROM businesses b CROSS JOIN users u
        LEFT JOIN business_members m ON m.business_id = b.id AND m.user_id = u.id
-      WHERE b.id = $1 AND u.id = $2 AND (m.user_id IS NOT NULL OR u.is_platform_admin)`,
-    [businessId, userId]);
+      WHERE b.id = $1 AND u.id = $2 AND (m.user_id IS NOT NULL OR (u.is_platform_admin AND $3::boolean))`,
+    [businessId, userId, Boolean(allowAdmin)]);
   if (!row) return null;
   return { business: row, role: row.member_role ?? 'owner', isPlatformAdmin: row.is_platform_admin, viaAdmin: !row.member_role };
 }
