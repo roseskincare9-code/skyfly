@@ -12,6 +12,7 @@
 // each figure it quotes is checked against the data. Nothing here changes Meta: recommendations that would
 // change a campaign go to Skyfly's approval workflow, and an approved recommendation is not executed by
 // Skyfly. Monitoring is rule-based (no AI cost) and only creates alerts.
+import { checkBudgets } from './budgetGuard.js';
 import { analysisData, listConnections, MetaError } from './metaAds.js';
 
 export class AnalystError extends Error {
@@ -468,7 +469,9 @@ export async function monitorBusiness(pool, config, businessId, { now = new Date
       [businessId, acct.ad_account_id, s.kind, s.severity, s.level, s.id, s.name, s.message, s.suggestion, JSON.stringify(s.metrics), `${acct.ad_account_id}:${s.kind}:${s.id}:${day}`]);
     made += rowCount;
   }
-  return { alerts: made };
+  // Budget safeguards across every connected account (read-only): drift from approved budgets, overspend, combined exposure.
+  const budgets = await checkBudgets(pool, config, businessId, { now });
+  return { alerts: made + budgets.alerts, budgets };
 }
 export async function runAdMonitoring(pool, config, { limit = 20 } = {}) {
   const { rows } = await pool.query(`SELECT business_id FROM ad_monitor_settings

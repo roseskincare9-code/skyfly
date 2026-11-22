@@ -5,6 +5,7 @@
 // Supported changes: pause a campaign or ad set, and set the daily budget of a campaign or ad set (at most
 // ±50% of the current budget per change). Skyfly never activates, publishes, deletes, changes targeting or
 // creates spend on its own; an approval applies only to the one change it shows and cannot be reused.
+import { approveBudget } from './budgetGuard.js';
 import { withAccount, MetaError } from './metaAds.js';
 
 export class ActionError extends Error {
@@ -99,6 +100,11 @@ export async function executeAction(pool, config, { businessId, userId, itemId }
   try { after = stateOf(await readOwned(acc, b.object_id)); } catch { /* verified below as false */ }
   const verified = Boolean(after) && (b.op === 'pause' ? after.status === 'PAUSED' : after.daily_budget === b.proposed.daily_budget);
   await log(verified ? 'executed' : 'failed', before, after, verified ? null : 'Meta accepted the request but reading the object back did not show the change.');
+  // An approved, verified budget change becomes the new approved budget (audit-logged as changed_by_skyfly).
+  if (verified && b.op === 'set_daily_budget') {
+    await approveBudget(pool, { businessId, userId, adAccountId: item.ad_account_id, level: b.level, entityId: b.object_id, name: b.object_name ?? null,
+      dailyBudgetMinor: b.proposed.daily_budget, note: `Skyfly action #${item.id}`, source: 'skyfly_action' }).catch((err) => console.error('Budget register:', err.message));
+  }
   return finish(verified ? 'executed' : 'failed', { verified, before, after, ...(verified ? {} : { error: 'Meta accepted the request, but reading it back did not show the change. Check it in Ads Manager.' }) });
 }
 

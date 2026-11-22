@@ -11,6 +11,7 @@ import { ask, generate, reviewCreative, cloudyReady, cloudyHandles, CloudyError,
 import { analyze, analystReady, AnalystError, META_CHANGING, ENGINES, recommendationsOf } from '../services/analyst.js';
 import { prepareAction, executeAction, ActionError } from '../services/actions.js';
 import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
+import { approveBudget, checkBudgets, budgetReport, budgetEvents } from '../services/budgetGuard.js';
 
 export const TABS = ['overview', 'analysis', 'whatsapp', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
 const KINDS = ['image', 'video', 'logo', 'document', 'reference'];
@@ -51,6 +52,11 @@ export function mediaBuyerRoutes({ pool, config }) {
       products: (await pool.query('SELECT id, name FROM products WHERE business_id = $1 ORDER BY id LIMIT 50', [id])).rows,
       campaigns: connection?.status === 'verified' ? await listCampaigns(pool, config, id, connection.ad_account_id) : [],
       periods: ANALYSIS_PERIODS,
+      budgets: {
+        register: (await pool.query('SELECT * FROM ad_budget_register WHERE business_id = $1 ORDER BY ad_account_id, entity_name', [id])).rows,
+        events: await budgetEvents(pool, id, 30),
+        report: await budgetReport(pool, id, new Date(Date.now() - 86400000).toISOString().slice(0, 10)),
+      },
     } : null;
     const whatsapp = tab === 'whatsapp' ? {
       runs: (await pool.query("SELECT id, ad_account_id, engine, status, error, model, data_fetched_at, created_at FROM ad_analyses WHERE business_id = $1 AND kind = 'whatsapp' ORDER BY id DESC LIMIT 10", [id])).rows,
@@ -295,14 +301,35 @@ export function mediaBuyerRoutes({ pool, config }) {
     const ctr = Math.min(90, Math.max(5, Number(b.ctr_drop_pct) || 30));
     const freq = Math.min(20, Math.max(1, Number(b.frequency_max) || 3.5));
     const hours = [6, 12, 24].includes(Number(b.interval_hours)) ? Number(b.interval_hours) : 24;
+    const over = Math.min(200, Math.max(5, Number(b.overspend_pct) || 25));
     await pool.query(
-      `INSERT INTO ad_monitor_settings (business_id, enabled, cpa_threshold_minor, no_conversion_spend_minor, ctr_drop_pct, frequency_max, interval_hours, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+      `INSERT INTO ad_monitor_settings (business_id, enabled, cpa_threshold_minor, no_conversion_spend_minor, ctr_drop_pct, frequency_max, interval_hours, overspend_pct, combined_daily_limit_minor, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
        ON CONFLICT (business_id) DO UPDATE SET enabled = EXCLUDED.enabled, cpa_threshold_minor = EXCLUDED.cpa_threshold_minor, no_conversion_spend_minor = EXCLUDED.no_conversion_spend_minor,
-         ctr_drop_pct = EXCLUDED.ctr_drop_pct, frequency_max = EXCLUDED.frequency_max, interval_hours = EXCLUDED.interval_hours, updated_at = now()`,
-      [req.business.id, b.enabled === 'on' || b.enabled === 'true', minor(b.cpa_threshold), minor(b.no_conversion_spend), ctr, freq, hours]);
+         ctr_drop_pct = EXCLUDED.ctr_drop_pct, frequency_max = EXCLUDED.frequency_max, interval_hours = EXCLUDED.interval_hours,
+         overspend_pct = EXCLUDED.overspend_pct, combined_daily_limit_minor = EXCLUDED.combined_daily_limit_minor, updated_at = now()`,
+      [req.business.id, b.enabled === 'on' || b.enabled === 'true', minor(b.cpa_threshold), minor(b.no_conversion_spend), ctr, freq, hours, over, minor(b.combined_daily_limit)]);
     await audit(pool, req, { action: 'media_buyer.monitoring_saved', businessId: req.business.id, details: { enabled: b.enabled === 'on' || b.enabled === 'true' } });
     res.redirect(`${base(req)}?tab=analysis&done=monitoring`);
+  }));
+  // Budget safeguards: record the approved daily budget of a campaign / ad set (Skyfly then alerts on any change
+  // it did not make). Recording never changes anything in Meta.
+  router.post('/budgets/approve', asyncHandler(async (req, res) => {
+    const b = req.body;
+    const amount = Number(String(b.daily_budget ?? '').replace(/,/g, ''));
+    try {
+      await approveBudget(pool, { businessId: req.business.id, userId: req.session.userId, adAccountId: b.ad_account_id, level: b.level, entityId: b.entity_id,
+        name: String(b.name ?? '').slice(0, 200) || null, dailyBudgetMinor: Number.isFinite(amount) ? Math.round(amount * 100) : NaN, note: String(b.note ?? '').slice(0, 300) || null });
+    } catch (err) {
+      return res.status(400).render('error', { message: err.message });
+    }
+    await audit(pool, req, { action: 'media_buyer.budget_approved', businessId: req.business.id, details: { ad_account_id: b.ad_account_id, entity_id: b.entity_id, daily_budget: amount } });
+    res.redirect(`${base(req)}?tab=analysis&done=budget`);
+  }));
+  router.post('/budgets/check', asyncHandler(async (req, res) => {
+    const r = await checkBudgets(pool, config, req.business.id);
+    await audit(pool, req, { action: 'media_buyer.budget_check', businessId: req.business.id, details: { accounts: r.accounts, alerts: r.alerts } });
+    res.redirect(`${base(req)}?tab=analysis&done=budget_check`);
   }));
   router.post('/alerts/:alertId/dismiss', asyncHandler(async (req, res) => {
     if (!/^\d+$/.test(req.params.alertId)) return res.status(404).render('error', { message: 'Not found.' });

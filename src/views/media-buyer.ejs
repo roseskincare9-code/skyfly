@@ -139,11 +139,37 @@
           <div><label for="mon-noconv">Alert when a campaign spends this with no conversions (<%= cur %>)</label><input id="mon-noconv" name="no_conversion_spend" inputmode="decimal" placeholder="default: 2 × average CPA" value="<%= mon.no_conversion_spend_minor ? Number(mon.no_conversion_spend_minor) / 100 : '' %>"></div>
           <div><label for="mon-ctr">Alert when link CTR drops by (%)</label><input id="mon-ctr" name="ctr_drop_pct" inputmode="numeric" value="<%= mon.ctr_drop_pct ?? 30 %>"></div>
           <div><label for="mon-freq">Alert when frequency reaches</label><input id="mon-freq" name="frequency_max" inputmode="decimal" value="<%= mon.frequency_max ?? 3.5 %>"></div>
+          <div><label for="mon-over">Alert when a campaign spends more than its daily budget by (%)</label><input id="mon-over" name="overspend_pct" inputmode="numeric" value="<%= mon.overspend_pct ?? 25 %>"></div>
+          <div><label for="mon-limit">Alert when all ad accounts together exceed this per day (<%= cur %>)</label><input id="mon-limit" name="combined_daily_limit" inputmode="decimal" value="<%= mon.combined_daily_limit_minor ? Number(mon.combined_daily_limit_minor) / 100 : '' %>"></div>
           <div><label for="mon-int">Check every</label><select id="mon-int" name="interval_hours"><% [6, 12, 24].forEach((h) => { %><option value="<%= h %>" <%= (mon.interval_hours ?? 24) === h ? 'selected' : '' %>><%= h %> hours</option><% }) %></select></div>
         </div>
         <button class="btn" type="submit" style="margin-top:10px">Save monitoring</button>
         <% if (mon.last_run_at) { %><p class="muted" style="font-size:13px;margin-bottom:0">Last check <%= formatDate(mon.last_run_at) %><%= mon.last_error ? ` · ${mon.last_error}` : '' %></p><% } %>
       </form>
+    </div>
+
+    <% const BG = A.budgets; %>
+    <div class="card" data-budget-safeguards><h2>Budget safeguards</h2>
+      <p class="muted">Record the daily budget you approved for each campaign or ad set. On every check Skyfly compares it with Meta across all connected ad accounts, logs every change and alerts you when a budget changes without Skyfly, or when spend runs over. Skyfly never changes a budget on its own. A Meta daily budget is not a hard cap: Meta may spend up to 75% more on a single day and balances it over the week.</p>
+      <form method="post" action="<%= mbBase %>/budgets/approve" class="grid"><%- include('partials/csrf') %>
+        <div><label for="bg-acct">Ad account</label><select id="bg-acct" name="ad_account_id"><% accounts.forEach((a) => { %><option value="<%= a.ad_account_id %>">act_<%= a.ad_account_id %> <%= a.ad_account_name || '' %></option><% }) %></select></div>
+        <div><label for="bg-level">Level</label><select id="bg-level" name="level"><option value="campaign">Campaign</option><option value="adset">Ad set</option></select></div>
+        <div><label for="bg-id">Campaign / ad set ID</label><input id="bg-id" name="entity_id" inputmode="numeric" required></div>
+        <div><label for="bg-name">Name (optional)</label><input id="bg-name" name="name"></div>
+        <div><label for="bg-amt">Approved daily budget (<%= cur %>)</label><input id="bg-amt" name="daily_budget" inputmode="decimal" required></div>
+        <div><label for="bg-note">Note</label><input id="bg-note" name="note"></div>
+        <div><button class="btn" type="submit">Record approved budget</button></div>
+      </form>
+      <form method="post" action="<%= mbBase %>/budgets/check" style="margin-top:8px"><%- include('partials/csrf') %><button class="btn secondary" type="submit">Check budgets now</button></form>
+      <h3>Approved budgets</h3>
+      <% if (!BG.register.length) { %><p class="muted">None recorded yet.</p><% } else { %><div class="table-wrap"><table data-budget-register><thead><tr><th>Ad account</th><th>Object</th><th>Approved</th><th>Last seen in Meta</th></tr></thead><tbody>
+      <% BG.register.forEach((r) => { const drift = r.last_seen_budget_minor != null && Number(r.last_seen_budget_minor) !== Number(r.approved_daily_budget_minor); %><tr><td>act_<%= r.ad_account_id %></td><td><%= r.entity_name || r.entity_id %> (<%= r.entity_level %>)</td><td><%= Number(r.approved_daily_budget_minor) / 100 %></td><td><%= r.last_seen_budget_minor != null ? Number(r.last_seen_budget_minor) / 100 : '—' %><%= drift ? ' ⚠ changed' : '' %></td></tr><% }) %></tbody></table></div><% } %>
+      <h3>Budget vs actual (<%= BG.report.day %>, all accounts)</h3>
+      <% if (!BG.report.rows.length) { %><p class="muted">No spend recorded for that day yet.</p><% } else { %><div class="table-wrap"><table data-budget-report><thead><tr><th>Ad account</th><th>Campaign</th><th>Spend</th><th>Budget</th><th>Approved</th></tr></thead><tbody>
+      <% BG.report.rows.forEach((r) => { %><tr><td>act_<%= r.ad_account_id %></td><td><%= r.entity_name || r.entity_id %></td><td><%= Number(r.spend_minor) / 100 %></td><td><%= r.budget_minor != null ? Number(r.budget_minor) / 100 : '—' %></td><td><%= r.approved_budget_minor != null ? Number(r.approved_budget_minor) / 100 : '—' %></td></tr><% }) %>
+      <tr><th colspan="2">Total</th><th><%= BG.report.total_spend_minor / 100 %></th><th></th><th></th></tr></tbody></table></div><% } %>
+      <h3>Budget audit log</h3>
+      <% if (!BG.events.length) { %><p class="muted">No budget events yet.</p><% } else { %><ul data-budget-events><% BG.events.forEach((e) => { %><li><%= formatDate(e.created_at) %> · act_<%= e.ad_account_id %> · <%= e.entity_name || e.entity_id %> · <strong><%= e.event.replace(/_/g, ' ') %></strong><%= e.old_budget_minor != null ? ` · from ${Number(e.old_budget_minor) / 100}` : '' %><%= e.new_budget_minor != null ? ` to ${Number(e.new_budget_minor) / 100}` : '' %><%= e.approved_budget_minor != null ? ` (approved ${Number(e.approved_budget_minor) / 100})` : '' %></li><% }) %></ul><% } %>
     </div>
   <% } %>
 
