@@ -12,6 +12,20 @@ const ALT = ['TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'SKYFLY_NOTIFY_EMAIL'
 console.log(`ALTERNATIVES present: ${ALT.filter((k) => vars.some((v) => v.key === k)).join(', ') || 'none'}`);
 const have = new Set(vars.map((v) => v.key));
 console.log(`MISSING ${REQUIRED.filter((k) => !have.has(k)).join(', ') || 'none'} (of ${REQUIRED.length} expected)`);
+
+// Where else could the keys be? Every workspace this Render key sees: services, their env NAMES, env groups.
+for (const o of (await api('/owners?limit=20')).map((x) => x.owner ?? x)) {
+  console.log(`OWNER "${o.name}" (${o.type ?? ''})`);
+  for (const s of (await api(`/services?ownerId=${o.id}&limit=100`)).map((x) => x.service ?? x)) {
+    const names = (await api(`/services/${s.id}/env-vars?limit=100`).catch(() => [])).map((e) => (e.envVar ?? e).key);
+    const hit = names.filter((k) => /RESEND|CLOUDFLARE|TURNSTILE|OPENAI|ANTHROPIC|PAYSTACK/i.test(k));
+    console.log(`  SERVICE ${s.name} (${s.type}, ${s.id}, updated ${s.updatedAt}) env=${names.length} key-like: ${hit.map((k) => JSON.stringify(k)).join(', ') || 'none'}`);
+  }
+  for (const g of (await api(`/env-groups?ownerId=${o.id}&limit=50`).catch(() => [])).map((x) => x.envGroup ?? x)) {
+    const full = await api(`/env-groups/${g.id}`).catch(() => ({}));
+    console.log(`  GROUP "${g.name}" linked to [${(full.serviceLinks ?? []).map((l) => l.name ?? l.id).join(', ')}]: ${(full.envVars ?? []).map((e) => JSON.stringify(e.key)).join(', ')}`);
+  }
+}
 const deps = (await api(`/services/${svc.id}/deploys?limit=12`)).map((d) => d.deploy ?? d);
 for (const d of deps) console.log(`DEPLOY ${d.createdAt} ${d.status} trigger=${d.trigger} commit=${d.commit?.id?.slice(0, 7) ?? '-'}`);
 const ev = await api(`/services/${svc.id}/events?limit=30`).catch((e) => ({ err: e.message }));
