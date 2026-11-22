@@ -104,7 +104,7 @@ async function skyflyData(pool, businessId) {
   const { rows: utm } = await pool.query(`SELECT lower(utm_source) AS utm_source, count(*)::int AS orders FROM orders
     WHERE business_id = $1 AND NOT is_test AND created_at > now() - interval '30 days' AND utm_source IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10`, [businessId]);
   const [{ rows: products }, { rows: [p] }] = await Promise.all([
-    pool.query('SELECT name, price_minor FROM products WHERE business_id = $1 ORDER BY id LIMIT 30', [businessId]),
+    pool.query('SELECT name, price_minor FROM products WHERE business_id = $1 AND active ORDER BY sort_order, id LIMIT 30', [businessId]),
     pool.query('SELECT offer, prices, locations, audience, customer_profile, goals, daily_budget_minor, brand_voice FROM ad_profiles WHERE business_id = $1', [businessId]),
   ]);
   return {
