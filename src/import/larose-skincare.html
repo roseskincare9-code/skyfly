@@ -442,12 +442,12 @@ footer strong{color:var(--pink2);}
         <div class="pkg-badge pink">FACE CARE</div><div class="pkg-top">
           <h3 class="pkg-name">Upscale Facial Set</h3>
           <div class="pkg-imgs" style="grid-template-columns:1fr;max-width:140px;margin:0 auto 14px;"><div><div class="pkg-img-item"><img src="https://roseskincare9-code.github.io/Larosenigeria/images/facial-set-800.jpg" alt="LaRose Upscale Facial Set: Facial Detox Toner, Baby Face Whitening Soap and All Clear Face Cream" loading="lazy"></div><div class="pkg-img-label">Upscale Facial Set</div></div></div>
-          <ul class="pkg-includes"><li>Facial Detox Toner</li><li>Baby Face Whitening Soap</li><li>All Clear Face Cream</li><li>Order on its own or add it to any package at checkout</li></ul>
+          <ul class="pkg-includes"><li>Facial Detox Toner</li><li>Baby Face Whitening Soap</li><li>All Clear Face Cream</li><li>Add it to any soap package at checkout</li></ul>
         </div>
         <div class="pkg-bottom">
           <div class="pkg-price"><span class="naira">₦</span>17,000</div>
           <div class="pkg-save">✓ Free delivery nationwide*</div>
-          <button class="pkg-cta" onclick="selectPkg('Upscale Facial Set – ₦17,000')">👉 Order Upscale Facial Set — ₦17,000</button>
+          <button class="pkg-cta" onclick="selectPkg('500g African Soap – ₦20,500')">👉 Choose a package, then add the Facial Set — ₦17,000</button>
         </div>
       </div>
     </div>
@@ -520,7 +520,6 @@ footer strong{color:var(--pink2);}
           <option value="1 Litre African Soap + Oil – ₦36,500" data-product="soap-1l-oil" data-price="36500">1 Litre African Soap + Oil · ₦36,500</option>
           <option value="2 Litres African Soap – ₦44,500" data-product="soap-2l" data-price="44500">2 Litres African Soap · ₦44,500</option>
           <option value="2 Litres African Soap + Oil – ₦54,500" data-product="soap-2l-oil" data-price="54500">2 Litres African Soap + Oil · ₦54,500</option>
-          <option value="Upscale Facial Set – ₦17,000" data-product="facial-set" data-price="17000">Upscale Facial Set · ₦17,000</option>
         </select>
       </div>
       <div class="fg"><label for="fn">Full Name *</label><input type="text" id="fn" placeholder="Your full name" autocomplete="name" required></div>
@@ -596,7 +595,7 @@ function skyShowError(msg,fields){
 // Optional upsell set for this page in Skyfly (Landing pages → larosenigeria → Upsell). Nothing shows
 // when none is set. Skyfly prices it again when the order is saved; the page's total is a preview.
 let skyUpsell=null,skyAdd=false;
-// The add-on is offered only when it is not already the chosen package (the Facial Set can be ordered on its own).
+// The add-on is offered with every package (the Facial Set is never sold on its own).
 function skyAddOn(offerOnly){const s=document.getElementById('pr');const o=s&&s.options[s.selectedIndex];if(!skyUpsell||(o&&o.dataset.product===skyUpsell.code))return false;return offerOnly?true:skyAdd;}
 // The Facial Set's picture (optimised: 47 KB on phones), shown only when Skyfly offers that add-on.
 const SKY_UPSELL_IMG={'facial-set':{base:'https://roseskincare9-code.github.io/Larosenigeria/images/facial-set-',w:800,h:731,alt:'LaRose Complete Facial Set: Facial Detox Toner, Baby Face Whitening Soap and All Clear Face Cream'}};
