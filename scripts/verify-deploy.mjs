@@ -24,5 +24,9 @@ for (const g of (await api(`/env-groups?ownerId=${owner.id}&limit=50`).catch(() 
   console.log(`GROUP "${g.name}" linked to [${(full.serviceLinks ?? []).map((l) => l.name ?? l.id).join(', ')}]: ${(full.envVars ?? []).map((e) => e.key).join(', ')}`);
 }
 const lines = [];
-for (let page = 0, end = ''; page < 20; page += 1) { const r = await api(`/logs?ownerId=${owner.id}&resource=${svc.id}&limit=100&direction=backward${end}`); lines.push(...(r.logs || [])); if (!r.hasMore || !r.nextEndTime) break; end = `&endTime=${encodeURIComponent(r.nextEndTime)}`; }
-for (const l of lines.filter((x) => /Applied migration|Migration .* failed|Skyfly listening/.test(x.message || '')).slice(0, 12)) console.log(`APP ${l.timestamp.slice(0, 19)} ${String(l.message).slice(0, 260)}`);
+for (let page = 0, end = ''; page < 30; page += 1) { const r = await api(`/logs?ownerId=${owner.id}&resource=${svc.id}&limit=100&direction=backward${end}`); lines.push(...(r.logs || [])); if (!r.hasMore || !r.nextEndTime) break; end = `&endTime=${encodeURIComponent(r.nextEndTime)}`; }
+for (const l of lines.filter((x) => /Applied migration|Migration .* failed|Skyfly listening/.test(x.message || '')).slice(0, 8)) console.log(`APP ${l.timestamp.slice(0, 19)} ${String(l.message).slice(0, 260)}`);
+// The latest tenancy map (read-only, emails masked by the app): businesses, members, Super Admin memberships.
+const tm = lines.filter((x) => /Tenancy map/.test(x.message || ''));
+const end = tm.findIndex((x) => /Tenancy map \(read-only\): END/.test(x.message)); const begin = tm.findIndex((x, i) => i > end && /Tenancy map \(read-only\): BEGIN/.test(x.message));
+for (const l of tm.slice(Math.max(end, 0), begin + 1).reverse()) console.log(`TENANCY ${String(l.message).replace('Tenancy map (read-only): ', '').slice(0, 700)}`);
