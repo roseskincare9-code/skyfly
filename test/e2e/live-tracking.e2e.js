@@ -47,7 +47,11 @@ for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns',
   const csrf = html.match(/name="_csrf" value="([^"]+)"/)?.[1];
   const btn = html.match(/<button[^>]*data-fb-start[^>]*>/)?.[0] ?? 'NOT FOUND';
   console.log(`LIVE settings: HTTP ${settings.status()} | Connect-with-Facebook button: ${btn.includes('disabled') ? 'present, DISABLED' : btn === 'NOT FOUND' ? 'NOT FOUND' : 'present, enabled'} | notice: ${(html.match(/data-fb-off>([^<]+)/)?.[1] ?? '').trim()}`);
-  console.log(`LIVE secrets in page: ${/\bEAA[A-Za-z0-9]{20,}|access_token=|app_secret|client_secret/i.test(html) ? 'FOUND (defect)' : 'none'}`);
+  for (const m of html.matchAll(/\bEAA[A-Za-z0-9]{20,}|access_token=|app_secret|client_secret/gi)) {
+    const at = m.index; const ctxt = html.slice(Math.max(0, at - 60), at).replace(/\s+/g, ' ');
+    console.log(`LIVE secret-pattern match: "${m[0].slice(0, 6)}…(${m[0].length} chars)" preceded by "${ctxt.slice(-60)}"`);
+  }
+  console.log(`LIVE secret-pattern matches: ${[...html.matchAll(/\bEAA[A-Za-z0-9]{20,}|access_token=|app_secret|client_secret/gi)].length}`);
   const post = (path, form = {}) => p.request.post(path, { form: { _csrf: csrf, ...form }, maxRedirects: 0 });
   let r = await post(`${mb}/connect/facebook`); R('start Facebook Login', r, `${(r.headers().location || '').includes('facebook.com') ? 'REDIRECTED TO META' : 'not redirected'}; ${await msg(r)}`);
   r = await p.request.get(`${SKYFLY}/meta/oauth/callback?state=${'f'.repeat(32)}&code=made-up`, { maxRedirects: 0 }); R('callback, made-up state', r, await msg(r));
