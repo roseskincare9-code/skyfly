@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
-if (!process.env.LIVE_DRY_RUN && (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY))) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
+if (!process.env.LIVE_DRY_RUN && (!/^https:\/\/([a-z0-9-]+\.onrender\.com|getskyfly\.com)$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY))) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
 const PAGE = `${SKYFLY}/p/skyfly-demo/`;
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());
 const NAME = `TEST ORDER Skyfly hosting ${RUN}`;
