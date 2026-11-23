@@ -13,7 +13,7 @@ import { prepareAction, executeAction, ActionError } from '../services/actions.j
 import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
 import { connectionHealth } from '../services/metaAds.js';
 import { generatePlan, updatePlan, buildPlan, launchBuild, BuildError, planContext } from '../services/builder.js';
-import { startLogin, pendingGrant, connectFromGrant, cancelGrant, metaLoginReady, metaLoginMissing, redirectUri } from '../services/metaLogin.js';
+import { startLogin, pendingGrant, connectFromGrant, cancelGrant, refreshDiscovery, metaLoginReady, metaLoginMissing, redirectUri } from '../services/metaLogin.js';
 import { onboardingState, onboardingTurn, completeOnboarding, startAutoWorkflow, engineFor, FIELDS as ONBOARDING_FIELDS } from '../services/mbOnboarding.js';
 
 export const TABS = ['overview', 'analysis', 'whatsapp', 'campaigns', 'creatives', 'recommendations', 'briefs', 'approvals', 'reports', 'settings'];
@@ -139,6 +139,19 @@ export function mediaBuyerRoutes({ pool, config }) {
     } catch (err) {
       if (!(err instanceof MetaError)) throw err;
       return page(req, res, { tab: 'settings', error: err.message }, err.status === 410 ? 410 : 400);
+    }
+  }));
+
+  // Re-reads the ad accounts with the Facebook Login token this business already holds (no new sign-in).
+  router.post('/connect/facebook/refresh', asyncHandler(async (req, res) => {
+    if (req.role !== 'owner' || res.locals.viaAdmin) return res.status(403).render('error', { message: 'Only the business owner can refresh the ad account list.' });
+    try {
+      await refreshDiscovery(pool, config, { businessId: req.business.id, userId: req.session.userId });
+      await audit(pool, req, { action: 'media_buyer.facebook_accounts_refreshed', businessId: req.business.id });
+      return res.redirect(`${base(req)}?tab=settings&done=fb_pick#facebook-accounts`);
+    } catch (err) {
+      if (!(err instanceof MetaError)) throw err;
+      return page(req, res, { tab: 'settings', error: err.message }, err.status === 401 ? 409 : (err.status || 400));
     }
   }));
 
