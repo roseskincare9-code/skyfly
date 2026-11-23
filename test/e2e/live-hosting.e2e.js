@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright-core';
 
 const SKYFLY = (process.env.SKYFLY_URL || '').replace(/\/+$/, '');
-if (!process.env.LIVE_DRY_RUN && (!/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY))) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
+if (!process.env.LIVE_DRY_RUN && (!/^https:\/\/([a-z0-9-]+\.onrender\.com|getskyfly\.com)$/.test(SKYFLY) || /\/\/skyfly\.onrender\.com/.test(SKYFLY))) throw new Error('Set SKYFLY_URL to the verified Skyfly service address');
 const PAGE = `${SKYFLY}/p/skyfly-demo/`;
 const RUN = process.env.GITHUB_RUN_ID || String(Date.now());
 const NAME = `TEST ORDER Skyfly hosting ${RUN}`;
@@ -169,15 +169,25 @@ await step('I. A desktop visitor gets the same page and checkout', async () => {
   await desk.close();
 });
 
+// The Demo Shop's own test owner (same live-test password). The shared live-test account belongs to one
+// business only (the Import Test business) since accounts are single-business.
+const DEMO_OWNER = 'e2e-owner-a@skyfly.invalid';
+// The demo business's dashboard address. A single-business account lands straight in its business after
+// sign-in (no list since "only a Super Admin may belong to several businesses"); a list is used if shown.
+async function demoHref(d) {
+  const here = new URL(d.url()).pathname.match(/^\/businesses\/\d+/)?.[0];
+  if (here && (await d.textContent('body')).includes('Skyfly Demo Shop')) return here;
+  return d.getAttribute('a:text-is("Skyfly Demo Shop (test)")', 'href', { timeout: 10000 });
+}
 await step('J. The order appears exactly once in the Skyfly Demo Shop (test) dashboard', async () => {
   if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in');
   const d = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await d.goto(`${SKYFLY}/login`);
-  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await d.fill('#email', DEMO_OWNER); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
   await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
   assert(!d.url().endsWith('/login'), 'sign-in refused');
   await d.goto(`${SKYFLY}/`);
-  const href = await d.getAttribute('a:text-is("Skyfly Demo Shop (test)")', 'href');
+  const href = await demoHref(d);
   assert(href, 'demo business not in the dashboard');
   await d.goto(`${SKYFLY}${href}/orders?q=${encodeURIComponent(reference)}`);
   const rows = await d.getByRole('link', { name: reference, exact: true }).count();
@@ -189,10 +199,10 @@ await step('K. Owner: import a labelled test page, add the checkout, publish, op
   if (!process.env.SKYFLY_OWNER_EMAIL || !process.env.SKYFLY_OWNER_PASSWORD) throw new Blocked('needs the SKYFLY_OWNER_EMAIL and SKYFLY_OWNER_PASSWORD repository secrets to sign in');
   const d = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await d.goto(`${SKYFLY}/login`);
-  await d.fill('#email', process.env.SKYFLY_OWNER_EMAIL); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
+  await d.fill('#email', DEMO_OWNER); await d.fill('#password', process.env.SKYFLY_OWNER_PASSWORD);
   await Promise.all([d.waitForLoadState('load'), d.click('button[type=submit]')]);
   await d.goto(`${SKYFLY}/`);
-  const href = await d.getAttribute('a:text-is("Skyfly Demo Shop (test)")', 'href');
+  const href = await demoHref(d);
   assert(href, 'demo business not in the dashboard');
   const name = `TEST page ${RUN}`;
   const html = (v) => `<!doctype html><html><head><meta charset="utf-8"><title>${name}</title></head><body><h1>${name} v${v}</h1></body></html>`;
