@@ -111,6 +111,16 @@ await step('T4. Switching: an account in both test businesses moves between them
   const p = await signIn(ctx, ACCOUNTS.manager);
   await p.goto(`${SKYFLY}/?all=1`);
   const listed = await p.locator('main a[href^="/businesses/"]').evaluateAll((as) => [...new Set(as.map((a) => a.getAttribute('href').match(/^\/businesses\/(\d+)$/)?.[1]).filter(Boolean))]);
+  // Since "only a Super Admin may belong to several businesses", an ordinary account is in ONE business:
+  // it lists only that one and every other business answers 404 (no switching into someone else's data).
+  if (listed.length === 1) {
+    const mine = listed[0]; const otherId = mine === ids.A ? ids.B : ids.A;
+    assert([ids.A, ids.B].includes(mine), `listed a non-test business: ${mine}`);
+    const r = await p.request.get(`${SKYFLY}/businesses/${otherId}/orders`, { maxRedirects: 0 });
+    assert(r.status() === 404, `other test business answered ${r.status()}`);
+    await ctx.close();
+    return `account belongs to one business only (#${mine}, as the single-business rule requires); business #${otherId} → 404`;
+  }
   assert(listed.length === 2 && listed.includes(ids.A) && listed.includes(ids.B), `businesses listed: ${listed.join(', ')}`);
   const seen = [];
   for (const [me, other] of [['A', 'B'], ['B', 'A'], ['A', 'B']]) {
@@ -159,6 +169,11 @@ await step('T5. Registration by invitation: owner A invites a new (test) address
 await step('T6. Password recovery: "Forgot your password?" gives the same answer for a real and an unknown address and reveals nothing', async () => {
   const ctx = await desktop();
   const p = await ctx.newPage();
+  await p.goto(`${SKYFLY}/forgot-password`);
+  if (await p.locator('[data-reset-unavailable]').count()) {
+    await ctx.close();
+    throw new Blocked('no email sender on the server: the page says honestly that reset by email is not available yet (no form, no false "sent" message)');
+  }
   const ask = async (email) => {
     await p.goto(`${SKYFLY}/forgot-password`);
     await p.fill('#email', email);
