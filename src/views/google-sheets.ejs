@@ -9,6 +9,18 @@
   <% const defaultConn = connections.find((c) => String(c.id) === String(defaultId)); %>
   <% const hasDirect = connections.some((c) => ['apps_script', 'google_api'].includes(c.provider)); %>
   <% const hasGoogle = connections.some((c) => c.provider === 'google_api'); %>
+  <% const defaultBroken = defaultConn && defaultConn.check_status !== 'ok'; const working = connections.filter((c) => c.check_status === 'ok' && String(c.id) !== String(defaultId)); %>
+  <% if (defaultBroken && count.failed) { %>
+    <div class="card" role="alert" data-default-broken style="border:2px solid var(--danger)">
+      <h2 style="margin-top:0;color:var(--danger)"><%= count.failed %> order<%= count.failed === 1 ? '' : 's' %> could not be copied: the default spreadsheet "<%= defaultConn.name %>" is not working</h2>
+      <p style="margin:0 0 8px"><%= defaultConn.check_detail || defaultConn.last_error || 'It did not accept the last copies.' %><% if (defaultConn.last_error && defaultConn.check_detail) { %> Last error: <%= defaultConn.last_error %><% } %></p>
+      <p class="muted" style="margin:0 0 10px">The orders are safe in Skyfly; only the copy to the spreadsheet is waiting. Nothing has been written to any sheet for them.</p>
+      <% if (working.length) { %>
+        <% working.forEach((w) => { %><form method="post" action="<%= base %>/google-sheets/connections/<%= w.id %>/default" style="display:inline-block;margin:0 8px 8px 0"><%- include('partials/csrf') %><button type="submit" data-use-working="<%= w.id %>">Use "<%= w.name %>" (working) as the default</button></form><% }) %>
+        <p class="muted" style="margin:0;font-size:13px">Then, on that spreadsheet below, compare the waiting orders with the sheet and click "Send the waiting orders". Skyfly looks each order up first, so none is added twice.</p>
+      <% } else { %><p style="margin:0">Fix the sheet (see the connection below), or connect a working spreadsheet, then click "Check connection".</p><% } %>
+    </div>
+  <% } %>
 
   <div class="card">
     <h2>Copy status</h2>
