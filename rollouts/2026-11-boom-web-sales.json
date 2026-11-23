@@ -1,0 +1,459 @@
+{
+  "rollout": "boom web sales — Ibadan, Port Harcourt, Abuja (Halfcast 1kg, Purchase)",
+  "ad_account_id": "1710786180007531",
+  "max_batch": 10,
+  "rules": [
+    "At most 10 ads pending in Meta at once",
+    "Next batch only after every ad of the previous batch is accepted or rejected",
+    "Ads are created unpublished; publishing is done by the owner in Ads Manager",
+    "No WhatsApp identity on these website ads: create each ad with {\"creative_id\": <city creative>} only"
+  ],
+  "campaigns": {
+    "IBD": {
+      "id": "120258538209820777",
+      "city": "Ibadan",
+      "daily_budget_ngn": 6000,
+      "budget": "campaign budget shared by its 5 ad sets",
+      "objective": "OUTCOME_SALES",
+      "optimization": "Purchase (pixel 1798662434594348), website",
+      "geo": "Ibadan city +40 km (key 1624010)"
+    },
+    "PH": {
+      "id": "120258538213000777",
+      "city": "Port Harcourt",
+      "daily_budget_ngn": 6000,
+      "budget": "campaign budget shared by its 5 ad sets",
+      "objective": "OUTCOME_SALES",
+      "optimization": "Purchase (pixel 1798662434594348), website",
+      "geo": "Port Harcourt city +40 km (key 1638000)"
+    },
+    "ABJ": {
+      "id": "120258538215040777",
+      "city": "Abuja",
+      "daily_budget_ngn": 6000,
+      "budget": "campaign budget shared by its 5 ad sets",
+      "objective": "OUTCOME_SALES",
+      "optimization": "Purchase (pixel 1798662434594348), website",
+      "geo": "FCT region (key 2608)"
+    }
+  },
+  "audiences": {
+    "AUD1": "Broad, women 25-65",
+    "AUD2": "Beauty & skincare interests",
+    "AUD3": "Natural & Wellness interests (lookalike substitute; boom has no custom-audience terms)",
+    "AUD4": "Online shopping / purchase intent",
+    "AUD5": "Advantage+ audience"
+  },
+  "ad_set_ids": {
+    "IBD": [
+      "120258538225390777",
+      "120258538226010777",
+      "120258538226220777",
+      "120258538227270777",
+      "120258538227580777"
+    ],
+    "PH": [
+      "120258538227940777",
+      "120258538228660777",
+      "120258538228810777",
+      "120258538229480777",
+      "120258538230050777"
+    ],
+    "ABJ": [
+      "120258538230790777",
+      "120258538231050777",
+      "120258538231680777",
+      "120258538232230777",
+      "120258538232780777"
+    ]
+  },
+  "creatives": {
+    "IBD": {
+      "A": {
+        "id": "1045829631878514",
+        "image_hash": "ef389d34bb5aa4798699783b8c0ccbcb",
+        "angle": "Where to buy"
+      },
+      "C": {
+        "id": "2602566410217212",
+        "image_hash": "eed6b25c549cfcbc69cb76d48a87e561",
+        "angle": "Size & value"
+      }
+    },
+    "PH": {
+      "A": {
+        "id": "4787098888279960",
+        "image_hash": "ef389d34bb5aa4798699783b8c0ccbcb",
+        "angle": "Where to buy"
+      },
+      "C": {
+        "id": "40005570299086630",
+        "image_hash": "eed6b25c549cfcbc69cb76d48a87e561",
+        "angle": "Size & value"
+      }
+    },
+    "ABJ": {
+      "A": {
+        "id": "1158838929878903",
+        "image_hash": "ef389d34bb5aa4798699783b8c0ccbcb",
+        "angle": "Where to buy"
+      },
+      "C": {
+        "id": "1869866314168816",
+        "image_hash": "eed6b25c549cfcbc69cb76d48a87e561",
+        "angle": "Size & value"
+      }
+    }
+  },
+  "shared_creative_settings": {
+    "page_id": "1338986375959427",
+    "instagram_user_id": "17841423927194865",
+    "cta": "ORDER_NOW",
+    "link": "https://roseskincare9-code.github.io/Larosenigeria/",
+    "url_tags": "utm_source=facebook&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}",
+    "primary_texts": [
+      "Looking for herbal soap in {city}? 🌿\n\nLAROSE HALFCAST SUPER FORT HERBAL SOAP — 1KG\nA concentrated herbal body soap for a simple daily routine.\n\n💎 ₦26,500\n\nTap ORDER NOW to order online in under a minute.",
+      "Why buy small soap bars every week?\n\nLarose Halfcast Super Fort Herbal Soap comes in a generous 1kg tub for your daily body-care routine.\n\n💎 1KG — ₦26,500\n\nTap ORDER NOW to order online.",
+      "If you prefer herbal, natural, African-inspired body care, meet your new everyday essential.\n\n🌿 LAROSE HALFCAST SUPER FORT HERBAL SOAP — 1KG\n✅ Generous 1kg size\n✅ Herbal formula for everyday body care\n\n💎 ₦26,500 — tap ORDER NOW."
+    ],
+    "headlines": [
+      "Herbal Soap in {city} — Order Online (PH: \"Herbal Soap in PH — Order Online\")",
+      "1KG Herbal Soap — ₦26,500",
+      "Order Larose Halfcast 1KG Online"
+    ],
+    "note": "Copy still sells the 1kg at ₦26,500; switch to the 500g ₦20,500 offer once the new page is live."
+  },
+  "not_in_this_plan": {
+    "skinglow_web_rollout": "3 campaigns (52564432548964 Ibadan, 52564432555964 PH, 52564432564964 Abuja), 15 ad sets, 30 ads were unpublished drafts in Skinglow (act 1748876806431046); they are no longer in Meta (neither draft nor live) as of 2026-11-23 17:05. Creatives still in the account: IBD A 1710627950505581 / C 4966088503655329, PH A 2321197268808020 / C 2290169278210230, ABJ A 1147844494782682 / C 1868009064334176. Rebuild only on the owner's say-so, through this batch plan.",
+    "skinglow_whatsapp_drafts": "Lagos 52564418494764 and Abuja 52564418496164 WhatsApp drafts are also gone from Meta.",
+    "legacy_copy_ads": "The 8 older Abuja \"- Copy\" ads (120258529932260777, …932280777, …932300777, …932310777, …923230777, …923210777, …923200777, …923220777) are outside this plan and are left as they are."
+  },
+  "ads": [
+    {
+      "name": "BM-PH-AUD1 | A Where To Buy",
+      "city": "PH",
+      "audience": "AUD1",
+      "adset_id": "120258538227940777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "4787098888279960",
+      "variant": "A",
+      "state": "live_before_plan",
+      "ad_id": "120258538780750777"
+    },
+    {
+      "name": "BM-PH-AUD1 | C Size & Value",
+      "city": "PH",
+      "audience": "AUD1",
+      "adset_id": "120258538227940777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "40005570299086630",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538780810777"
+    },
+    {
+      "name": "BM-PH-AUD2 | C Size & Value",
+      "city": "PH",
+      "audience": "AUD2",
+      "adset_id": "120258538228660777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "40005570299086630",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538782310777"
+    },
+    {
+      "name": "BM-PH-AUD3 | C Size & Value",
+      "city": "PH",
+      "audience": "AUD3",
+      "adset_id": "120258538228810777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "40005570299086630",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538782510777"
+    },
+    {
+      "name": "BM-PH-AUD4 | C Size & Value",
+      "city": "PH",
+      "audience": "AUD4",
+      "adset_id": "120258538229480777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "40005570299086630",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538782590777"
+    },
+    {
+      "name": "BM-PH-AUD5 | C Size & Value",
+      "city": "PH",
+      "audience": "AUD5",
+      "adset_id": "120258538230050777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "40005570299086630",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538782660777"
+    },
+    {
+      "name": "BM-IBD-AUD1 | A Where To Buy",
+      "city": "IBD",
+      "audience": "AUD1",
+      "adset_id": "120258538225390777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "1045829631878514",
+      "variant": "A",
+      "state": "live_before_plan",
+      "ad_id": "120258538779180777"
+    },
+    {
+      "name": "BM-IBD-AUD1 | C Size & Value",
+      "city": "IBD",
+      "audience": "AUD1",
+      "adset_id": "120258538225390777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "2602566410217212",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538779260777"
+    },
+    {
+      "name": "BM-IBD-AUD2 | A Where To Buy",
+      "city": "IBD",
+      "audience": "AUD2",
+      "adset_id": "120258538226010777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "1045829631878514",
+      "variant": "A",
+      "state": "live_before_plan",
+      "ad_id": "120258538779750777"
+    },
+    {
+      "name": "BM-IBD-AUD2 | C Size & Value",
+      "city": "IBD",
+      "audience": "AUD2",
+      "adset_id": "120258538226010777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "2602566410217212",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538779850777"
+    },
+    {
+      "name": "BM-IBD-AUD3 | C Size & Value",
+      "city": "IBD",
+      "audience": "AUD3",
+      "adset_id": "120258538226220777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "2602566410217212",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538780240777"
+    },
+    {
+      "name": "BM-IBD-AUD4 | C Size & Value",
+      "city": "IBD",
+      "audience": "AUD4",
+      "adset_id": "120258538227270777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "2602566410217212",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538780380777"
+    },
+    {
+      "name": "BM-IBD-AUD5 | C Size & Value",
+      "city": "IBD",
+      "audience": "AUD5",
+      "adset_id": "120258538227580777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "2602566410217212",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538780640777"
+    },
+    {
+      "name": "BM-ABJ-AUD1 | A Where To Buy",
+      "city": "ABJ",
+      "audience": "AUD1",
+      "adset_id": "120258538230790777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1158838929878903",
+      "variant": "A",
+      "state": "live_before_plan",
+      "ad_id": "120258538781150777"
+    },
+    {
+      "name": "BM-ABJ-AUD1 | C Size & Value",
+      "city": "ABJ",
+      "audience": "AUD1",
+      "adset_id": "120258538230790777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1869866314168816",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538781260777"
+    },
+    {
+      "name": "BM-ABJ-AUD2 | C Size & Value",
+      "city": "ABJ",
+      "audience": "AUD2",
+      "adset_id": "120258538231050777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1869866314168816",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538783530777"
+    },
+    {
+      "name": "BM-ABJ-AUD3 | C Size & Value",
+      "city": "ABJ",
+      "audience": "AUD3",
+      "adset_id": "120258538231680777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1869866314168816",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538783820777"
+    },
+    {
+      "name": "BM-ABJ-AUD4 | C Size & Value",
+      "city": "ABJ",
+      "audience": "AUD4",
+      "adset_id": "120258538232230777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1869866314168816",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538784030777"
+    },
+    {
+      "name": "BM-ABJ-AUD5 | C Size & Value",
+      "city": "ABJ",
+      "audience": "AUD5",
+      "adset_id": "120258538232780777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1869866314168816",
+      "variant": "C",
+      "state": "live_before_plan",
+      "ad_id": "120258538784220777"
+    },
+    {
+      "name": "BM-PH-AUD2 | A Where To Buy",
+      "city": "PH",
+      "audience": "AUD2",
+      "adset_id": "120258538228660777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "4787098888279960",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-PH-AUD3 | A Where To Buy",
+      "city": "PH",
+      "audience": "AUD3",
+      "adset_id": "120258538228810777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "4787098888279960",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-PH-AUD4 | A Where To Buy",
+      "city": "PH",
+      "audience": "AUD4",
+      "adset_id": "120258538229480777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "4787098888279960",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-PH-AUD5 | A Where To Buy",
+      "city": "PH",
+      "audience": "AUD5",
+      "adset_id": "120258538230050777",
+      "campaign_id": "120258538213000777",
+      "creative_id": "4787098888279960",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-IBD-AUD3 | A Where To Buy",
+      "city": "IBD",
+      "audience": "AUD3",
+      "adset_id": "120258538226220777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "1045829631878514",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-IBD-AUD4 | A Where To Buy",
+      "city": "IBD",
+      "audience": "AUD4",
+      "adset_id": "120258538227270777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "1045829631878514",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-IBD-AUD5 | A Where To Buy",
+      "city": "IBD",
+      "audience": "AUD5",
+      "adset_id": "120258538227580777",
+      "campaign_id": "120258538209820777",
+      "creative_id": "1045829631878514",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-ABJ-AUD2 | A Where To Buy",
+      "city": "ABJ",
+      "audience": "AUD2",
+      "adset_id": "120258538231050777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1158838929878903",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-ABJ-AUD3 | A Where To Buy",
+      "city": "ABJ",
+      "audience": "AUD3",
+      "adset_id": "120258538231680777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1158838929878903",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-ABJ-AUD4 | A Where To Buy",
+      "city": "ABJ",
+      "audience": "AUD4",
+      "adset_id": "120258538232230777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1158838929878903",
+      "variant": "A",
+      "state": "planned"
+    },
+    {
+      "name": "BM-ABJ-AUD5 | A Where To Buy",
+      "city": "ABJ",
+      "audience": "AUD5",
+      "adset_id": "120258538232780777",
+      "campaign_id": "120258538215040777",
+      "creative_id": "1158838929878903",
+      "variant": "A",
+      "state": "planned"
+    }
+  ],
+  "log": [
+    {
+      "at": "2026-11-23T17:05:00+01:00",
+      "event": "plan_created",
+      "note": "19 ads already live (published from Ads Manager 2026-11-22 14:27 and 2026-11-23 16:53); 11 A ads were dropped by the failed publish because their copies carried a WhatsApp identity."
+    }
+  ]
+}
