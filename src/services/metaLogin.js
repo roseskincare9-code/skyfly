@@ -87,30 +87,79 @@ export async function finishLogin(pool, config, { businessId, userId, code }) {
   const perms = (await call(config, 'me/permissions', { access_token: token }).catch(() => ({ data: [] }))).data ?? [];
   const granted = perms.filter((p) => p.status === 'granted').map((p) => p.permission);
   const declined = perms.filter((p) => p.status !== 'granted').map((p) => p.permission);
-  const accounts = [];
-  let next = { path: 'me/adaccounts', params: { fields: 'account_id,name,currency,account_status,business{id,name}', limit: 100, access_token: token } };
-  while (next && accounts.length < MAX_ACCOUNTS) {
+  const { accounts, truncated } = await discoverAccounts(config, token);
+  return storeGrant(pool, config, { businessId, userId, token, tokenExpiresAt: Number.isFinite(expiresIn) && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null, meName: me.name ?? null, granted, declined, accounts, truncated });
+}
+
+// Meta's account_status codes, and whether Skyfly may connect the account. Disabled and closed accounts are
+// listed (so the owner sees them) but cannot be connected: Meta delivers nothing there.
+export const ACCOUNT_STATUS = { 1: 'Active', 2: 'Disabled by Meta', 3: 'Unsettled (payment due)', 7: 'Pending risk review', 8: 'Pending settlement', 9: 'In grace period', 100: 'Pending closure', 101: 'Closed', 201: 'Active', 202: 'Closed' };
+const NOT_CONNECTABLE = new Set([2, 100, 101, 202]);
+// This person's role in the account, from Meta's user_tasks: MANAGE (admin), ADVERTISE, ANALYZE (read-only), DRAFT.
+export function accessOf(tasks) {
+  const t = new Set((tasks ?? []).map(String));
+  if (t.has('MANAGE')) return { level: 'admin', canBuild: true };
+  if (t.has('ADVERTISE')) return { level: 'advertiser', canBuild: true };
+  if (t.has('ANALYZE')) return { level: 'analyst (read-only)', canBuild: false };
+  if (t.has('DRAFT')) return { level: 'draft only', canBuild: false };
+  return { level: tasks == null ? 'not reported' : 'none', canBuild: tasks == null ? null : false };
+}
+
+// Every ad account this person can use, across all their business portfolios and personal accounts, following
+// Meta's pagination to the end (up to MAX_ACCOUNTS; if Meta has more, the result says so instead of hiding it).
+export async function discoverAccounts(config, token) {
+  const accounts = []; let truncated = false;
+  let next = { path: 'me/adaccounts', params: { fields: 'account_id,name,currency,account_status,disable_reason,user_tasks,business{id,name}', limit: 100, access_token: token } };
+  while (next) {
     const page = await call(config, next.path, next.params);
     for (const a of page.data ?? []) {
       const id = String(a.account_id ?? a.id ?? '').replace(/^act_/, '');
-      if (/^\d{5,20}$/.test(id)) accounts.push({ id, name: a.name ?? null, currency: a.currency ?? null, status: a.account_status ?? null, business: a.business?.name ?? null });
+      if (!/^\d{5,20}$/.test(id) || accounts.some((x) => x.id === id)) continue;
+      if (accounts.length >= MAX_ACCOUNTS) { truncated = true; break; }
+      const status = a.account_status ?? null; const access = accessOf(a.user_tasks);
+      accounts.push({
+        id, name: a.name ?? null, currency: a.currency ?? null, status, status_label: ACCOUNT_STATUS[status] ?? (status == null ? 'not reported' : `status ${status}`),
+        business: a.business?.name ?? null, business_id: a.business?.id ?? null, access: access.level, can_build: access.canBuild,
+        connectable: status == null || !NOT_CONNECTABLE.has(Number(status)),
+      });
     }
+    if (truncated) break;
     const after = page.paging?.cursors?.after;
     next = page.paging?.next && after ? { path: 'me/adaccounts', params: { ...next.params, after } } : null;
   }
+  return { accounts, truncated };
+}
+
+async function storeGrant(pool, config, { businessId, userId, token, tokenExpiresAt, meName, granted, declined, accounts, truncated }) {
   await pool.query('DELETE FROM meta_oauth_grants WHERE (business_id = $1 AND user_id = $2) OR expires_at < now()', [businessId, userId]);
   const { rows: [g] } = await pool.query(
-    `INSERT INTO meta_oauth_grants (business_id, user_id, token_enc, token_expires_at, meta_user_name, granted, declined, accounts, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(mins => $9)) RETURNING id`,
-    [businessId, userId, encrypt(config.encryptionKey, token), Number.isFinite(expiresIn) && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null,
-      me.name ?? null, granted, declined, JSON.stringify(accounts), GRANT_MINUTES]);
+    `INSERT INTO meta_oauth_grants (business_id, user_id, token_enc, token_expires_at, meta_user_name, granted, declined, accounts, truncated, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(mins => $10)) RETURNING id`,
+    [businessId, userId, encrypt(config.encryptionKey, token), tokenExpiresAt, meName, granted, declined, JSON.stringify(accounts), Boolean(truncated), GRANT_MINUTES]);
   return g.id;
+}
+
+// Re-reads the account list with the Facebook Login token this business already holds (no new sign-in),
+// e.g. after the owner was given access to more ad accounts in Meta. Only a still-valid, unexpired token from
+// this business's own connections is used; otherwise the owner signs in with Facebook again.
+export async function refreshDiscovery(pool, config, { businessId, userId }) {
+  if (!config.encryptionKey) throw new MetaError('Tokens cannot be read until SKYFLY_ENCRYPTION_KEY is set on the server.', 409);
+  const { rows: [c] } = await pool.query(
+    `SELECT token_enc, token_expires_at FROM ad_connections WHERE business_id = $1 AND connected_via = 'facebook_login' AND status = 'verified'
+        AND (token_expires_at IS NULL OR token_expires_at > now()) ORDER BY updated_at DESC LIMIT 1`, [businessId]);
+  if (!c) throw new MetaError('No working Facebook Login connection to refresh from. Click "Connect with Facebook" to sign in again.', 409);
+  const token = decrypt(config.encryptionKey, c.token_enc);
+  const perms = (await call(config, 'me/permissions', { access_token: token }).catch((err) => { if (/code 190/.test(err.message)) throw new MetaError('Meta no longer accepts the saved sign-in (it expired or was removed). Click "Connect with Facebook" to sign in again.', 401); return { data: [] }; })).data ?? [];
+  const me = await call(config, 'me', { fields: 'name', access_token: token }).catch(() => ({}));
+  const { accounts, truncated } = await discoverAccounts(config, token);
+  return storeGrant(pool, config, { businessId, userId, token, tokenExpiresAt: c.token_expires_at, meName: me.name ?? null,
+    granted: perms.filter((p) => p.status === 'granted').map((p) => p.permission), declined: perms.filter((p) => p.status !== 'granted').map((p) => p.permission), accounts, truncated });
 }
 
 // The pending grant of THIS business and user (without the token), or null.
 export async function pendingGrant(pool, { businessId, userId }) {
   const { rows: [g] } = await pool.query(
-    `SELECT id, meta_user_name, granted, declined, accounts, token_expires_at, expires_at FROM meta_oauth_grants
+    `SELECT id, meta_user_name, granted, declined, accounts, truncated, token_expires_at, expires_at FROM meta_oauth_grants
       WHERE business_id = $1 AND user_id = $2 AND expires_at > now() ORDER BY id DESC LIMIT 1`, [businessId, userId]);
   return g ?? null;
 }
@@ -127,6 +176,8 @@ export async function connectFromGrant(pool, config, { businessId, userId, grant
   const token = decrypt(config.encryptionKey, g.token_enc);
   const results = [];
   for (const id of wanted) {
+    // Disabled or closed in Meta: reported, not connected (Meta delivers nothing there). Checked without calling Meta.
+    if (listed.get(id).connectable === false) { results.push({ id, name: listed.get(id).name, ok: false, error: `the account is ${String(listed.get(id).status_label).toLowerCase()} in Meta, so it cannot be connected` }); continue; }
     try {
       await connectAccount(pool, config, { businessId, userId, token, adAccountId: id });
       await pool.query("UPDATE ad_connections SET connected_via = 'facebook_login', token_expires_at = $3 WHERE business_id = $1 AND ad_account_id = $2", [businessId, id, g.token_expires_at]);

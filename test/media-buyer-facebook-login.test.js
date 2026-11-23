@@ -30,12 +30,17 @@ const metaServer = createServer((req, res) => {
   if (p === '/me/permissions') return send({ data: ['ads_read', 'ads_management', 'business_management', 'pages_show_list'].map((permission) => ({ permission, status: 'granted' })).concat([{ permission: 'pages_manage_ads', status: 'declined' }]) });
   if (p === '/me/adaccounts') {
     if (meta.adaccounts) return send({ data: meta.adaccounts });
+    if (meta.many) { // N accounts in pages of 7, across two portfolios, as Meta paginates
+      const start = Number(q.after ?? 0); const end = Math.min(start + 7, meta.many);
+      const data = Array.from({ length: end - start }, (_, i) => { const n = start + i; return { account_id: String(300000000 + n), name: `Lara Account ${n + 1}`, currency: 'NGN', account_status: 1, user_tasks: ['ADVERTISE'], business: { id: n % 2 ? '71' : '72', name: n % 2 ? 'Lara Brands' : 'Lara Markets' } }; });
+      return send({ data, paging: end < meta.many ? { cursors: { after: String(end) }, next: 'https://graph.facebook.com/next' } : { cursors: {} } });
+    }
     // Two pages, as Meta paginates.
-    if (!q.after) return send({ data: [{ id: 'act_111111111', account_id: '111111111', name: 'Glow Main', currency: 'NGN', account_status: 1, business: { id: '9', name: 'Glow BM' } }, { account_id: '555555555', name: 'Locked Out', currency: 'NGN', account_status: 1 }], paging: { cursors: { after: 'CUR' }, next: 'https://graph.facebook.com/next' } });
-    return send({ data: [{ account_id: '999999999', name: 'Glow Second', currency: 'USD', account_status: 2 }], paging: { cursors: { before: 'CUR' } } });
+    if (!q.after) return send({ data: [{ id: 'act_111111111', account_id: '111111111', name: 'Glow Main', currency: 'NGN', account_status: 1, user_tasks: ['MANAGE', 'ADVERTISE', 'ANALYZE'], business: { id: '9', name: 'Glow BM' } }, { account_id: '555555555', name: 'Locked Out', currency: 'NGN', account_status: 1 }], paging: { cursors: { after: 'CUR' }, next: 'https://graph.facebook.com/next' } });
+    return send({ data: [{ account_id: '999999999', name: 'Glow Second', currency: 'USD', account_status: 1, user_tasks: ['ANALYZE'] }, { account_id: '777777777', name: 'Old Closed', currency: 'NGN', account_status: 101, user_tasks: ['MANAGE'] }], paging: { cursors: { before: 'CUR' } } });
   }
   const m = /^\/act_(\d+)(\/[a-z_]+)?$/.exec(p);
-  if (m && ['111111111', '999999999'].includes(m[1])) {
+  if (m && (['111111111', '999999999'].includes(m[1]) || (meta.okAccounts ?? []).includes(m[1]))) {
     if (!m[2]) return send({ id: `act_${m[1]}`, name: m[1] === '111111111' ? 'Glow Main' : 'Glow Second', currency: 'NGN', account_status: 1 });
     if (m[2] === '/promote_pages') return send({ data: [{ id: 'page1', name: 'Glow Page' }] });
     if (m[2] === '/adspixels') return send({ data: [{ id: 'px1', name: 'Glow pixel' }] });
@@ -111,12 +116,12 @@ test('callback: another user, a made-up state or a reused state is refused; the 
   assert.equal(exch.at(-2).q.client_secret, 'present'); assert.equal(exch.at(-1).q.grant_type, 'fb_exchange_token');
   const { rows: [g] } = await pool.query('SELECT * FROM meta_oauth_grants WHERE business_id = $1', [A]);
   assert.ok(!g.token_enc.includes(TOKEN) && !g.token_enc.includes('EAA'), 'token stored encrypted');
-  assert.deepEqual(g.accounts.map((a) => a.id), ['111111111', '555555555', '999999999']); // both pages of results
+  assert.deepEqual(g.accounts.map((a) => a.id), ['111111111', '555555555', '999999999', '777777777']); // both pages of results
   assert.ok(g.granted.includes('ads_management')); assert.deepEqual(g.declined, ['pages_manage_ads']);
   assert.ok(new Date(g.token_expires_at) - Date.now() > 50 * 864e5);
   const page = await ownerA.get(`${mb(A)}?tab=settings&done=fb_pick`).expect(200);
   assert.match(page.text, /Signed in with Facebook as Ada Owner/);
-  for (const id of ['111111111', '555555555', '999999999']) assert.match(page.text, new RegExp(`data-fb-account="${id}"`));
+  for (const id of ['111111111', '555555555', '999999999', '777777777']) assert.match(page.text, new RegExp(`data-fb-account="${id}"`));
   assert.ok(!page.text.includes(TOKEN));
   // Owner B never sees A's picker.
   assert.doesNotMatch((await ownerB.get(`${mb(B)}?tab=settings`).expect(200)).text, /data-fb-picker/);
@@ -205,3 +210,79 @@ test('a failed connection attempt is shown in Settings with Meta\'s own message 
   const a = (await ownerA.get(`${mb(A)}?tab=settings`).expect(200)).text;
   assert.match(a, /authorization code has expired/); assert.doesNotMatch(a, /NOT grant/);
 });
+
+test('discovery: 17 accounts over 3 pages and 2 portfolios are all listed, with portfolio and access level; nothing truncated', async () => {
+  meta.many = 17;
+  try {
+    const state = (await start(ownerB, B)).searchParams.get('state');
+    await ownerB.get(`/meta/oauth/callback?state=${state}&code=good-code`).expect(302);
+    const { rows: [g] } = await pool.query('SELECT accounts, truncated FROM meta_oauth_grants WHERE business_id = $1', [B]);
+    assert.equal(g.accounts.length, 17); assert.equal(g.truncated, false);
+    assert.equal(new Set(g.accounts.map((a) => a.id)).size, 17);
+    assert.deepEqual([...new Set(g.accounts.map((a) => a.business))].sort(), ['Lara Brands', 'Lara Markets']);
+    assert.ok(g.accounts.every((a) => a.access === 'advertiser' && a.can_build === true && a.connectable === true));
+    const page = await ownerB.get(`${mb(B)}?tab=settings`).expect(200);
+    assert.match(page.text, /17 ad accounts found across 2 business portfolios/);
+    assert.match(page.text, /Portfolio: Lara Brands/); assert.match(page.text, /Your access: advertiser/);
+    // Connect 15 at once: all 15 are this business's, none is A's.
+    const ids = g.accounts.slice(0, 15).map((a) => a.id);
+    const { rows: [gid] } = await pool.query('SELECT id FROM meta_oauth_grants WHERE business_id = $1', [B]);
+    meta.okAccounts = ids;
+    await expect(post(ownerB, `${mb(B)}/connect/facebook/accounts`, { grant: gid.id, accounts: ids }), 302);
+    const { rows } = await pool.query('SELECT business_id, ad_account_id, selected FROM ad_connections WHERE ad_account_id = ANY($1)', [ids]);
+    assert.equal(rows.length, 15); assert.ok(rows.every((r) => Number(r.business_id) === Number(B)));
+    assert.doesNotMatch((await ownerA.get(`${mb(A)}?tab=settings`).expect(200)).text, /Lara Account/);
+  } finally { meta.many = 0; meta.okAccounts = null; }
+});
+
+test('discovery: more accounts than Skyfly shows is flagged, never silently cut', async () => {
+  meta.many = 505;
+  try {
+    const state = (await start(ownerB, B)).searchParams.get('state');
+    await ownerB.get(`/meta/oauth/callback?state=${state}&code=good-code`).expect(302);
+    const { rows: [g] } = await pool.query('SELECT jsonb_array_length(accounts) AS n, truncated FROM meta_oauth_grants WHERE business_id = $1', [B]);
+    assert.equal(g.n, 500); assert.equal(g.truncated, true);
+    assert.match((await ownerB.get(`${mb(B)}?tab=settings`).expect(200)).text, /data-fb-truncated/);
+    await expect(post(ownerB, `${mb(B)}/connect/facebook/cancel`), 302);
+  } finally { meta.many = 0; }
+});
+
+test('a closed account is shown as restricted and refused; read-only access is labelled; the others still connect', async () => {
+  const state = (await start(ownerA, A)).searchParams.get('state');
+  await ownerA.get(`/meta/oauth/callback?state=${state}&code=good-code`).expect(302);
+  const page = await ownerA.get(`${mb(A)}?tab=settings`).expect(200);
+  assert.match(page.text, /data-fb-account="777777777" data-fb-kind="restricted"[\s\S]{0,200}disabled/);
+  assert.match(page.text, /Status: Closed/); assert.match(page.text, /Read-only: Skyfly can report but not build campaigns/);
+  const { rows: [g] } = await pool.query('SELECT id FROM meta_oauth_grants WHERE business_id = $1', [A]);
+  const r = await expect(post(ownerA, `${mb(A)}/connect/facebook/accounts`, { grant: g.id, accounts: ['777777777', '111111111'] }), 400);
+  assert.match(r.text, /act_777777777: the account is closed in Meta, so it cannot be connected/);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM ad_connections WHERE ad_account_id = '777777777'")).rows[0].n, 0);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM ad_connections WHERE business_id = $1 AND ad_account_id = '111111111'", [A])).rows[0].n, 1);
+});
+
+test('refresh: re-reads the account list with the business\'s own saved Facebook sign-in (no new login); never another business\'s', async () => {
+  const before = meta.calls.filter((c) => c.path === '/oauth/access_token').length;
+  await expect(post(ownerA, `${mb(A)}/connect/facebook/refresh`), 302);
+  assert.equal(meta.calls.filter((c) => c.path === '/oauth/access_token').length, before); // no code exchange: no sign-in
+  const { rows: [g] } = await pool.query('SELECT accounts FROM meta_oauth_grants WHERE business_id = $1', [A]);
+  assert.equal(g.accounts.length, 4);
+  assert.match((await ownerA.get(`${mb(A)}?tab=settings`).expect(200)).text, /data-fb-refresh/);
+  // A business without a Facebook Login connection cannot refresh (and never borrows another business's token).
+  await pool.query("DELETE FROM ad_connections WHERE business_id = $1 AND connected_via = 'facebook_login'", [B]);
+  const r = await expect(post(ownerB, `${mb(B)}/connect/facebook/refresh`), 409);
+  assert.match(r.text, /No working Facebook Login connection to refresh from/);
+  // An expired saved sign-in is not used.
+  await pool.query("UPDATE ad_connections SET token_expires_at = now() - interval '1 day' WHERE business_id = $1 AND connected_via = 'facebook_login'", [A]);
+  await expect(post(ownerA, `${mb(A)}/connect/facebook/refresh`), 409);
+});
+
+test('accounts whose sign-in expired or was rejected by Meta are marked "Needs reconnection" with a reconnect button', async () => {
+  const page = await ownerA.get(`${mb(A)}?tab=settings`).expect(200);
+  assert.match(page.text, /data-account-status="reconnect">Needs reconnection/);
+  assert.match(page.text, /data-reconnect >Reconnect with Facebook/);
+  await pool.query("UPDATE ad_connections SET token_expires_at = now() + interval '30 days' WHERE business_id = $1", [A]);
+  await pool.query("UPDATE ad_connections SET status = 'failed', last_error = 'Meta: Error validating access token (code 190)' WHERE business_id = $1 AND ad_account_id = '111111111'", [A]);
+  const p2 = await ownerA.get(`${mb(A)}?tab=settings`).expect(200);
+  assert.match(p2.text, /data-account="111111111"[\s\S]{0,600}Needs reconnection/);
+});
+
