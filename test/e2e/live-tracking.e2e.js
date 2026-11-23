@@ -35,4 +35,34 @@ for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns',
   for (const x of info.extra) console.log(`  NEW: ${x}`);
   if (info.aiOff && tab === 'overview') console.log(`  AI notice: ${info.aiOff}`);
 }
+
+// ---- Live probes of the Meta connection endpoints (signed in as owner B). Nothing here can connect an account,
+// call Meta, or change data: every request is one that must be refused or that fails before anything is stored.
+{
+  const R = (label, r, extra = '') => console.log(`LIVE ${label}: HTTP ${r.status()}${r.headers().location ? ` -> ${r.headers().location.replace(SKYFLY, '')}` : ''}${extra ? ` | ${extra}` : ''}`);
+  const msg = async (r) => ((await r.text()).match(/class="(?:error|warn-box)"[^>]*>([^<]{0,220})/)?.[1] ?? (await r.text()).match(/<p[^>]*>([^<]{10,200})<\/p>/)?.[1] ?? '').trim();
+  const mb = `${SKYFLY}/businesses/${biz}/media-buyer`;
+  const settings = await p.request.get(`${mb}?tab=settings`);
+  const html = await settings.text();
+  const csrf = html.match(/name="_csrf" value="([^"]+)"/)?.[1];
+  const btn = html.match(/<button[^>]*data-fb-start[^>]*>/)?.[0] ?? 'NOT FOUND';
+  console.log(`LIVE settings: HTTP ${settings.status()} | Connect-with-Facebook button: ${btn.includes('disabled') ? 'present, DISABLED' : btn === 'NOT FOUND' ? 'NOT FOUND' : 'present, enabled'} | notice: ${(html.match(/data-fb-off>([^<]+)/)?.[1] ?? '').trim()}`);
+  console.log(`LIVE secrets in page: ${/\bEAA[A-Za-z0-9]{20,}|access_token=|app_secret|client_secret/i.test(html) ? 'FOUND (defect)' : 'none'}`);
+  const post = (path, form = {}) => p.request.post(path, { form: { _csrf: csrf, ...form }, maxRedirects: 0 });
+  let r = await post(`${mb}/connect/facebook`); R('start Facebook Login', r, `${(r.headers().location || '').includes('facebook.com') ? 'REDIRECTED TO META' : 'not redirected'}; ${await msg(r)}`);
+  r = await p.request.get(`${SKYFLY}/meta/oauth/callback?state=${'f'.repeat(32)}&code=made-up`, { maxRedirects: 0 }); R('callback, made-up state', r, await msg(r));
+  const anon = await browser.newContext(); r = await anon.request.get(`${SKYFLY}/meta/oauth/callback?state=${'f'.repeat(32)}&code=made-up`, { maxRedirects: 0 }); R('callback, signed out', r); await anon.close();
+  r = await post(`${mb}/connect/facebook/refresh`); R('refresh account list', r, await msg(r));
+  r = await post(`${mb}/connect/facebook/accounts`, { grant: '1', accounts: '1748876806431046' }); R('connect from a grant that is not mine', r, await msg(r));
+  r = await post(`${mb}/accounts/1748876806431046/select`); R('select an account not connected here', r);
+  r = await post(`${mb}/accounts/1748876806431046/disconnect`); R('remove an account not connected here', r);
+  r = await post(`${mb}/connect`, { ad_account_id: 'act_1748876806431046', token: 'not-a-real-token' }); R('token form, invalid token', r, await msg(r));
+  const other = biz === '4' ? '3' : '4';
+  r = await p.request.get(`${SKYFLY}/businesses/${other}/media-buyer?tab=settings`, { maxRedirects: 0 }); R(`other business #${other} Media Buyer settings`, r);
+  r = await post(`${SKYFLY}/businesses/${other}/media-buyer/connect/facebook`); R(`start Facebook Login for other business #${other}`, r);
+  r = await post(`${SKYFLY}/businesses/${other}/media-buyer/connect/facebook/refresh`); R(`refresh for other business #${other}`, r);
+  r = await p.request.get(`${SKYFLY}/admin`, { maxRedirects: 0 }); R('Super Admin area as owner', r);
+  const after = await (await p.request.get(`${mb}?tab=settings`)).text();
+  console.log(`LIVE connected accounts in this business after probes: ${(after.match(/data-account="\d+"/g) || []).length}`);
+}
 await browser.close();
