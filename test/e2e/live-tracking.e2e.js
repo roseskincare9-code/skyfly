@@ -61,7 +61,22 @@ for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns',
   r = await post(`${mb}/accounts/1748876806431046/select`); R('select an account not connected here', r);
   r = await post(`${mb}/accounts/1748876806431046/disconnect`); R('remove an account not connected here', r);
   r = await post(`${mb}/connect`, { ad_account_id: 'act_1748876806431046', token: 'not-a-real-token' }); R('token form, invalid token', r, await msg(r));
-  r = await post(`${mb}/ask`, { question: 'What should I advertise first?' }); R('Ask Cloudy (real question)', r, await msg(r));
+  const ov = await (await p.request.get(mb)).text();
+  const cloudyOn = /data-cloudy-status>on/.test(ov);
+  console.log(`LIVE Cloudy status on overview: ${(ov.match(/data-cloudy-status>([^<]+)/)?.[1] ?? 'not shown').trim()} | Ask input ${/<input name="question"[^>]*disabled/.test(ov) ? 'DISABLED' : 'enabled'}`);
+  const t0 = Date.now();
+  r = await post(`${mb}/ask`, { question: 'In one or two sentences: what is the name of my business, and what should I advertise first?' });
+  const askHtml = await r.text();
+  const chat = askHtml.slice(askHtml.indexOf('data-chat'), askHtml.indexOf('/ask"'));
+  const replies = [...chat.matchAll(/<div class="" style="white-space:pre-wrap;display:inline-block[^"]*">([\s\S]*?)<\/div>/g)].map((m) => m[1]);
+  const answer = (replies.at(-1) ?? chat.match(/<div style="white-space:pre-wrap">([\s\S]*?)<\/div>/)?.[1] ?? '').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  R('Ask Cloudy (real question)', r, cloudyOn ? `${Date.now() - t0} ms; answer: ${answer.slice(0, 600) || '(answer block not found)'}` : await msg(r));
+  if (cloudyOn) {
+    console.log(`LIVE Ask isolation: mentions own business "Skyfly Import Test": ${/Import Test/i.test(answer)} | mentions other test business "Demo Shop": ${/Demo Shop/i.test(answer)}`);
+    r = await post(`${mb}/generate/briefs`); R('Cloudy creative briefs', r, r.headers().location ? 'saved as an item' : await msg(r));
+    if (r.headers().location) { const it = await (await p.request.get(`${SKYFLY}${r.headers().location}`)).text(); console.log(`LIVE briefs item: ${(it.match(/<h1[^>]*>([^<]+)/)?.[1] ?? '').trim()} | ${(it.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').match(/(Brief|Hook|Headline)[^.]{0,300}/)?.[0] ?? '').slice(0, 300)}`); }
+    r = await post(`${mb}/generate/campaign_draft`); R('Campaign plan', r, r.headers().location ? 'saved as an item' : await msg(r));
+  }
   console.log(`LIVE Ask form: ${/<input name="question"[^>]*disabled/.test(html) ? 'input DISABLED' : 'input enabled'} | Cloudy status: ${(html.match(/data-cloudy-status>([^<]+)/)?.[1] ?? 'not shown').trim()}`);
   console.log(`LIVE AI notice: ${(html.match(/data-ai-off>([^<]+)/)?.[1] ?? 'none').trim().slice(0, 260)}`);
   const other = biz === '4' ? '3' : '4';
