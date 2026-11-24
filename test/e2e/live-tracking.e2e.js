@@ -61,6 +61,9 @@ for (const tab of ['overview', 'analysis', 'whatsapp', 'approvals', 'campaigns',
   r = await post(`${mb}/accounts/1748876806431046/select`); R('select an account not connected here', r);
   r = await post(`${mb}/accounts/1748876806431046/disconnect`); R('remove an account not connected here', r);
   r = await post(`${mb}/connect`, { ad_account_id: 'act_1748876806431046', token: 'not-a-real-token' }); R('token form, invalid token', r, await msg(r));
+  r = await post(`${mb}/ask`, { question: 'What should I advertise first?' }); R('Ask Cloudy (real question)', r, await msg(r));
+  console.log(`LIVE Ask form: ${/<input name="question"[^>]*disabled/.test(html) ? 'input DISABLED' : 'input enabled'} | Cloudy status: ${(html.match(/data-cloudy-status>([^<]+)/)?.[1] ?? 'not shown').trim()}`);
+  console.log(`LIVE AI notice: ${(html.match(/data-ai-off>([^<]+)/)?.[1] ?? 'none').trim().slice(0, 260)}`);
   const other = biz === '4' ? '3' : '4';
   r = await p.request.get(`${SKYFLY}/businesses/${other}/media-buyer?tab=settings`, { maxRedirects: 0 }); R(`other business #${other} Media Buyer settings`, r);
   r = await post(`${SKYFLY}/businesses/${other}/media-buyer/connect/facebook`); R(`start Facebook Login for other business #${other}`, r);
