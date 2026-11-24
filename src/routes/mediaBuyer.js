@@ -7,7 +7,7 @@ import { asyncHandler } from '../lib/http.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { audit } from '../lib/audit.js';
 import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, listCampaigns, ANALYSIS_PERIODS, MetaError } from '../services/metaAds.js';
-import { ask, generate, reviewCreative, cloudyReady, cloudyHandles, CloudyError, TASK_NAMES } from '../services/cloudy.js';
+import { ask, generate, reviewCreative, cloudyReady, cloudyProvider, cloudyHandles, CloudyError, TASK_NAMES } from '../services/cloudy.js';
 import { analyze, analystReady, AnalystError, META_CHANGING, ENGINES, recommendationsOf } from '../services/analyst.js';
 import { prepareAction, executeAction, ActionError } from '../services/actions.js';
 import { runWhatsAppAudit, importLeads, leadLogSummary } from '../services/whatsapp.js';
@@ -68,7 +68,7 @@ export function mediaBuyerRoutes({ pool, config }) {
     res.set('Cache-Control', 'no-store');
     res.status(status).render('media-buyer', {
       active: 'mediabuyer', tab, period, profile: profile ?? {}, connection, accounts, isOwner: req.role === 'owner',
-      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, onb, onbMessages, onboardingFields: ONBOARDING_FIELDS, builds, activity, aiEngine: engineFor(config), mbBase: base(req),
+      perf, items, creatives, messages: messages.reverse(), aiOn: cloudyReady(config), aiProvider: cloudyProvider(config), analystOn: analystReady(config), cloudyHandles: (task) => cloudyHandles(config, task), alerts, analysis, whatsapp, actionLog, engineOn, onb, onbMessages, onboardingFields: ONBOARDING_FIELDS, builds, activity, aiEngine: engineFor(config), mbBase: base(req),
       lastConnectFailure: tab === 'settings' ? (await pool.query("SELECT details, created_at FROM audit_log WHERE business_id = $1 AND action = 'media_buyer.meta_connect_failed' AND created_at > now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM audit_log s WHERE s.business_id = $1 AND s.action = 'media_buyer.meta_connected' AND s.id > audit_log.id) ORDER BY id DESC LIMIT 1", [id])).rows[0] ?? null : null,
       metaLogin: { ready: metaLoginReady(config), missing: metaLoginMissing(config), redirectUri: config.publicBaseUrl ? redirectUri(config) : null, grant: tab === 'settings' && req.role === 'owner' ? await pendingGrant(pool, { businessId: id, userId: req.session.userId }) : null },
       notice: typeof req.query.done === 'string' ? req.query.done : null, fbError: typeof req.query.fb_error === 'string' ? req.query.fb_error.slice(0, 300) : null, error: null, answer: null, ...extra,
