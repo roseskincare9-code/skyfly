@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
 import request from 'supertest';
 import { setup, resetDatabase, csrfToken, signUp, openClientSignup } from './helpers.js';
+import { connectionHealth } from '../src/services/metaAds.js';
 
 const SECRET = 'app-secret-for-tests';
 const TOKEN = `EAAlong${'x'.repeat(60)}`;
@@ -37,7 +38,10 @@ const metaServer = createServer((req, res) => {
   const m = /^\/act_(\d+)(\/[a-z_]+)?$/.exec(p);
   if (m && ['111111111', '999999999'].includes(m[1])) {
     if (!m[2]) return send({ id: `act_${m[1]}`, name: m[1] === '111111111' ? 'Glow Main' : 'Glow Second', currency: 'NGN', account_status: 1 });
-    if (m[2] === '/promote_pages') return send({ data: [{ id: 'page1', name: 'Glow Page' }] });
+    if (m[2] === '/promote_pages') {
+      if (meta.igRefused && /instagram_business_account/.test(q.fields ?? '')) return send({ error: { message: '(#10) This endpoint requires the instagram_basic permission', code: 10 } }, 403);
+      return send({ data: [{ id: 'page1', name: 'Glow Page', ...(/instagram_business_account/.test(q.fields ?? '') ? { instagram_business_account: { id: 'ig1', username: 'glowng' } } : {}) }] });
+    }
     if (m[2] === '/adspixels') return send({ data: [{ id: 'px1', name: 'Glow pixel' }] });
     return send({ data: [] });
   }
@@ -205,3 +209,19 @@ test('a failed connection attempt is shown in Settings with Meta\'s own message 
   const a = (await ownerA.get(`${mb(A)}?tab=settings`).expect(200)).text;
   assert.match(a, /authorization code has expired/); assert.doesNotMatch(a, /NOT grant/);
 });
+
+test('connection health: if Meta refuses the Page\'s Instagram field, the Page is still found and drafts stay possible', async () => {
+  await pool.query("UPDATE ad_connections SET status = 'verified', token_expires_at = now() + interval '30 days' WHERE business_id = $1 AND ad_account_id = '111111111'", [A]);
+  meta.igRefused = true;
+  try {
+    const h = await connectionHealth(pool, on.config, A, '111111111');
+    assert.deepEqual(h.pages, [{ id: 'page1', name: 'Glow Page', instagram: null }]);
+    assert.equal(h.instagram_unreadable, true);
+    assert.equal(h.capabilities.build_drafts, true);
+    assert.ok(!h.problems.some((p) => /No Facebook Page/.test(p)));
+  } finally { meta.igRefused = false; }
+  const h2 = await connectionHealth(pool, on.config, A, '111111111');
+  assert.deepEqual(h2.pages, [{ id: 'page1', name: 'Glow Page', instagram: { id: 'ig1', username: 'glowng' } }]);
+  assert.equal(h2.capabilities.instagram, true);
+});
+
