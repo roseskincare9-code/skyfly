@@ -40,13 +40,22 @@ if (!VALUE) {
   process.exit(1);
 }
 if (/\s/.test(VALUE)) throw new Error(`${NAME} contains spaces or line breaks; save it again without them. Nothing was changed.`);
-if (NAME === 'OPENAI_API_KEY' && !/^sk-[A-Za-z0-9_-]{20,}$/.test(VALUE)) throw new Error('OPENAI_API_KEY does not look like an OpenAI key (it starts with "sk-"). Nothing was changed.');
-console.log(`Secret ${NAME}: present, ${VALUE.length} characters (value never printed).`);
+// Shape hints only (never the value): help the owner fix a mis-pasted secret. The provider decides validity.
+const hints = [
+  ...(/^["'`]|["'`]$/.test(VALUE) ? ['it starts or ends with a quote mark: save it again without quotes'] : []),
+  ...(/^[A-Z_]+=/.test(VALUE) ? ['it starts with "NAME=": save only the key itself, not the variable name'] : []),
+  ...(NAME === 'OPENAI_API_KEY' && !VALUE.startsWith('sk-') ? ['it does not start with "sk-" as OpenAI API keys do (an organisation or project ID, or a ChatGPT login, is not an API key)'] : []),
+  ...(/[^A-Za-z0-9_\-]/.test(VALUE.replace(/^["'`]|["'`]$/g, '')) ? ['it contains characters other than letters, digits, "-" and "_"'] : []),
+];
+console.log(`Secret ${NAME}: present, ${VALUE.length} characters (value never printed)${hints.length ? `; check: ${hints.join('; ')}` : ''}.`);
 
 const check = await providerCheck(NAME, VALUE);
 if (check) {
   console.log(`${check.provider} key check: HTTP ${check.status}`);
-  if (check.status === 401 || check.status === 403) throw new Error(`${check.provider} rejected the key (HTTP ${check.status}). Nothing was changed on Render.`);
+  if (check.status === 401 || check.status === 403) {
+    console.log(`${check.provider} rejected the key (HTTP ${check.status}). Nothing was changed on Render.${hints.length ? ' Likely cause: the saved secret ' + hints[0] + '.' : ' Create a new key and save it again as the secret.'}`);
+    process.exit(1);
+  }
   if (check.status >= 400) console.log(`Note: ${check.provider} answered ${check.status}; the key is set anyway (it was not rejected as invalid).`);
 }
 
