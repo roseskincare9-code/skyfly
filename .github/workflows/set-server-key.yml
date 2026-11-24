@@ -1,0 +1,32 @@
+# Sets ONE Skyfly server key on Render from a GitHub Actions secret of the same name, then redeploys.
+# The owner saves the key in GitHub first (Settings → Secrets and variables → Actions → New repository
+# secret): GitHub never shows a secret again and masks it in every log. The value is never printed.
+# Only the Skyfly Render service is changed, only that one variable, and only after the provider accepts it.
+name: Set a Skyfly server key (from a GitHub secret)
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Which key (a GitHub Actions secret with exactly this name must exist)
+        type: choice
+        options: [OPENAI_API_KEY, ANTHROPIC_API_KEY, META_APP_ID, META_APP_SECRET, RESEND_API_KEY, CLOUDFLARE_API_TOKEN]
+      confirm:
+        description: Type "set" to apply
+        required: true
+permissions:
+  contents: read
+jobs:
+  set:
+    if: inputs.confirm == 'set'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/set-render-secret.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SECRET_NAME: ${{ inputs.name }}
+          SECRET_VALUE: ${{ secrets[inputs.name] }}
