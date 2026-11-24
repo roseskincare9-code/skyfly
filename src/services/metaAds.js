@@ -320,8 +320,16 @@ export async function connectionHealth(pool, config, businessId, adAccountId) {
     out.permissions = perms ? Object.fromEntries((perms.data ?? []).map((p) => [p.permission, p.status])) : null; // null: not reported for this kind of token
     const acct = await graph(config, token, `act_${c.ad_account_id}`, { params: { fields: 'name,account_status,disable_reason,currency,timezone_name,amount_spent,spend_cap' } });
     out.account = { name: acct.name, status: ACCOUNT_STATUS[acct.account_status] ?? String(acct.account_status), status_code: acct.account_status, disable_reason: acct.disable_reason ?? 0, currency: acct.currency, timezone: acct.timezone_name, spend_cap: acct.spend_cap ? Number(acct.spend_cap) / 100 : null };
-    const pages = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,name,instagram_business_account{id,username}', limit: '25' } }).catch((e) => ({ error: e.message }));
-    out.pages = pages.error ? { error: pages.error } : (pages.data ?? []).map((p) => ({ id: p.id, name: p.name, instagram: p.instagram_business_account ? { id: p.instagram_business_account.id, username: p.instagram_business_account.username } : null }));
+    // Pages first, on their own: reading a Page's Instagram account can need a permission Skyfly does not ask
+    // for (instagram_basic), and a refusal there must not hide the Page itself (builds need only the Page).
+    const pages = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,name', limit: '25' } }).catch((e) => ({ error: e.message }));
+    let igByPage = {};
+    if (!pages.error && (pages.data ?? []).length) {
+      const ig = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,instagram_business_account{id,username}', limit: '25' } }).catch(() => null);
+      if (ig) igByPage = Object.fromEntries((ig.data ?? []).filter((p) => p.instagram_business_account).map((p) => [p.id, { id: p.instagram_business_account.id, username: p.instagram_business_account.username ?? null }]));
+      else out.instagram_unreadable = true;
+    }
+    out.pages = pages.error ? { error: pages.error } : (pages.data ?? []).map((p) => ({ id: p.id, name: p.name, instagram: igByPage[p.id] ?? null }));
     const px = await graph(config, token, `act_${c.ad_account_id}/adspixels`, { params: { fields: 'id,name,last_fired_time', limit: '25' } }).catch((e) => ({ error: e.message }));
     out.pixels = px.error ? { error: px.error } : (px.data ?? []).map((p) => ({ id: p.id, name: p.name, last_fired_time: p.last_fired_time ?? null }));
     // What Skyfly can do with this connection, worked out from the above.
