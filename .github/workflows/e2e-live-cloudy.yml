@@ -1,0 +1,49 @@
+# Live readiness check of Cloudy, the AI Media Buyer: which server settings it relies on are present (names
+# only, never secret values), then a real run on the deployed service as the restricted live-test owners
+# (a fresh test business and the demo shop only): AI answers, onboarding, a campaign draft, Facebook Login up
+# to Meta's dialog (not completed), honest errors without a Meta account, and isolation between businesses.
+# Sends a few real AI requests. Never connects, creates, launches or changes anything in Meta. Manual only.
+name: Live Cloudy check (AI Media Buyer readiness)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Verified Skyfly service address (https://<name>.onrender.com or https://getskyfly.com)
+        required: true
+        default: https://getskyfly.com
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-24.04 # Playwright's Chromium does not support ubuntu-latest (26.04) yet
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Server settings Cloudy relies on (names only; secret values are never printed)
+        run: node scripts/cloudy-settings.mjs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - run: npx playwright-core install --with-deps chromium
+      - name: Sign-in for the live-test accounts (new password; hash on the server; redeploy)
+        run: node scripts/e2e-login.mjs enable
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Cloudy end to end on a fresh test business (+ isolation from the demo shop)
+        run: node test/e2e/live-cloudy.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: Disable the live-test sign-in again
+        if: always()
+        run: node scripts/e2e-login.mjs disable
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-cloudy-screenshots
+          path: live-screenshots/
+          retention-days: 7
