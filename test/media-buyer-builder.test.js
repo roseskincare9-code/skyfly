@@ -30,6 +30,7 @@ const metaServer = createServer(async (req, res) => {
   if (obj) {
     const o = meta.objects[obj[1]];
     if (!o || o.account !== allowed) return send({ error: { message: 'Unsupported get request', code: 100 } }, 400);
+    if (req.method === 'POST' && meta.failStatus === o.edge) { delete meta.failStatus; return send({ error: { message: 'Ad set is not ready', code: 100 } }, 400); }
     if (req.method === 'POST') { o.status = body.status; o.effective_status = body.status === 'ACTIVE' ? 'PENDING_REVIEW' : body.status; return send({ success: true }); }
     return send({ id: o.id, name: o.name, status: o.status, effective_status: o.effective_status });
   }
@@ -257,6 +258,16 @@ describe('plan → build (PAUSED) → launch', () => {
     assert.match(decodeURIComponent(r.headers.location), /disabled/);
     meta.accountStatus = 1;
     assert.ok(!meta.calls.some((x) => x.body?.status === 'ACTIVE'), 'nothing activated so far');
+    // Meta refuses part of the launch: the build is launch_failed, the campaign was NOT activated (it goes last),
+    // no limit is granted, and the owner can try again with the same authorisation.
+    meta.failStatus = 'adsets';
+    r = await post(ownerA, `${mb(A)}/builds/${buildId}/launch`, { authorised_daily: '9000', confirm: 'LAUNCH' });
+    assert.match(r.headers.location, /done=launch_failed/);
+    const failedPage = await ownerA.get(r.headers.location).expect(200);
+    assert.match(failedPage.text, /data-launch-panel/); assert.match(failedPage.text, /Try the launch again/);
+    assert.ok(!meta.calls.some((x) => x.body?.status === 'ACTIVE' && meta.objects[x.path.slice(1)].edge === 'campaigns'), 'campaign not activated');
+    assert.equal((await pool.query('SELECT approved_daily_limit_minor FROM ad_profiles WHERE business_id = $1', [A])).rows[0].approved_daily_limit_minor, null);
+    meta.calls.length = 0;
     r = await post(ownerA, `${mb(A)}/builds/${buildId}/launch`, { authorised_daily: '9,000', confirm: 'launch' });
     assert.match(r.headers.location, /done=launched/);
     const activations = meta.calls.filter((x) => x.body?.status === 'ACTIVE').map((x) => meta.objects[x.path.slice(1)].edge);

@@ -22,7 +22,7 @@ Operating rules:
 - Use ONLY the data provided in this message. Never invent metrics, results, benchmarks, testimonials or account details. If data is missing (for example no Meta account connected, no purchases tracked, ROAS unavailable), say so plainly and say what is needed.
 - Quote numbers exactly as given, with the account currency. Say which period they cover.
 - Work on the SELECTED ad account only (selected_ad_account). Other connected accounts are listed by name only; never mix their data or suggest actions on them unless the owner switches accounts.
-- Draft-first: you recommend and prepare drafts. You never claim anything is live, launched, paused or changed: only Meta's own status shown in the data counts. Activation, budget increases and account-wide changes always need the business owner's approval in Skyfly.
+- Draft-first: you recommend and prepare drafts. You never claim anything is live, launched, paused or changed: only Meta's own status shown in the data counts. When asked what was done, answer from skyfly_record_of_changes_in_meta exactly as recorded (outcome failed or refused means it did NOT happen; give the recorded error). You cannot execute anything from this chat: changes are made only by the owner approving them in Skyfly (Approvals). Activation, budget increases and account-wide changes always need the business owner's approval in Skyfly.
 - Never recommend spending above the business's stated daily budget without flagging it as a proposal for approval.
 - Be practical and specific: what to keep, cut, test or create next, and why, in plain language for a busy business owner.
 - If latest_performance_analysis is present, it is this business's primary performance analysis (by Skyfly's analysis engines): build on it and do not contradict it unless you point to specific figures in the data.
@@ -39,10 +39,32 @@ async function context(pool, config, businessId) {
   // The business's SELECTED ad account is the one Cloudy works on (read once, used for every call below).
   const accounts = await listConnections(pool, businessId);
   const sel = accounts.find((a) => a.selected) ?? accounts[0] ?? null;
-  const perf = sel ? await performance(pool, config, businessId, 'last_7d', sel.ad_account_id) : { connected: false };
+  // An account that is connected but whose token Meta no longer accepts (revoked, expired, password changed) is
+  // described as such, so Cloudy tells the owner to RECONNECT it rather than to "connect a Meta account".
+  const expired = sel?.token_expires_at && new Date(sel.token_expires_at) <= new Date();
+  const perf = !sel ? { connected: false }
+    : sel.status !== 'verified' || expired ? { connected: true, error: `Ad account act_${sel.ad_account_id} is connected but needs to be reconnected (${expired ? 'its Facebook Login access expired' : sel.last_error || 'Meta no longer accepts its token'}); no advertising data can be read until the owner reconnects it in Advertising Settings.` }
+      : await performance(pool, config, businessId, 'last_7d', sel.ad_account_id);
   const today = perf.connected && !perf.error ? await performance(pool, config, businessId, 'today', sel.ad_account_id) : null;
   const latest = sel ? await latestAnalysis(pool, businessId, sel.ad_account_id) : null;
+  // What Skyfly actually did in Meta for this business (builds, launches, approved actions) with the outcome
+  // Skyfly verified by reading Meta back: Cloudy reports these as recorded, never as it imagines them.
+  const [{ rows: builds }, { rows: actions }] = await Promise.all([
+    pool.query(`SELECT b.status, b.ad_account_id, b.daily_budget_minor, b.error, b.launched_at, b.updated_at, b.steps, b.launch_result, i.title
+      FROM ad_builds b JOIN ad_items i ON i.id = b.ad_item_id WHERE b.business_id = $1 ORDER BY b.id DESC LIMIT 5`, [businessId]),
+    pool.query(`SELECT operation, object_level, object_id, ad_account_id, outcome, error, before_state, after_state, created_at
+      FROM ad_action_log WHERE business_id = $1 ORDER BY id DESC LIMIT 10`, [businessId]),
+  ]);
+  const campaignOf = (b) => (b.launch_result?.after ?? []).find((x) => x.key === 'campaign') ?? null;
   return {
+    skyfly_record_of_changes_in_meta: {
+      note: 'Only these changes were made through Skyfly, with the outcome Skyfly verified in Meta. Anything not listed was not done by Skyfly.',
+      campaign_builds: builds.map((b) => ({ plan: b.title, ad_account: b.ad_account_id, status: b.status, daily_budget: Number(b.daily_budget_minor) / 100,
+        campaign_id: b.steps?.find?.((s) => s.key === 'campaign')?.meta_id ?? null, meta_status_after_launch: campaignOf(b) ? `${campaignOf(b).status}/${campaignOf(b).effective_status}` : null,
+        launched_at: b.launched_at, error: b.error ?? null, updated_at: b.updated_at })),
+      approved_actions: actions.map((a) => ({ operation: a.operation, level: a.object_level, object_id: a.object_id, ad_account: a.ad_account_id, outcome: a.outcome,
+        error: a.error ?? null, before: a.before_state, after: a.after_state, at: a.created_at })),
+    },
     ...(latest ? { latest_performance_analysis: { engine: latest.engine, dates: `${latest.scope.since} to ${latest.scope.until}`, data_fetched_at: latest.data_fetched_at, summary: latest.result.summary, priority_actions: latest.result.priority_actions } } : {}),
     business: { name: b.name, currency: b.currency, website: p?.website ?? b.website ?? null },
     profile: p ? Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && !['business_id', 'updated_at'].includes(k))) : 'not filled in yet',

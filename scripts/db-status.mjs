@@ -183,6 +183,19 @@ try {
     const where = r.status === 'active' && r.hosted ? `PUBLISHED at /p/${r.slug}/` : r.hosted ? 'hosted, not published' : r.external ? 'external page (not hosted by Skyfly)' : 'not hosted';
     line(`page: ${r.slug}`, `business ${r.business}; status ${r.status}; ${where}${r.test_mode ? '; test mode' : ''}`);
   }
+  // AI Media Buyer (Cloudy) usage across businesses: counts and statuses only (no tokens, no content).
+  console.log('\n== AI Media Buyer (counts only)');
+  const safe = async (label, sql) => { try { const rows = await one(sql); if (!rows.length) line(label, 0); for (const r of rows) line(`${label}${r.k != null ? `: ${r.k}` : ''}`, r.n); } catch (err) { line(label, `n/a (${err.message.slice(0, 60)})`); } };
+  await safe('businesses with a Meta ad account', "SELECT coalesce(connected_via, 'token') || ' / ' || status AS k, count(DISTINCT business_id)::int AS n FROM ad_connections GROUP BY 1 ORDER BY 1");
+  await safe('Meta ad accounts connected', "SELECT status AS k, count(*)::int AS n FROM ad_connections GROUP BY 1 ORDER BY 1");
+  await safe('Meta tokens expired', 'SELECT count(*)::int AS n FROM ad_connections WHERE token_expires_at <= now()');
+  await safe('business profiles filled', 'SELECT count(*)::int AS n FROM ad_profiles');
+  await safe('Cloudy messages', "SELECT topic AS k, count(*)::int AS n FROM ad_messages GROUP BY 1 ORDER BY 1");
+  await safe('AI items', "SELECT kind || ' / ' || status AS k, count(*)::int AS n FROM ad_items GROUP BY 1 ORDER BY 1");
+  await safe('performance analyses', "SELECT engine || ' / ' || status AS k, count(*)::int AS n FROM ad_analyses GROUP BY 1 ORDER BY 1");
+  await safe('campaign builds', "SELECT status AS k, count(*)::int AS n FROM ad_builds GROUP BY 1 ORDER BY 1");
+  await safe('approved actions', "SELECT operation || ' / ' || outcome AS k, count(*)::int AS n FROM ad_action_log GROUP BY 1 ORDER BY 1");
+  await safe('Facebook Login started', "SELECT count(*)::int AS n FROM audit_log WHERE action = 'media_buyer.facebook_login_started'");
   // Labelled TEST ORDERs only (never real customers): what the business's Orders page lists for them.
   console.log('\n== Latest TEST ORDERs (as listed in each business\'s Orders page)');
   for (const r of await one(`SELECT o.reference, b.slug AS business, lp.slug AS page, o.status, o.total_minor, o.currency, o.sheet_sync_status, o.created_at,

@@ -61,6 +61,17 @@ marks it executed only if Meta shows the change, and logs before / requested / a
 action log (Approvals → Action center). Skyfly never activates, publishes, deletes, or changes targeting.
 Writing needs the connected token to have `ads_management`.
 
+### Launch retries and Cloudy's record of changes
+
+- If Meta refuses part of a launch (status `launch_failed`), the campaign itself is not activated (it is
+  activated last) and no spending limit is granted. The launch panel stays available ("Try the launch
+  again") with the same exact-budget + LAUNCH authorisation. A launch interrupted by a restart (stuck in
+  `launching` for 10+ minutes) can be launched again the same way.
+- Cloudy cannot execute anything from the chat. It is given Skyfly's verified record of what was done in
+  Meta (last 5 builds with Meta's status after launch, last 10 approved actions with outcome and error) and
+  must answer "what did you do?" from that record only. An ad account whose token Meta no longer accepts
+  (or whose Facebook Login access expired) is described as "connected, needs reconnecting".
+
 ## WhatsApp Conversion Audit
 
 Tab **WhatsApp Conversion Audit**:

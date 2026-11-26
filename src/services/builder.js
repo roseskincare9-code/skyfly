@@ -295,7 +295,11 @@ export async function buildPlan(pool, config, { businessId, userId, itemId }) {
 export async function launchBuild(pool, config, { businessId, userId, buildId, authorisedDaily, confirmText }) {
   const { rows: [b] } = await pool.query('SELECT b.*, i.body FROM ad_builds b JOIN ad_items i ON i.id = b.ad_item_id WHERE b.id = $1 AND b.business_id = $2', [buildId, businessId]);
   if (!b) throw new BuildError('Not found.', 404);
-  if (b.status !== 'built') throw new BuildError(b.status === 'launched' ? 'This campaign was already launched.' : 'Only a completed, verified build can be launched.', 409);
+  // A launch Meta refused part-way (launch_failed), or one interrupted by a restart (launching for 10+ minutes),
+  // can be launched again: activating an object that is already ACTIVE changes nothing, and the same exact-budget
+  // authorisation is required again.
+  const stuck = b.status === 'launching' && Date.now() - new Date(b.updated_at).getTime() > 10 * 60000;
+  if (!['built', 'launch_failed'].includes(b.status) && !stuck) throw new BuildError(b.status === 'launched' ? 'This campaign was already launched.' : b.status === 'launching' ? 'This build is already being launched.' : 'Only a completed, verified build can be launched.', 409);
   const daily = Number(b.daily_budget_minor);
   if (String(confirmText ?? '').trim().toUpperCase() !== 'LAUNCH' || Math.round(Number(String(authorisedDaily ?? '').replace(/,/g, '')) * 100) !== daily) {
     throw new BuildError(`To launch, confirm the exact daily budget (${daily / 100}) and type LAUNCH.`, 400);
@@ -304,10 +308,12 @@ export async function launchBuild(pool, config, { businessId, userId, buildId, a
   if (!health.ok || health.account?.status_code !== 1) throw new BuildError(`Meta reports the ad account as ${health.account?.status ?? 'unavailable'}${health.error ? ` (${health.error})` : ''}. Nothing was launched.`, 409);
   if (health.capabilities && !health.capabilities.launch) throw new BuildError('The connected token cannot launch (ads_management is missing). Nothing was launched.', 409);
   // Claim it: one launch only.
-  const { rowCount } = await pool.query("UPDATE ad_builds SET status = 'launching', launched_by = $3, updated_at = now() WHERE id = $1 AND business_id = $2 AND status = 'built'", [buildId, businessId, userId]);
+  const { rowCount } = await pool.query(
+    `UPDATE ad_builds SET status = 'launching', launched_by = $3, updated_at = now() WHERE id = $1 AND business_id = $2
+       AND (status IN ('built', 'launch_failed') OR (status = 'launching' AND updated_at < now() - interval '10 minutes'))`, [buildId, businessId, userId]);
   if (!rowCount) throw new BuildError('This build is already being launched.', 409);
   let acc;
-  try { acc = await buildAccess(pool, config, businessId, b.ad_account_id); } catch (err) { await pool.query("UPDATE ad_builds SET status = 'built' WHERE id = $1", [buildId]); throw new BuildError(err.message, 409); }
+  try { acc = await buildAccess(pool, config, businessId, b.ad_account_id); } catch (err) { await pool.query('UPDATE ad_builds SET status = $2 WHERE id = $1', [buildId, b.status === 'launch_failed' ? 'launch_failed' : 'built']); throw new BuildError(err.message, 409); }
   const steps = b.steps;
   const order = [...steps.filter((s) => s.key.startsWith('ad:')), ...steps.filter((s) => s.key.startsWith('adset:')), ...steps.filter((s) => s.key === 'campaign')];
   const results = [];
