@@ -1,0 +1,81 @@
+# Live onboarding-readiness check on production, in one run: is public registration open and why not;
+# business owners' sign-in, isolation and switching (test businesses only); three separate non-admin
+# accounts (Larose staff, 3-in-1 staff, owner of a test business) each confined to its own business;
+# Cloudy (AI Media Buyer) gets the right business context; and, when registration is open, a fresh
+# registration with the real verification email (Resend test inbox) through workspace creation.
+# Every check runs even if an earlier one fails. Uses only the restricted live-test accounts
+# (e2e-…@skyfly.invalid, signed in for this run only) and labelled "(test)" businesses. Never touches
+# real clients' data, never connects or changes anything in Meta. Prints no secrets. Manual only.
+name: Live onboarding readiness (signup, workspaces, isolation, Cloudy)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Skyfly address
+        required: true
+        default: https://getskyfly.com
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-24.04 # Playwright's Chromium does not support ubuntu-latest (26.04) yet
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: 1. Public registration — sign-up button, form, fresh registration, verification email, login, workspace
+        id: signup
+        continue-on-error: true
+        run: |
+          node scripts/resend-key-env.mjs
+          node test/e2e/live-signup-verify.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Sign-in for the live-test accounts (new password; hash on the server; redeploy)
+        run: node scripts/e2e-login.mjs enable
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: 2. Owners' sign-in, isolation, workspace switching, invitations (test businesses only)
+        id: tenancy
+        continue-on-error: true
+        run: node test/e2e/live-tenancy.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: 3. Three separate non-admin accounts, each confined to its own business (GET and POST)
+        id: iso3
+        continue-on-error: true
+        run: node test/e2e/live-iso3.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: 4. Cloudy (AI Media Buyer) on a fresh test business, with its own business context and isolation
+        id: cloudy
+        continue-on-error: true
+        run: node test/e2e/live-cloudy.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+      - name: Disable the live-test sign-in again
+        if: always()
+        run: node scripts/e2e-login.mjs disable
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Summary
+        if: always()
+        env:
+          SIGNUP: ${{ steps.signup.outcome }}
+          TENANCY: ${{ steps.tenancy.outcome }}
+          ISO3: ${{ steps.iso3.outcome }}
+          CLOUDY: ${{ steps.cloudy.outcome }}
+        run: |
+          echo "SUMMARY  public registration: $SIGNUP | owners, isolation, switching: $TENANCY | three separate accounts: $ISO3 | Cloudy business context: $CLOUDY"
+          [ "$SIGNUP" = success ] && [ "$TENANCY" = success ] && [ "$ISO3" = success ] && [ "$CLOUDY" = success ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-onboarding-screenshots
+          path: live-screenshots/
+          retention-days: 7
