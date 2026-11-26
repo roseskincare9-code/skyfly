@@ -1,8 +1,9 @@
 // Each business's OWN Meta ad account, through the Marketing API (the same Graph address Skyfly already uses
 // for the Conversions API). The access token is the business's (a System User token from its own Business
 // Manager, or a user token with ads_read / ads_management): it is verified with Meta, stored encrypted, used
-// only server-side for that business, and never shown again. Reads are free; the ONLY write is creating a
-// campaign shell with status PAUSED after an approval (no ad set, no ad, no budget: nothing can spend).
+// only server-side for that business, and never shown again. Reads are free. Writes: approved builds create
+// campaigns, ad sets and ads only as PAUSED (buildAccess); activation only through an authorised launch; the
+// action layer only pauses or sets a daily budget after approval (withAccount).
 import { encrypt, decrypt } from '../lib/secrets.js';
 
 export class MetaError extends Error {
@@ -318,8 +319,10 @@ export async function connectionHealth(pool, config, businessId, adAccountId) {
   try {
     const perms = await graph(config, token, 'me/permissions', { params: { limit: '100' } }).catch(() => null);
     out.permissions = perms ? Object.fromEntries((perms.data ?? []).map((p) => [p.permission, p.status])) : null; // null: not reported for this kind of token
-    const acct = await graph(config, token, `act_${c.ad_account_id}`, { params: { fields: 'name,account_status,disable_reason,currency,timezone_name,amount_spent,spend_cap' } });
-    out.account = { name: acct.name, status: ACCOUNT_STATUS[acct.account_status] ?? String(acct.account_status), status_code: acct.account_status, disable_reason: acct.disable_reason ?? 0, currency: acct.currency, timezone: acct.timezone_name, spend_cap: acct.spend_cap ? Number(acct.spend_cap) / 100 : null };
+    const acct = await graph(config, token, `act_${c.ad_account_id}`, { params: { fields: 'name,account_status,disable_reason,currency,timezone_name,amount_spent,spend_cap,min_daily_budget' } });
+    out.account = { name: acct.name, status: ACCOUNT_STATUS[acct.account_status] ?? String(acct.account_status), status_code: acct.account_status, disable_reason: acct.disable_reason ?? 0, currency: acct.currency, timezone: acct.timezone_name, spend_cap: acct.spend_cap ? Number(acct.spend_cap) / 100 : null,
+      // Meta's smallest daily budget for one ad set in this account (account currency); an ad set below it is refused.
+      min_daily_budget: Number(acct.min_daily_budget) > 0 ? Number(acct.min_daily_budget) / 100 : null };
     // Pages first, on their own: reading a Page's Instagram account can need a permission Skyfly does not ask
     // for (instagram_basic), and a refusal there must not hide the Page itself (builds need only the Page).
     const pages = await graph(config, token, `act_${c.ad_account_id}/promote_pages`, { params: { fields: 'id,name', limit: '25' } }).catch((e) => ({ error: e.message }));

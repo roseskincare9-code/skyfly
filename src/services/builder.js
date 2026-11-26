@@ -34,7 +34,7 @@ export const PLAN_SCHEMA = obj({
 export const PLAN_INSTRUCTIONS = `You are the media buyer inside Skyfly, building ONE Meta campaign plan for ONE business from the data provided.
 - Base every choice on this business's data: products and prices, target markets, customer, goals, budget, landing pages, creative library, connection health (pixels, Page, Instagram) and past results (if any). Do not reuse a generic template; explain in rationale and why_this_structure why this structure fits THIS business.
 - Objective: OUTCOME_SALES with conversion_event PURCHASE only if the account has a pixel (connection.pixels); otherwise OUTCOME_TRAFFIC with conversion_event NONE (and say tracking must be fixed). OUTCOME_LEADS with LEAD only for lead businesses with a pixel.
-- Budget: the sum of ad set daily_budget must not exceed the business's daily budget (profile.daily_budget) and must respect approved_daily_limit when set. Use the account currency. Prefer 1 ad set (2 only if the budget allows a real test); 2 to 3 ads per ad set.
+- Budget: each ad set's daily_budget must be at least account.min_daily_budget_per_ad_set (Meta's minimum) when given; if the business's budget cannot cover that, use ONE ad set at that minimum and say so in rationale. The sum of ad set daily_budget must not exceed the business's daily budget (profile.daily_budget) and must respect approved_daily_limit when set. Use the account currency. Prefer 1 ad set (2 only if the budget allows a real test); 2 to 3 ads per ad set.
 - Targeting: country as a 2-letter code; cities only where the business delivers; ages and gender only when the product requires it. advantage_audience true lets Meta widen the audience (recommended for small budgets) — then use age_min 18 and age_max 65.
 - destination_url must be one of the business's own pages (skyfly_landing_pages url or profile.website), https.
 - creative_id: the id of an IMAGE from creative_library that fits the angle; "" if no suitable image exists (then describe the needed image in creative_brief).
@@ -84,6 +84,9 @@ export function validatePlan(plan, { images, profile, pages, health, publicBaseU
   plan.ad_sets.forEach((s, i) => {
     const n = `Ad set ${i + 1}`;
     if (!(s.daily_budget > 0)) errors.push(`${n}: set a daily budget.`);
+    // Checked before anything is created: Meta refuses an ad set below the account's minimum, which would leave
+    // a half-built (paused) campaign behind.
+    else if (health?.account?.min_daily_budget && s.daily_budget < health.account.min_daily_budget) errors.push(`${n}: Meta's minimum daily budget for this ad account is ${health.account.min_daily_budget} ${health.account.currency ?? ''}`.trimEnd() + ` (the plan has ${s.daily_budget}).`);
     if (!/^[A-Z]{2}$/.test(s.country)) errors.push(`${n}: country must be a 2-letter code (e.g. NG).`);
     if (s.age_min < 18 || s.age_max > 65 || s.age_min > s.age_max) errors.push(`${n}: ages must be between 18 and 65.`);
     if (!s.ads.length || s.ads.length > 6) errors.push(`${n}: 1 to 6 ads.`);
@@ -115,7 +118,7 @@ export async function generatePlan(pool, config, { businessId, userId, adAccount
   ]);
   const p = ctx.profile;
   const data = {
-    account: { id: acct.ad_account_id, currency: health.account?.currency, timezone: health.account?.timezone },
+    account: { id: acct.ad_account_id, currency: health.account?.currency, timezone: health.account?.timezone, min_daily_budget_per_ad_set: health.account?.min_daily_budget ?? null },
     connection: { pixels: health.pixels, pages: Array.isArray(health.pages) ? health.pages.map((x) => ({ name: x.name, instagram: Boolean(x.instagram) })) : [], problems: health.problems },
     profile: Object.fromEntries(Object.entries(p).filter(([k, v]) => v != null && !['business_id', 'updated_at', 'approval_mode', 'daily_budget_minor', 'approved_daily_limit_minor'].includes(k))),
     daily_budget: p.daily_budget_minor ? Number(p.daily_budget_minor) / 100 : null,
