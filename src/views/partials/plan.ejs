@@ -75,7 +75,7 @@
     <% if (L.after) { %><p class="muted" style="font-size:13px" data-launch-status>Meta after launch: <%= L.after.map((v) => `${v.key} ${v.status}/${v.effective_status}`).join(' · ') %></p><% } %>
     <% if (['failed', 'building'].includes(build.status)) { %><form method="post" action="<%= mbBase %>/builds/<%= build.id %>/retry"><%- include('csrf') %><button class="btn secondary" type="submit" data-retry>Retry (resumes; nothing is created twice)</button></form><% } %>
   </div>
-  <% if (build.status === 'built') { %>
+  <% if (['built', 'launch_failed'].includes(build.status)) { %>
     <div class="card" data-launch-panel><h2>Launch: authorise spending</h2>
       <dl class="kv"><dt>Account</dt><dd>act_<%= item.ad_account_id %><%= conn?.ad_account_name ? ` (${conn.ad_account_name})` : '' %></dd>
         <dt>Objective / event</dt><dd><%= P.objective.replace('OUTCOME_', '') %> / <%= P.conversion_event %></dd>
@@ -86,7 +86,7 @@
       <form method="post" action="<%= mbBase %>/builds/<%= build.id %>/launch"><%- include('csrf') %>
         <label>Type the daily budget you authorise (<%= cur %>)<input name="authorised_daily" inputmode="decimal" required placeholder="<%= Number(build.daily_budget_minor) / 100 %>"></label>
         <label>Type LAUNCH to confirm<input name="confirm" required autocomplete="off"></label>
-        <button class="btn" type="submit" style="margin-top:8px" data-launch>Launch in Meta</button>
+        <button class="btn" type="submit" style="margin-top:8px" data-launch><%= build.status === 'launch_failed' ? 'Try the launch again' : 'Launch in Meta' %></button>
         <p class="muted" style="font-size:13px">Meta charges your ad account's payment method. This amount becomes your approved daily limit for Skyfly-launched campaigns; increases above it need your authorisation again.</p>
       </form></div>
   <% } %>

@@ -98,3 +98,30 @@ test('with no AI key at all, Ask is disabled, says exactly which key the server 
   const r = await post(agent, `${mb(A)}/ask`, { question: 'Hello?' });
   assert.equal(r.status, 409); assert.match(r.text, /Cloudy is not switched on yet: the server has no AI key/);
 });
+
+test('an ad account whose token Meta rejected is described to Cloudy as "connected, needs reconnecting", not as "no account"', async () => {
+  await pool.query("INSERT INTO ad_connections (business_id, ad_account_id, ad_account_name, token_enc, status, last_error, selected) VALUES ($1, '555666777', 'Larose Ads', 'enc', 'failed', 'Meta: Error validating access token (code 190)', true)", [A]);
+  ai.requests.length = 0;
+  const r = await post(owner, `${mb(A)}/ask`, { question: 'How are my ads doing?' });
+  assert.equal(r.status, 200, r.text.slice(0, 300));
+  const sys = ai.requests[0].body.instructions;
+  assert.match(sys, /act_555666777 is connected but needs to be reconnected \(Meta: Error validating access token \(code 190\)\)/);
+  assert.doesNotMatch(sys, /No Meta ad account connected/);
+  await pool.query("UPDATE ad_connections SET status = 'verified', last_error = NULL, token_expires_at = now() - interval '1 day' WHERE business_id = $1", [A]);
+  ai.requests.length = 0;
+  await post(owner, `${mb(A)}/ask`, { question: 'And now?' });
+  assert.match(ai.requests[0].body.instructions, /needs to be reconnected \(its Facebook Login access expired\)/);
+  await pool.query('DELETE FROM ad_connections WHERE business_id = $1', [A]);
+});
+
+test('Cloudy is given Skyfly\'s verified record of changes (a failed action stays failed), for this business only', async () => {
+  await pool.query(`INSERT INTO ad_action_log (business_id, ad_account_id, operation, object_level, object_id, requested, outcome, error)
+    VALUES ($1, '555666777', 'pause', 'campaign', '900001', '{"status":"PAUSED"}', 'failed', 'Meta refused the change: (#200) permission'),
+           ($2, '444555666', 'pause', 'campaign', '900002', '{"status":"PAUSED"}', 'executed', NULL)`, [A, B]);
+  ai.requests.length = 0;
+  await post(owner, `${mb(A)}/ask`, { question: 'Did you pause my campaign?' });
+  const sys = ai.requests[0].body.instructions;
+  assert.match(sys, /answer from skyfly_record_of_changes_in_meta exactly as recorded/);
+  assert.match(sys, /"object_id":"900001"[^}]*"outcome":"failed","error":"Meta refused the change: \(#200\) permission"/);
+  assert.doesNotMatch(sys, /900002/, 'another business\'s action is never included');
+});
