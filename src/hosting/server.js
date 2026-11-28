@@ -4,7 +4,7 @@
 // which keeps imported pages working as they were designed.
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { asyncHandler } from '../lib/http.js';
+import { asyncHandler, sendWithRanges } from '../lib/http.js';
 import { readFile } from './storage.js';
 import { verifyPreviewToken } from './preview.js';
 import { isHtml } from './files.js';
@@ -101,7 +101,10 @@ function makeSender(pool, transformHtml, load = null) {
     }
     res.set('ETag', etag);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
-    res.type(file.contentType).send(body);
+    res.type(file.contentType);
+    // Videos and audio must answer byte ranges (Safari will not play them otherwise); pages and assets are sent whole.
+    if (/^(video|audio)\//.test(file.contentType)) return sendWithRanges(req, res, body);
+    res.send(body);
   };
 }
 

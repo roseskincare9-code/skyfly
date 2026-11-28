@@ -3,7 +3,7 @@
 // query below runs for req.business.id only. Meta tokens never reach the browser.
 import { Router } from 'express';
 import multer from 'multer';
-import { asyncHandler } from '../lib/http.js';
+import { asyncHandler, sendWithRanges } from '../lib/http.js';
 import { requireCsrf } from '../lib/csrf.js';
 import { audit } from '../lib/audit.js';
 import { connectAccount, listConnections, selectAccount, disconnectAccount, performance, createPausedCampaign, listCampaigns, ANALYSIS_PERIODS, MetaError } from '../services/metaAds.js';
@@ -198,7 +198,7 @@ export function mediaBuyerRoutes({ pool, config }) {
     const { rows: [c] } = await pool.query('SELECT name, mime, data FROM ad_creatives WHERE id = $1 AND business_id = $2', [req.params.creativeId, req.business.id]);
     if (!c) return res.status(404).render('error', { message: 'Not found.' });
     res.set({ 'Content-Type': c.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename="${c.name.replace(/[^\w.-]/g, '_')}"` });
-    res.send(c.data);
+    sendWithRanges(req, res, c.data);
   }));
 
   router.post('/creatives/:creativeId/review', asyncHandler(async (req, res) => {
