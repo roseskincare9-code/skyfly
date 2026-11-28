@@ -16,6 +16,7 @@ function mock(m0 = {}) {
     calls.push(`${req.method} ${p}`);
     const send = (o, s = 200) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     const cf = (result) => send({ success: true, result });
+    if (m0.deny && m0.deny.some((d) => p.startsWith(d))) return send({ success: false, errors: [{ code: 10000, message: 'Authentication error' }] }, 403);
     if (p === '/cf/zones') return cf([{ id: 'z1', status: 'active', account: { id: 'a1', name: 'Skyfly' } }]);
     if (p === '/cf/accounts/a1/challenges/widgets' && req.method === 'GET') return cf(widget ? [widget] : []);
     if (p === '/cf/accounts/a1/challenges/widgets' && req.method === 'POST') { widget = { ...j, sitekey: '0xSITEKEY', secret: '0xTURNSTILE_SECRET_VALUE' }; return cf(widget); }
@@ -83,5 +84,32 @@ test('keys saved by hand on the Render "skyfly" service are used when GitHub has
     assert.match(r.out, /Resend key found on the Render "skyfly" service/);
     assert.equal(m.env['srv-skyfly:SKYFLY_NOTIFY_API_KEY'], 're_from_render_value');
     assert.ok(!r.out.includes('re_from_render_value') && !r.out.includes('cf-from-render'), 'no key printed');
+  } finally { m.server.close(); }
+});
+
+test('preflight names the exact missing permission (Turnstile, restricted Resend key) and changes nothing', async () => {
+  const m = mock({ deny: ['/cf/accounts/a1/challenges', '/rs/domains'] });
+  await new Promise((r) => m.server.listen(0, r)); const base = `http://127.0.0.1:${m.server.address().port}`;
+  try {
+    const r = await run(base, true);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /OK {4}Cloudflare: zone getskyfly\.com readable/);
+    assert.match(r.out, /OK {4}Cloudflare: DNS records readable/);
+    assert.match(r.out, /MISSING  Cloudflare token cannot read Turnstile widgets .*Account · Turnstile · Edit/);
+    assert.match(r.out, /MISSING  Resend refused the key .*"Full access"/);
+    assert.match(r.out, /BLOCKED  Nothing was changed/);
+    assert.ok(!m.calls.some((c) => !c.startsWith('GET')), `wrote: ${m.calls.filter((c) => !c.startsWith('GET'))}`);
+    assert.deepEqual(m.env, {});
+  } finally { m.server.close(); }
+});
+
+test('a dry run with only the Cloudflare token checks it and reports the Resend key as missing', async () => {
+  const m = mock(); await new Promise((r) => m.server.listen(0, r)); const base = `http://127.0.0.1:${m.server.address().port}`;
+  try {
+    const r = await new Promise((resolve) => execFile('node', ['scripts/activate-signup.mjs'], { env: { PATH: process.env.PATH, ACTIVATE_TEST_API: base, CLOUDFLARE_API_TOKEN: 'cf-token-value', RENDER_API_KEY: 'rnd_render_key_value' } }, (err, stdout, stderr) => resolve({ code: err?.code ?? 0, out: stdout + stderr })));
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /OK {4}Cloudflare: Turnstile widgets readable/);
+    assert.match(r.out, /MISSING  RESEND_API_KEY is not saved yet/);
+    assert.ok(!m.calls.some((c) => !c.startsWith('GET')));
   } finally { m.server.close(); }
 });
