@@ -34,7 +34,9 @@ if ((!CF || !RS) && RN) {
 }
 
 const missing = [['CLOUDFLARE_API_TOKEN', CF], ['RESEND_API_KEY', RS], ['RENDER_API_KEY', RN]].filter(([, v]) => !v).map(([k]) => k);
-if (missing.length) { console.log(`BLOCKED  Missing: ${missing.join(', ')} (not a GitHub repository secret or variable, and not on the Render "skyfly" service). Nothing was changed.`); process.exit(2); }
+// Applying needs all three. A dry run with only one of the two keys still checks that key's permissions, so
+// each can be verified as soon as it is saved.
+if (missing.length && (APPLY || (!CF && !RS) || !RN)) { console.log(`BLOCKED  Missing: ${missing.join(', ')} (not a GitHub repository secret or variable, and not on the Render "skyfly" service). Nothing was changed.`); process.exit(2); }
 
 async function call(base, token, path, { method = 'GET', body } = {}) {
   const res = await fetch(`${base}${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -52,12 +54,35 @@ const rn = (p, o) => call(API.rn, RN, p, o);
 const plan = (text) => console.log(`${APPLY ? 'DO  ' : 'PLAN'}  ${text}`);
 const ok = (text) => console.log(`OK    ${text}`);
 
-// ---- Cloudflare: account and zone
-const zones = await cf(`/zones?name=${DOMAIN}`);
+// ---- Preflight (read-only): every permission this script uses, checked one by one, so a missing one is
+// named exactly instead of failing later with a bare HTTP 403. These are the ONLY Cloudflare calls made:
+//   GET  /zones?name=getskyfly.com                         → Zone · Zone · Read      (zone getskyfly.com)
+//   GET/POST /zones/{zone}/dns_records                     → Zone · DNS · Edit       (zone getskyfly.com)
+//   GET/POST/PUT /accounts/{account}/challenges/widgets    → Account · Turnstile · Edit (the account owning the zone)
+// Resend: GET/POST /domains, POST /domains/{id}/verify, and sending email → an API key with "Full access".
+const problems = [];
+const need = { zone: 'Zone · Zone · Read, for the zone getskyfly.com', dns: 'Zone · DNS · Edit, for the zone getskyfly.com', turnstile: 'Account · Turnstile · Edit, for the account that owns getskyfly.com' };
+const zones = !CF ? (problems.push('CLOUDFLARE_API_TOKEN is not saved yet (GitHub repository secret).'), []) : await cf(`/zones?name=${DOMAIN}`).catch((err) => { problems.push(`Cloudflare token cannot list zones (${err.message}): add ${need.zone}.`); return []; });
 const zone = zones?.[0];
-if (!zone) throw new Error(`The Cloudflare token cannot see the zone ${DOMAIN} (needs Zone: Read and DNS: Edit on it).`);
+if (CF && !zone && !problems.length) problems.push(`Cloudflare token cannot see the zone ${DOMAIN}: add ${need.zone} (Zone Resources: Include · Specific zone · getskyfly.com).`);
+if (zone) {
+  ok(`Cloudflare: zone ${DOMAIN} readable (status ${zone.status}) in account "${zone.account.name}"`);
+  await cf(`/zones/${zone.id}/dns_records?per_page=1`).then(() => ok('Cloudflare: DNS records readable (Edit is confirmed when records are added)'))
+    .catch((err) => problems.push(`Cloudflare token cannot read DNS records (${err.message}): add ${need.dns}.`));
+  await cf(`/accounts/${zone.account.id}/challenges/widgets?per_page=1`).then(() => ok('Cloudflare: Turnstile widgets readable (Edit is confirmed when the widget is created)'))
+    .catch((err) => problems.push(`Cloudflare token cannot read Turnstile widgets (${err.message}): add ${need.turnstile} (Account Resources: Include · your account).`));
+}
+if (!RS) problems.push('RESEND_API_KEY is not saved yet (GitHub repository secret).');
+else await rs('/domains').then(() => ok('Resend: key accepted and can manage domains'))
+  .catch((err) => problems.push(/restricted|401|403/i.test(err.message)
+    ? `Resend refused the key for domain management (${err.message}): create a Resend API key with permission "Full access" (a "Sending access" key cannot add or verify the domain).`
+    : `Resend: ${err.message}`));
+if (problems.length) {
+  for (const p of problems) console.log(`MISSING  ${p}`);
+  console.log('BLOCKED  Nothing was changed. Fix the items above, then run the workflow again.');
+  process.exit(2);
+}
 const accountId = zone.account.id;
-ok(`Cloudflare zone ${DOMAIN} (status ${zone.status}) in account "${zone.account.name}"`);
 
 // ---- Turnstile widget
 const widgets = await cf(`/accounts/${accountId}/challenges/widgets?per_page=50`);
