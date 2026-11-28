@@ -27,6 +27,11 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npx playwright-core install --with-deps chromium
+      - name: Two tiny test videos for the playback check (generated, a few KB)
+        run: |
+          sudo apt-get install -y -qq ffmpeg >/dev/null
+          ffmpeg -loglevel error -f lavfi -i testsrc=duration=3:size=320x240:rate=10 -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$RUNNER_TEMP/check.mp4"
+          ffmpeg -loglevel error -f lavfi -i testsrc=duration=3:size=320x240:rate=10 -c:v libvpx-vp9 -b:v 50k "$RUNNER_TEMP/check.webm"
       - name: 1. Public registration — sign-up button, form, fresh registration, verification email, login, workspace
         id: signup
         continue-on-error: true
@@ -58,6 +63,14 @@ jobs:
         run: node test/e2e/live-cloudy.e2e.js
         env:
           SKYFLY_URL: ${{ inputs.url }}
+      - name: 5. Video playback — byte ranges (Safari/iPhone), inline player loads and seeks, isolation, clean-up
+        id: media
+        continue-on-error: true
+        run: node test/e2e/live-media.e2e.js
+        env:
+          SKYFLY_URL: ${{ inputs.url }}
+          MP4: ${{ runner.temp }}/check.mp4
+          WEBM: ${{ runner.temp }}/check.webm
       - name: Disable the live-test sign-in again
         if: always()
         run: node scripts/e2e-login.mjs disable
@@ -70,9 +83,10 @@ jobs:
           TENANCY: ${{ steps.tenancy.outcome }}
           ISO3: ${{ steps.iso3.outcome }}
           CLOUDY: ${{ steps.cloudy.outcome }}
+          MEDIA: ${{ steps.media.outcome }}
         run: |
-          echo "SUMMARY  public registration: $SIGNUP | owners, isolation, switching: $TENANCY | three separate accounts: $ISO3 | Cloudy business context: $CLOUDY"
-          [ "$SIGNUP" = success ] && [ "$TENANCY" = success ] && [ "$ISO3" = success ] && [ "$CLOUDY" = success ]
+          echo "SUMMARY  public registration: $SIGNUP | owners, isolation, switching: $TENANCY | three separate accounts: $ISO3 | Cloudy business context: $CLOUDY | video playback: $MEDIA"
+          [ "$SIGNUP" = success ] && [ "$TENANCY" = success ] && [ "$ISO3" = success ] && [ "$CLOUDY" = success ] && [ "$MEDIA" = success ]
       - uses: actions/upload-artifact@v4
         if: always()
         with:
